@@ -1,0 +1,10 @@
+# Escrito pelo Mestre quando voce ensina algo por voz.
+# Pode editar ou apagar linhas; para zerar tudo, apague o arquivo.
+atalhos: {}
+preferencias:
+  indicador_posicao:
+  - 2573
+  - 16
+  tom: +9Hz
+  velocidade: +50%
+  voz: en-US-BrianMultilingualNeural

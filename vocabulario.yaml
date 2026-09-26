@@ -1,0 +1,139 @@
+# =====================================================================
+#  VOCABULARIO DO MESTRE  (a "base de variaveis")
+#
+#  Aqui voce ensina ao Mestre os VARIOS JEITOS de falar a mesma coisa.
+#  Ele "traduz" o que voce falou para a forma que ele conhece, e so depois
+#  procura o comando. Assim voce nao precisa decorar frases.
+#
+#  Exemplo: "po, mestre, bota ai o youtube pra mim"
+#     1. tira os enfeites  ->  "bota o youtube"
+#     2. troca sinonimos   ->  "abre o youtube"
+#     3. executa           ->  abre o YouTube
+#
+#  Mesmas regras do config.yaml: sem TAB, textos entre aspas, sem acentos
+#  (o Mestre ignora acentos, entao "voce" e "você" sao iguais).
+#  O que voce ensinar POR VOZ fica em aprendido.yaml (nao precisa mexer).
+# =====================================================================
+
+
+# ---------------------------------------------------------------------
+# 1) ENFEITES NO COMECO da frase (o Mestre ignora)
+#    Ele remove varios em sequencia: "po cara eu queria que voce abrisse..."
+# ---------------------------------------------------------------------
+ignorar_no_inicio:
+  - "o que eu quero fazer e"
+  - "o que eu quero e"
+  - "o que eu preciso e"
+  - "eu quero que voce"
+  - "eu queria que voce"
+  - "quero que voce"
+  - "queria que voce"
+  - "eu preciso que voce"
+  - "preciso que voce"
+  - "sera que tem como"
+  - "tem como voce"
+  - "voce tem como"
+  - "tem como"
+  - "sera que voce consegue"
+  - "sera que voce pode"
+  - "voce consegue"
+  - "voce pode"
+  - "voce podia"
+  - "voce poderia"
+  - "consegue"
+  - "pode"
+  - "podia"
+  - "da pra"
+  - "da para"
+  - "me faz um favor"
+  - "faz um favor"
+  - "faz o seguinte"
+  - "seguinte"
+  - "e ai"
+  - "entao"
+  - "olha"
+  - "escuta"
+  - "agora"
+  - "rapidinho"
+  - "so"
+  - "ai"
+  - "ah"
+  - "eh"
+  - "hum"
+  - "e"
+
+
+# ---------------------------------------------------------------------
+# 2) ENFEITES EM QUALQUER LUGAR (o Mestre apaga onde aparecerem)
+# ---------------------------------------------------------------------
+ignorar_em_qualquer_lugar:
+  - "por favor"
+  - "por gentileza"
+  - "pra mim"
+  - "para mim"
+  - "ai pra mim"
+  - "po"
+  - "pow"
+  - "cara"
+  - "mano"
+  - "vei"
+  - "velho"
+  - "tipo"
+  - "tipo assim"
+  - "ne"
+  - "rapidao"
+  - "rapidinho"
+  - "fazendo favor"
+
+
+# ---------------------------------------------------------------------
+# 3) SINONIMOS
+#    A palavra da ESQUERDA e o que o Mestre entende.
+#    A lista da direita sao os jeitos que voce pode falar.
+#    Pode adicionar a vontade!
+# ---------------------------------------------------------------------
+sinonimos:
+  "abre": ["abra", "abrir", "abri", "abrisse", "bota", "botar", "bote", "coloca", "colocar",
+           "coloque", "poe", "mostra", "mostrar", "mostre", "joga", "inicia", "iniciar",
+           "executa", "executar", "roda", "rodar", "acessa", "acessar", "acesse", "entra",
+           "entrar", "entra no", "carrega", "quero ver", "quero assistir", "me mostra",
+           "vai no", "vai na", "vai pro", "vai pra", "me leva pro", "me leva pra",
+           "me abre", "me bota", "me coloca", "me mostrar", "mostrar",
+           "puxa"]
+  "bora": ["vamos", "vamo", "partiu", "simbora", "bora la", "vamos la", "hora de"]
+  "toca": ["tocar", "toque", "reproduz", "reproduzir", "poe pra tocar", "bota pra tocar"]
+  "fecha": ["fechar", "feche", "encerra", "encerrar", "sai do", "mata"]
+  "pesquisa": ["pesquisar", "pesquise", "procura", "procurar", "procure", "busca", "buscar",
+               "busque", "da uma olhada", "da um google", "dar um google", "joga no google",
+               "pesquisa no google", "googla", "googlar"]
+  "aumenta": ["aumentar", "aumente", "sobe", "subir", "suba", "mais alto", "mais volume"]
+  "abaixa": ["abaixar", "abaixe", "diminui", "diminuir", "diminua", "baixa", "baixar",
+             "mais baixo", "menos volume"]
+  "desliga a tela": ["apaga a tela", "apaga o monitor", "desliga o monitor", "apaga a luz da tela",
+                     "escurece a tela"]
+  "liga a tela": ["acende a tela", "acorda a tela", "liga o monitor", "acende o monitor"]
+  "bloqueia o computador": ["bloqueia o pc", "trava o pc", "trava o computador", "tranca o pc",
+                            "tranca o computador", "bloqueia a tela"]
+  "que horas sao": ["que horas e", "me fala a hora", "fala a hora", "qual a hora",
+                    "que hora e", "tem horas"]
+  "que dia e hoje": ["qual a data", "que dia hoje", "data de hoje", "hoje e que dia"]
+  "ultimo video": ["video mais recente", "video novo", "ultimo lancamento", "video de hoje",
+                   "ultimo que saiu", "video que acabou de sair", "ultimo post"]
+  "youtube": ["you tube", "iutubi", "yutubi", "yt"]
+  "agente ipm": ["agente i p m", "agente pm", "agente ipe eme", "agente da ipm", "assistente ipm",
+                 "claude da ipm", "claude ipm", "ipm"]
+  "anota": ["anote", "anotar", "toma nota", "tome nota", "guarda isso", "salva isso",
+            "escreve ai", "registra"]
+  "me lembra": ["me lembre", "lembra", "me avisa", "me avise", "avisa", "me alerta", "me cutuca",
+                "nao me deixa esquecer"]
+
+
+# ---------------------------------------------------------------------
+# 4) ATALHOS (frase curta -> comando completo)
+#    Tambem da para criar por voz: "Mestre, aprende um atalho".
+# ---------------------------------------------------------------------
+atalhos:
+  "bora codar": "abre o vs code"
+  "modo foco": "desliga a tela"
+  "cade meus emails": "abre o gmail"
+  "cade meus e mails": "abre o gmail"

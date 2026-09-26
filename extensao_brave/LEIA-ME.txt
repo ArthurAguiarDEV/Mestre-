@@ -1,0 +1,21 @@
+EXTENSAO DO MESTRE PARA O BRAVE (abas, janelas e YouTube por voz)
+
+Instalar (uma vez so):
+ 1. No Brave, digite na barra de endereco:  brave://extensions
+ 2. Ligue "Modo de desenvolvedor" (canto superior direito).
+ 3. Clique em "Carregar sem compactacao" e escolha ESTA pasta (extensao_brave).
+ 4. Pronto. Abra (ou recarregue com F5) uma pagina do YouTube.
+
+Depois de ATUALIZAR o Mestre (versao nova da extensao):
+ 1. brave://extensions
+ 2. No cartao "Mestre - comandos de voz no Brave", clique na setinha redonda (recarregar).
+ 3. Recarregue (F5) as abas do YouTube que ja estavam abertas.
+
+O que ela faz:
+ - ve os titulos e enderecos das suas abas, para o Mestre achar "a Netflix", "o YouTube"...
+   e separar uma aba numa janela so dela (para mandar para outro monitor);
+ - volta/avanca pagina e troca de aba;
+ - no YouTube: like, inscrever, chat, proximo video, pausar, continuar, ler os videos da tela.
+
+Ela so conversa com o Mestre no seu proprio computador (endereco 127.0.0.1).
+Nada vai para a internet.

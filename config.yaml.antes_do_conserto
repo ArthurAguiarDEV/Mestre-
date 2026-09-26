@@ -1,0 +1,254 @@
+# =====================================================================
+#  CONFIGURACAO DO MESTRE
+#  Abra este arquivo com o Bloco de Notas para personalizar o assistente.
+#
+#  REGRAS IMPORTANTES (senao o arquivo quebra):
+#   - Nunca use a tecla TAB aqui. Use sempre ESPACOS.
+#   - Mantenha o mesmo recuo (espacos no inicio) das linhas vizinhas.
+#   - Textos ficam entre aspas: "assim".
+#   - Linhas que comecam com # sao comentarios (o programa ignora).
+#   - Depois de salvar, feche e abra o Mestre de novo para valer.
+# =====================================================================
+
+
+# ---------------------------------------------------------------------
+# 1) O ASSISTENTE
+# ---------------------------------------------------------------------
+assistente:
+  nome: "Mestre"
+  # Palavra que "acorda" o assistente. Ex.: "E ai mestre, bora trabalhar"
+  palavra_ativacao: "mestre"
+  # Jeitos parecidos que o reconhecimento de voz as vezes escreve.
+  variacoes_aceitas: ["mestre", "mestra", "mestri", "mestres", "meste"]
+  # Frase falada quando o Mestre liga.
+  saudacao_ao_iniciar: "Mestre online. E so chamar."
+  # Liga o monitor sozinho quando ouve a palavra de ativacao.
+  acordar_tela_ao_ouvir: true
+  # Se voce so disser "mestre", ele responde "Pois nao?" e espera
+  # este numero de segundos pelo comando.
+  tempo_espera_comando: 8
+
+
+# ---------------------------------------------------------------------
+# 2) VOZ (como o Mestre fala)
+# ---------------------------------------------------------------------
+voz:
+  # "edge"    = voz natural da Microsoft, gratis, precisa de internet.
+  # "windows" = voz do proprio Windows, funciona sem internet (mais robotica).
+  motor: "edge"
+  # Vozes: pt-BR-AntonioNeural (masculina) | pt-BR-FranciscaNeural (feminina)
+  #        pt-BR-ThalitaMultilingualNeural (feminina)
+  voz_edge: "pt-BR-AntonioNeural"
+  # Mais rapido: "+20%"  | Mais devagar: "-10%"
+  velocidade: "+10%"
+
+
+# ---------------------------------------------------------------------
+# 3) OUVIDO (como o Mestre escuta)
+# ---------------------------------------------------------------------
+ouvido:
+  # null = microfone padrao do Windows.
+  # Para escolher outro, rode "6_listar_microfones.bat" e coloque o numero aqui.
+  microfone: null
+  # Modelo leve que fica ouvindo so a palavra "mestre" (baixado na instalacao).
+  modelo_vosk: "modelos/vosk-model-small-pt-0.3"
+  # Whisper = reconhecimento de alta qualidade usado para entender o comando.
+  usar_whisper: true
+  # tiny (muito rapido, erra mais) | base | small (recomendado) | medium (lento)
+  modelo_whisper: "small"
+
+
+# ---------------------------------------------------------------------
+# 4) CEREBRO (para conversar e responder perguntas livres)
+# ---------------------------------------------------------------------
+cerebro:
+  # "nenhum" = so executa comandos (recomendado para comecar)
+  # "ollama" = IA local e GRATIS rodando no seu PC (veja o guia, Etapa 9)
+  # "claude" = Claude via API (PAGO por uso, veja o guia, Etapa 10)
+  tipo: "ollama"
+  ollama_url: "http://localhost:11434"
+  # qwen2.5:7b = bom em portugues (precisa ~8 GB de RAM livre)
+  # llama3.2:3b = mais leve, para PCs mais simples
+  ollama_modelo: "qwen2.5:7b"
+  claude_modelo: "claude-opus-5"
+  # low = respostas mais rapidas e baratas | medium | high = mais caprichadas
+  claude_esforco: "low"
+  # Respostas maiores que isto sao salvas em arquivo e abertas na tela;
+  # o Mestre fala so o comeco.
+  limite_caracteres_falados: 500
+
+
+# ---------------------------------------------------------------------
+# 5) SEU "AGENTE IPM" DO CLAUDE
+# ---------------------------------------------------------------------
+agente_ipm:
+  # Palavras que indicam que a pergunta e para o agente IPM.
+  # Ex.: "Mestre, pergunta pro agente IPM como abrir um chamado P031"
+  gatilhos: ["agente ipm", "agente i p m", "agente pm"]
+  # "site"    = abre SEU projeto no claude.ai, cola a pergunta e envia.
+  #             Gratis (usa sua conta do Claude) e usa as instrucoes reais do projeto.
+  # "cerebro" = responde POR VOZ usando a pasta perfis/agente_ipm
+  #             (precisa do cerebro "ollama" ou "claude" ligado acima).
+  modo: "site"
+  # Cole aqui o endereco do seu projeto (veja o guia, Etapa 8).
+  link_projeto: "https://claude.ai/project/019f173e-c567-71c8-b1c1-5e7aaf4c10f0"
+  # true = o Mestre cola a pergunta e aperta Enter sozinho.
+  enviar_automaticamente: true
+  # Tempo para a pagina do Claude carregar antes de colar a pergunta.
+  segundos_para_carregar: 7
+
+
+# ---------------------------------------------------------------------
+# 6) CANAIS DO YOUTUBE (apelido falado -> @ do canal)
+#    O @ aparece no endereco do canal: youtube.com/@manualdomundo
+#    Diga: "Mestre, abre o ultimo video do Manual do Mundo"
+# ---------------------------------------------------------------------
+canais_youtube:
+  "manual do mundo": "@manualdomundo"
+  "nerdologia": "@nerdologia"
+  "ciencia todo dia": "@CienciaTodoDia"
+
+
+# ---------------------------------------------------------------------
+# 7) PROGRAMAS (nome falado -> programa)
+#    Pode ser o nome curto (notepad, calc, chrome) ou o caminho completo,
+#    ex.: "C:\\Program Files\\Programa\\programa.exe" (use \\ duplo).
+#    Diga: "Mestre, abre a calculadora"
+# ---------------------------------------------------------------------
+programas:
+  "bloco de notas": "notepad"
+  "calculadora": "calc"
+  "explorador de arquivos": "explorer"
+  "arquivos": "explorer"
+  "chrome": "chrome"
+  "edge": "msedge"
+  "word": "winword"
+  "excel": "excel"
+  "vs code": "code"
+  "configuracoes": "ms-settings:"
+  "claude": "claude"
+
+
+# ---------------------------------------------------------------------
+# 8) SITES (nome falado -> endereco)
+#    Diga: "Mestre, abre o gmail"
+# ---------------------------------------------------------------------
+sites:
+  "gmail": "https://mail.google.com"
+  "whatsapp": "https://web.whatsapp.com"
+  "youtube": "https://www.youtube.com"
+  "claude site": "https://claude.ai"
+  "agenda": "https://calendar.google.com"
+  "drive": "https://drive.google.com"
+
+
+# ---------------------------------------------------------------------
+# 9) ROTINAS (uma frase dispara varias acoes em sequencia)
+#
+#   Acoes disponiveis:
+#     - acordar_tela: true
+#     - falar: "texto"          ({saudacao} vira Bom dia/Boa tarde/Boa noite)
+#     - abrir_programa: "nome ou caminho"
+#     - abrir_site: "https://..."
+#     - youtube_ultimo_video: "apelido do canal da lista acima"
+#     - youtube_canal: "apelido do canal"
+#     - esperar: 2              (segundos)
+#     - volume: "aumentar" | "diminuir" | "mudo"
+#     - bloquear: true
+#     - desligar_tela: true
+# ---------------------------------------------------------------------
+rotinas:
+  - nome: "Bora trabalhar"
+    frases: ["bora trabalhar", "vamos trabalhar", "hora de trabalhar"]
+    acoes:
+      - acordar_tela: true
+      - falar: "{saudacao}! Preparando seu ambiente de trabalho."
+      - abrir_site: "https://mail.google.com"
+      - abrir_site: "https://claude.ai"
+      - esperar: 1
+      - falar: "Tudo pronto. Bom trabalho!"
+
+  - nome: "Hora do cafe"
+    frases: ["hora do cafe", "vou dar uma pausa", "pausa pro cafe"]
+    acoes:
+      - falar: "Beleza, bom cafe! Vou desligar a tela."
+      - esperar: 2
+      - desligar_tela: true
+
+  - nome: "Bora relaxar"
+    frases: ["bora relaxar", "hora de relaxar"]
+    acoes:
+      - falar: "Abrindo o ultimo video do Manual do Mundo."
+      - youtube_ultimo_video: "manual do mundo"
+
+  - nome: "Boa noite"
+    frases: ["boa noite", "encerrar o dia", "fim do expediente"]
+    acoes:
+      - falar: "Bom descanso! Ate amanha."
+      - esperar: 2
+      - desligar_tela: true
+# =====================================================================
+#  NOVIDADES DO config.yaml NA VERSAO 2
+#  Voce NAO precisa copiar nada: sem estas secoes, o Mestre usa os padroes.
+#  Quer personalizar? Copie a secao inteira para o SEU config.yaml
+#  (a secao 'voz:' SUBSTITUI a que voce ja tem). Sem TAB, so espacos.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# 1b) CONVERSA
+#    Depois que o Mestre responde, ele continua ouvindo por alguns segundos
+#    SEM precisar de "mestre" de novo. Ex.:
+#      "Mestre, abre o YouTube"  ->  (abre)  ->  "agora aumenta o volume"
+#    0 = desliga (sempre precisa falar "mestre").
+#    Se a TV ou outras pessoas atrapalharem, diminua para 5.
+# ---------------------------------------------------------------------
+conversa:
+  janela_segundos: 10
+
+
+# ---------------------------------------------------------------------
+# 1c) PERSONALIDADE
+#    "descricao" e usada pela IA (cerebro) para conversar.
+#    "falas" sao sorteadas: o Mestre nao repete sempre a mesma frase.
+#    Mude a vontade! Use acentos normalmente aqui (melhora a pronuncia).
+# ---------------------------------------------------------------------
+personalidade:
+  descricao: "parceiro brasileiro, bem-humorado e informal; fala curto, usa girias leves como beleza, ja e, bora; chama o usuario de chefe"
+  falas:
+    inicio: ["Mestre na área. É só chamar!", "Tô on, chefe. É só chamar.", "Cheguei! Bora?"]
+    chamado: ["Pois não?", "Fala, chefe!", "Tô aqui!", "Diz aí.", "Opa, pode falar."]
+    ok: ["Beleza!", "Deixa comigo.", "Já é!", "Na hora.", "Feito!", "Pode deixar."]
+    nao_entendi: ["Hmm, essa eu não peguei. Fala de outro jeito?", "Não entendi, chefe. Tenta de novo?", "Essa passou batido. Repete pra mim?"]
+    pensando: ["Deixa eu pensar...", "Hmm, peraí.", "Só um segundo."]
+    cancelado: ["Beleza, deixa pra lá.", "Tranquilo, cancelei.", "Ok, esquece então."]
+    erro: ["Ih, deu ruim aqui. Dá uma olhada no arquivo de log.", "Opa, tropecei nessa. O erro está no log."]
+
+
+# ---------------------------------------------------------------------
+# 2) VOZ (como o Mestre fala)
+# ---------------------------------------------------------------------
+voz:
+  # "edge"    = voz natural da Microsoft, gratis, precisa de internet.
+  # "windows" = voz do proprio Windows, funciona sem internet (mais robotica).
+  motor: "edge"
+  # Voz inicial. Para OUVIR e escolher, rode "9_escolher_voz.bat"
+  # ou fale: "Mestre, apresenta as vozes".
+  voz_edge: "pt-BR-AntonioNeural"
+  # Mais rapido: "+20%"  | Mais devagar: "-10%"
+  velocidade: "+65%"
+  # Mais grave: "-5Hz" | Mais agudo: "+5Hz"
+  tom: "+0Hz"
+  # Vozes para "Mestre, muda a voz" (ele vai passando uma por uma).
+  # As "Multilingual" sao vozes de outros paises que falam portugues:
+  # costumam soar mais naturais e expressivas, com um leve sotaque.
+  vozes_favoritas:
+    - "pt-BR-AntonioNeural"
+    - "pt-BR-FranciscaNeural"
+    - "pt-BR-ThalitaMultilingualNeural"
+    - "en-US-AndrewMultilingualNeural"
+    - "en-US-BrianMultilingualNeural"
+    - "en-US-AvaMultilingualNeural"
+    - "en-US-EmmaMultilingualNeural"
+    - "fr-FR-RemyMultilingualNeural"
+    - "it-IT-GiuseppeMultilingualNeural"
+    - "pt-PT-DuarteNeural"

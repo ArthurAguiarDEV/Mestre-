@@ -1,0 +1,67 @@
+# =====================================================================
+#  NOVIDADES DO config.yaml NA VERSAO 2
+#  Voce NAO precisa copiar nada: sem estas secoes, o Mestre usa os padroes.
+#  Quer personalizar? Copie a secao inteira para o SEU config.yaml
+#  (a secao 'voz:' SUBSTITUI a que voce ja tem). Sem TAB, so espacos.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# 1b) CONVERSA
+#    Depois que o Mestre responde, ele continua ouvindo por alguns segundos
+#    SEM precisar de "mestre" de novo. Ex.:
+#      "Mestre, abre o YouTube"  ->  (abre)  ->  "agora aumenta o volume"
+#    0 = desliga (sempre precisa falar "mestre").
+#    Se a TV ou outras pessoas atrapalharem, diminua para 5.
+# ---------------------------------------------------------------------
+conversa:
+  janela_segundos: 10
+
+
+# ---------------------------------------------------------------------
+# 1c) PERSONALIDADE
+#    "descricao" e usada pela IA (cerebro) para conversar.
+#    "falas" sao sorteadas: o Mestre nao repete sempre a mesma frase.
+#    Mude a vontade! Use acentos normalmente aqui (melhora a pronuncia).
+# ---------------------------------------------------------------------
+personalidade:
+  descricao: "parceiro brasileiro, bem-humorado e informal; fala curto, usa girias leves como beleza, ja e, bora; chama o usuario de chefe"
+  falas:
+    inicio: ["Mestre na área. É só chamar!", "Tô on, chefe. É só chamar.", "Cheguei! Bora?"]
+    chamado: ["Pois não?", "Fala, chefe!", "Tô aqui!", "Diz aí.", "Opa, pode falar."]
+    ok: ["Beleza!", "Deixa comigo.", "Já é!", "Na hora.", "Feito!", "Pode deixar."]
+    nao_entendi: ["Hmm, essa eu não peguei. Fala de outro jeito?", "Não entendi, chefe. Tenta de novo?", "Essa passou batido. Repete pra mim?"]
+    pensando: ["Deixa eu pensar...", "Hmm, peraí.", "Só um segundo."]
+    cancelado: ["Beleza, deixa pra lá.", "Tranquilo, cancelei.", "Ok, esquece então."]
+    erro: ["Ih, deu ruim aqui. Dá uma olhada no arquivo de log.", "Opa, tropecei nessa. O erro está no log."]
+
+
+# ---------------------------------------------------------------------
+# 2) VOZ (como o Mestre fala)
+# ---------------------------------------------------------------------
+voz:
+  # "edge"    = voz natural da Microsoft, gratis, precisa de internet.
+  # "windows" = voz do proprio Windows, funciona sem internet (mais robotica).
+  motor: "edge"
+  # Voz inicial. Para OUVIR e escolher, rode "9_escolher_voz.bat"
+  # ou fale: "Mestre, apresenta as vozes".
+  voz_edge: "pt-BR-AntonioNeural"
+  # Mais rapido: "+20%"  | Mais devagar: "-10%"
+  velocidade: "+10%"
+  # Mais grave: "-5Hz" | Mais agudo: "+5Hz"
+  tom: "+0Hz"
+  # Vozes para "Mestre, muda a voz" (ele vai passando uma por uma).
+  # As "Multilingual" sao vozes de outros paises que falam portugues:
+  # costumam soar mais naturais e expressivas, com um leve sotaque.
+  vozes_favoritas:
+    - "pt-BR-AntonioNeural"
+    - "pt-BR-FranciscaNeural"
+    - "pt-BR-ThalitaMultilingualNeural"
+    - "en-US-AndrewMultilingualNeural"
+    - "en-US-BrianMultilingualNeural"
+    - "en-US-AvaMultilingualNeural"
+    - "en-US-EmmaMultilingualNeural"
+    - "fr-FR-RemyMultilingualNeural"
+    - "it-IT-GiuseppeMultilingualNeural"
+    - "pt-PT-DuarteNeural"
+
+

@@ -1,0 +1,58 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python -m testes.teste_basico)",
+      "Bash(venv/Scripts/python.exe -m testes.teste_basico)",
+      "Bash(venv/Scripts/python -m app.main --mudo *)",
+      "Bash(venv/Scripts/python.exe -m app.main --mudo *)",
+      "Bash(venv/Scripts/python -m py_compile *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git reset *)",
+      "Bash(git checkout *)",
+      "Bash(rm *)",
+      "Bash(del *)",
+      "Bash(pip *)",
+      "Bash(venv/Scripts/pip *)"
+    ],
+    "deny": [
+      "Read(./navegador_mestre/**)",
+      "Edit(./navegador_mestre/**)",
+      "Read(~/AppData/Roaming/Mestre/**)",
+      "Read(./modelos/**)",
+      "Read(./venv/**)",
+      "Bash(git push --force *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 .claude/hooks/conferir_edicao.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 .claude/hooks/testar_ao_parar.py",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
+  }
+}

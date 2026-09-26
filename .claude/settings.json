@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo Lembrete do projeto Mestre: se esta mensagem traz um pedido novo, primeiro use a skill corrigir-transcricao, mostre Entendi assim, depois a skill refinar-pedido, e espere o ok antes de implementar."
+          }
+        ]
+      }
+    ]
+  }
+}

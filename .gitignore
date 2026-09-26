@@ -1,0 +1,11 @@
+venv/
+modelos/
+logs/
+respostas/
+notas/
+mestre.pid
+__pycache__/
+navegador_mestre/
+exportacoes/
+memoria/
+recebidos/

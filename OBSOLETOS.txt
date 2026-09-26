@@ -1,0 +1,13 @@
+# Arquivos antigos que a atualizacao pelo painel retira (eles foram para a pasta ferramentas)
+1_instalar.bat
+2_testar_por_texto.bat
+3_iniciar_mestre.bat
+4_ativar_inicio_automatico.bat
+5_configurar_energia.bat
+6_listar_microfones.bat
+7_desativar_inicio_automatico.bat
+8_parar_mestre.bat
+9_escolher_voz.bat
+10_painel.bat
+10b_painel_diagnostico.bat
+11_ativar_placa_de_video.bat

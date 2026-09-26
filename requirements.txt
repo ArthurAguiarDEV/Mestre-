@@ -1,0 +1,21 @@
+# Bibliotecas que o Mestre usa (o 1_instalar.bat instala tudo sozinho)
+vosk              # modo leve de detectar "mestre" (offline)
+faster-whisper    # entende a frase inteira com precisao (offline)
+sounddevice       # acesso ao microfone
+numpy
+edge-tts          # voz natural em portugues (gratis)
+pygame            # toca o audio da voz
+pyttsx3           # voz reserva do Windows (offline)
+pyyaml            # le o config.yaml
+requests          # conversa com o Ollama
+yt-dlp            # acha o ultimo video de um canal do YouTube
+pyperclip         # copia e cola a pergunta no Claude
+anthropic         # (opcional) Claude via API, se um dia quiser usar
+customtkinter     # painel de configuracoes com cliques
+ruamel.yaml       # salva o config.yaml sem apagar os comentarios
+pystray           # icone do Mestre perto do relogio do Windows
+pillow            # imagem do icone
+pycaw             # volume so do Spotify (mixer do Windows)
+uiautomation      # achar a caixa de mensagem do app Claude
+playwright        # YouTube controlado por voz (usa o Edge do PC; nao baixa navegador)
+kokoro-onnx       # voz Kokoro: natural e rapida, roda no PC (baixa o modelo de 330 MB uma vez)

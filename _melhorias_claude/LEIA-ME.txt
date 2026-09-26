@@ -1,0 +1,19 @@
+MELHORIAS DO CLAUDE CODE PARA O MESTRE (26/09/2026)
+
+Esta pasta guarda os arquivos que vao para .claude. O Claude (conversa no claude.ai)
+nao pode gravar direto em .claude pela conexao com o PC, por seguranca.
+Para instalar: ferramentas\14_instalar_melhorias_claude.bat
+
+O que cada coisa faz:
+- claude\settings.local.json: permissoes (roda o teste e o git sem perguntar; bloqueia leitura
+  do navegador_mestre, dos segredos em AppData\Roaming\Mestre, do venv e dos modelos) e os 2 hooks.
+- claude\hooks\conferir_edicao.py: depois de cada arquivo gravado confere CRLF/sem acento nos .bat/.vbs,
+  versao da extensao (manifest = ponte.VERSAO_EXTENSAO) e erro de sintaxe nos .py.
+- claude\hooks\testar_ao_parar.py: quando o Claude termina uma resposta e algum codigo mudou,
+  roda o teste automatico; o que FALHOU volta para ele corrigir. Desligar: MESTRE_SEM_TESTE_AUTO=1.
+- claude\agents\revisor-windows.md: revisor em outro contexto, confere as regras do CLAUDE.md.
+- claude\commands\pedido.md, entregar.md, analisar-historico.md: /pedido, /entregar, /analisar-historico.
+- claude\rules\ferramentas-claude.md: lista das ferramentas + regras para gastar menos sessao.
+- claude\skills\avaliar-esforco\SKILL.md: diz o nivel de esforco e o modelo certos para cada pedido.
+
+Esses arquivos sao NOVOS: as atualizacoes por .zip nao os apagam (o zip so troca o que traz).
