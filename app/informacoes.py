@@ -46,3 +46,22 @@ def noticias(quantidade: int = 3, assunto: str = "") -> list[str]:
     except Exception as erro:
         log.warning("Noticias indisponiveis: %s", erro)
         return []
+
+
+def pesquisar_web(termo: str, quantidade: int = 5) -> list[dict]:
+    """Artigos na internet sobre o termo (busca do Google Noticias em RSS, gratis e sem cadastro):
+    [{"titulo", "link", "resumo"}]. (Buscas "normais" gratis bloqueiam robos ou trazem resultados errados.)"""
+    try:
+        r = requests.get("https://news.google.com/rss/search", headers=CABECALHO, timeout=12,
+                         params={"q": termo, "hl": "pt-BR", "gl": "BR", "ceid": "BR:pt-419"})
+        r.raise_for_status()
+        saida = []
+        for i in list(ET.fromstring(r.content).iter("item"))[:quantidade]:
+            titulo = i.findtext("title") or ""
+            fonte = re.search(r"\s+-\s+([^-]+)$", titulo)
+            saida.append({"titulo": re.sub(r"\s+-\s+[^-]+$", "", titulo).strip(), "link": (i.findtext("link") or "").strip(),
+                          "resumo": fonte.group(1).strip() if fonte else ""})
+        return [x for x in saida if x["titulo"]]
+    except Exception as erro:
+        log.warning("Pesquisa na internet indisponivel: %s", erro)
+        return []

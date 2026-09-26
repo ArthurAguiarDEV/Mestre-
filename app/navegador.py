@@ -29,6 +29,30 @@ def caminho_do_brave() -> str | None:
     return None
 
 
+PERFIL_BRAVE = ""   # "Profile 1"... (config: janelas.perfil_brave). Vazio = o ultimo que voce usou
+
+
+def perfil_do_brave() -> str:
+    """A pasta do perfil do Brave que voce usa (com suas contas). Sem isso, o "--new-window" pode abrir
+    num perfil vazio, e o login do Google la chama o navegador de "nao confiavel"."""
+    if PERFIL_BRAVE:
+        return PERFIL_BRAVE
+    import json
+    from pathlib import Path
+
+    try:
+        estado = Path(os.environ.get("LOCALAPPDATA", "")) / "BraveSoftware" / "Brave-Browser" / "User Data" / "Local State"
+        return str(json.loads(estado.read_text(encoding="utf-8")).get("profile", {}).get("last_used") or "")
+    except Exception:
+        return ""
+
+
+def comando_do_brave(brave: str, *args: str) -> list[str]:
+    """brave.exe [--profile-directory=<seu perfil>] + argumentos."""
+    perfil = perfil_do_brave()
+    return [brave] + ([f"--profile-directory={perfil}"] if perfil else []) + list(args)
+
+
 class Navegador:
     def __init__(self, canal: str = "brave"):
         self.canal = canal   # "brave" | "msedge" | "chrome"
@@ -269,7 +293,7 @@ class YouTubeNoNavegadorNormal:
             return
         import subprocess
         antes = sistema.janela_da_frente()
-        subprocess.Popen([self.exe, "--new-window", link])
+        subprocess.Popen(comando_do_brave(self.exe, "--new-window", link) if "brave" in str(self.exe).lower() else [self.exe, "--new-window", link])
         sistema.depois_de_abrir(antes)
 
     def na_pagina_do_youtube(self) -> bool:

@@ -1535,6 +1535,9 @@ class Painel(ctk.CTk):
         self.var_pesquisas = tk.BooleanVar(value=bool(pj.get("abrir_pesquisas", True)))
         linha_campo(f, "Pesquisas", lambda p: ctk.CTkSwitch(
             p, text="abrir pesquisas no navegador depois de escolher o caminho", variable=self.var_pesquisas))
+        self.var_pesquisar_web = tk.BooleanVar(value=bool(pj.get("pesquisar_internet", True)))
+        linha_campo(f, "Pesquisa automática", lambda p: ctk.CTkSwitch(
+            p, text="pesquisar o objetivo na internet antes da IA sugerir os caminhos", variable=self.var_pesquisar_web))
 
     # -----------------------------------------------------------------
     def _aba_youtube(self, pagina):
@@ -1690,6 +1693,10 @@ class Painel(ctk.CTk):
         linha_campo(f, "Navegador dos sites", lambda p: ctk.CTkSwitch(
             p, text="abrir os sites no Brave (onde estão os meus logins), mesmo que o padrão do Windows seja outro",
             variable=self.var_sites_brave))
+        self.ent_perfil_brave = linha_campo(f, "Perfil do Brave", lambda p: ctk.CTkEntry(
+            p, placeholder_text="vazio = o último que você usou (ex.: Profile 1)"))
+        if self._sec("janelas").get("perfil_brave"):
+            self.ent_perfil_brave.insert(0, str(self._sec("janelas").get("perfil_brave")))
         self._secao_monitores(pagina)
 
     def _secao_monitores(self, pagina):
@@ -2291,6 +2298,7 @@ class Painel(ctk.CTk):
             pj = configuracao.secao(c, "projetos")
             pj["pasta"] = configuracao.aspas(self.ent_pasta_projetos.get().strip())
             pj["abrir_pesquisas"] = bool(self.var_pesquisas.get())
+            pj["pesquisar_internet"] = bool(self.var_pesquisar_web.get())
             sp = configuracao.secao(c, "spotify")
             sp["apertar_play"] = bool(self.var_play.get())
             sp["tocar_musica_em"] = configuracao.aspas("youtube" if self.var_tocar_em.get() == "YouTube" else "spotify")
@@ -2345,6 +2353,7 @@ class Painel(ctk.CTk):
             jn = configuracao.secao(c, "janelas")
             jn["sempre_no_principal"] = bool(self.var_principal.get())
             jn["navegador_sites"] = configuracao.aspas("brave" if self.var_sites_brave.get() else "padrao")
+            jn["perfil_brave"] = configuracao.aspas(self.ent_perfil_brave.get().strip())
             configuracao.trocar_mapa(jn, "nomes_monitores",
                                      {str(n): e.get().strip() for n, e in self.ent_monitores.items() if e.get().strip()})
             if self._posicao_caixa is not None:

@@ -69,6 +69,15 @@ def _trocar_secao(texto: str, titulo: str, corpo: str) -> str:
     return re.sub(padrao, lambda m: m.group(1) + corpo.rstrip() + "\n", texto, count=1, flags=re.S)
 
 
+def gravar_pesquisa(pasta: Path, resultados: list[dict]) -> None:
+    plano = pasta / "PLANO.md"
+    corpo = "".join(f"- [{r['titulo']}]({r['link']}): {r.get('resumo', '')}\n" for r in resultados) or "(nada encontrado)"
+    texto = plano.read_text(encoding="utf-8")
+    if "## Pesquisa na internet" not in texto:   # a secao entra antes dos caminhos
+        texto = texto.replace("## Caminhos sugeridos", "## Pesquisa na internet\n\n\n## Caminhos sugeridos", 1)
+    plano.write_text(_trocar_secao(texto, "Pesquisa na internet", corpo), encoding="utf-8")
+
+
 def gravar_opcoes(pasta: Path, opcoes: list[dict]) -> None:
     plano = pasta / "PLANO.md"
     corpo = ""

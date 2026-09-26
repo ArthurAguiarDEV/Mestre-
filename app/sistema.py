@@ -375,7 +375,8 @@ def abrir_site(url: str) -> None:
     # que ja existia e a janela inteira, com as outras abas, mudava de monitor).
     ja_aberto = bool(brave) and any(e == "brave.exe" for _, _, e in _janelas_visiveis())
     if brave:
-        subprocess.Popen([brave, "--new-window", url] if MONITOR_ALVO else [brave, url])
+        from .navegador import comando_do_brave
+        subprocess.Popen(comando_do_brave(brave, "--new-window", url) if MONITOR_ALVO else comando_do_brave(brave, url))
     else:
         webbrowser.open(url, new=1 if MONITOR_ALVO else 2)
     if MONITOR_ALVO or not ja_aberto:   # sem monitor pedido, uma aba nova nao arrasta a janela que ja existia

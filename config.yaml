@@ -2182,7 +2182,8 @@ aparencia:
   fonte: "Comic Sans MS"
   tamanho: "Grande"
 projetos:
-  pasta: ""
+  pasta: "C:/Ias/projetos"
+  pesquisar_internet: true
   abrir_pesquisas: true
 spotify:
   apertar_play: true

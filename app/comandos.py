@@ -320,6 +320,8 @@ class Executor:
         sistema.MONITOR_ALVO = None
         sistema.SEMPRE_NO_PRINCIPAL = bool((self.cfg.get("janelas") or {}).get("sempre_no_principal", True))
         sistema.SITES_NO_BRAVE = (self.cfg.get("janelas") or {}).get("navegador_sites", "brave") == "brave"
+        from . import navegador as _nav
+        _nav.PERFIL_BRAVE = str((self.cfg.get("janelas") or {}).get("perfil_brave") or "")
         achado = re.search(r"\s*\b(?:no|na|pro|pra|para o|para a|ao)\s+(?:meu\s+|minha\s+)?(?:monitor|tela|janela)\s+(?:numero\s+)?(.+?)$", t)
         if not achado:
             return t
@@ -1581,8 +1583,19 @@ class Executor:
             return
         pedido = (f"Tipo de projeto: {d['tipo']}. Nome: {d['nome']}. Objetivo: {d['objetivo']}. "
                   f"Prazo ou o que já existe: {d.get('extra') or 'nada'}.")
-        self._pensar(f"projeto {pasta.name}", lambda: self.cerebro.propor_opcoes(pedido),
+        self._pensar(f"projeto {pasta.name}", lambda: self.cerebro.propor_opcoes(pedido + self._proj_pesquisar(pasta)),
                      lambda opcoes: self._proj_apresentar(pasta, opcoes or []))
+
+    def _proj_pesquisar(self, pasta) -> str:
+        """Pesquisa o objetivo na internet (roda junto com a IA, fora da escuta), grava no PLANO.md e
+        devolve o resumo para a IA levar em conta nas propostas."""
+        if sistema.SIMULADO or not (self.cfg.get("projetos") or {}).get("pesquisar_internet", True):
+            return ""
+        resultados = informacoes.pesquisar_web(self._proj.get("objetivo") or self._proj.get("nome", ""))
+        projetos.gravar_pesquisa(pasta, resultados)
+        if not resultados:
+            return ""
+        return " O que achei na internet: " + " | ".join(f"{r['titulo']}: {r['resumo']}" for r in resultados)
 
     def _proj_quer_claude(self, resposta: str) -> None:
         if re.search(r"\b(sim|quero|manda|pode|isso|bora)\b", normalizar(resposta)):
