@@ -1401,6 +1401,7 @@ Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por 
 5. Confirme: **✅ Deu certo** ou **❌ Deu errado**. No ❌ aparece "O certo era:": **digite**, ou **fale sem chamar o assistente** (sem a palavra de ativação) que o painel preenche sozinho. Depois **Salvar ❌ e seguir**.
 6. Outros botões: **Pular**, **Repetir** (fale de novo a mesma frase), **◀ Anterior** e **■ Parar**.
 7. Ao parar (ou no fim da lista) sai o relatório `exportacoes/validacao_AAAA-MM-DD_HHMM.md` (quantos ok, quantas falhas e os detalhes de cada falha, com o áudio) e **cada ❌ vira um item FEEDBACK** na lista de Melhorias, pronto para o Claude Code corrigir. Botão **Abrir o relatório** para ver.
+8. Teve falha? O botão **🛠 Mandar para o Claude corrigir** fica ativo (sem falha nenhuma, ele fica desativado). Clique nele: o painel salva o pedido em `exportacoes/pedido_correcao_*.md` e abre uma janela de terminal já com o **Claude Code** rodando (você continua acompanhando e aprovando tudo normalmente, como sempre). Se o Claude Code não estiver instalado no PC, o painel avisa e copia o pedido para você colar onde quiser.
 
 Linhas "(painel)" ou "(visual)" do roteiro não têm frase para falar: faça o que a tela diz e marque ✅ ou ❌. Enquanto a validação está aberta, o assistente guarda o áudio de cada frase em `logs/validacao/` (só as últimas 120).
 

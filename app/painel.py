@@ -2440,6 +2440,7 @@ class Painel(ctk.CTk):
         self._val_captura = None    # o que o assistente registrou para a frase da tela
         self._val_sugestao = None
         self._val_errado_desde = 0.0   # clicou ❌: a proxima frase ouvida vira "o certo era"
+        self._val_ultimo_comando_claude = None   # "Mandar para o Claude corrigir" (para o teste automatico)
         f = secao(pagina, "Validar atualização",
                   f"Depois de atualizar, fale as frases do roteiro uma por vez ao {self.nome} (ligado, como sempre). "
                   "Para cada frase o painel mostra o que ele OUVIU, o que ENTENDEU (e qual comando atendeu) e o que "
@@ -2493,9 +2494,37 @@ class Painel(ctk.CTk):
         self.rot_val_resultado = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
                                               text_color=tema.TEXTO_FRACO)
         self.rot_val_resultado.pack(fill="x", padx=(32, 18), pady=(6, 0))
-        self.bt_val_relatorio = ctk.CTkButton(f, text="Abrir o relatório", width=150, **SECUNDARIO,
+        fr_val_pos = ctk.CTkFrame(f, fg_color="transparent")
+        fr_val_pos.pack(fill="x", padx=(32, 18), pady=4)
+        self.bt_val_relatorio = ctk.CTkButton(fr_val_pos, text="Abrir o relatório", width=150, **SECUNDARIO,
                                               command=self._val_abrir_relatorio)
+        self.bt_val_claude = ctk.CTkButton(fr_val_pos, text="🛠  Mandar para o Claude corrigir", width=240,
+                                           **SECUNDARIO, command=self._val_mandar_claude)
+        self.bt_val_claude.pack(side="left", padx=(0, 8))
+        self._val_atualizar_botao_claude()
         self._val_desenhar()
+
+    def _val_atualizar_botao_claude(self):
+        from . import validacao
+        relatorio = validacao.ultimo_relatorio()
+        ativo = validacao.relatorio_tem_falhas(relatorio)
+        self.bt_val_claude.configure(state="normal" if ativo else "disabled")
+
+    def _val_mandar_claude(self):
+        from . import validacao
+        relatorio = validacao.ultimo_relatorio()
+        if not validacao.relatorio_tem_falhas(relatorio):
+            return
+        pedido = validacao.pedido_de_correcao(relatorio)
+        validacao.salvar_pedido_correcao(pedido)
+        comando = validacao.comando_para_abrir_claude(pedido)
+        self._val_ultimo_comando_claude = comando   # para o teste automatico conferir
+        if sistema.abrir_com_comando(comando, PASTA_PROJETO):
+            return
+        sistema.copiar(pedido)
+        messagebox.showinfo(self.nome, "Não encontrei o Claude Code instalado (comando \"claude\"). "
+                                       "Copiei o pedido para a área de transferência: abra um terminal na "
+                                       "pasta do projeto, rode \"claude\" e cole (Ctrl+V).")
 
     def _val_comecar(self):
         from . import validacao
@@ -2625,7 +2654,8 @@ class Painel(ctk.CTk):
         self.rot_val_resultado.configure(
             text=f"✓ {oks} ok · {falhas} falhas. Relatório: exportacoes/{self._val_relatorio.name}.{extra}",
             text_color=tema.SUCESSO if not falhas else tema.AVISO)
-        self.bt_val_relatorio.pack(anchor="w", padx=(32, 18), pady=4)
+        self.bt_val_relatorio.pack(side="left", padx=(0, 8))
+        self._val_atualizar_botao_claude()
 
     def _val_relatorio_feedbacks(self, s) -> list[str]:
         from . import validacao

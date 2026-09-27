@@ -11,9 +11,12 @@ Fluxo (painel > Validar atualização):
   5. No fim: gerar_relatorio() (exportacoes/validacao_AAAA-MM-DD_HHMM.md) e salvar_feedbacks()
      (cada falha vira "- [ ] FEEDBACK: ..." no MELHORIAS.md).
 
-ultimo_relatorio() devolve o relatorio mais novo (usado pelo "Mandar para o Claude corrigir").
+ultimo_relatorio() devolve o relatorio mais novo. O botão "Mandar para o Claude corrigir" usa
+pedido_de_correcao() + salvar_pedido_correcao() + comando_para_abrir_claude() (app/sistema.py abre o
+terminal de verdade, com o mesmo comando).
 """
 import re
+import shutil
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -406,6 +409,69 @@ def ultimo_relatorio(pasta: Path | None = None) -> Path | None:
     pasta = Path(pasta or PASTA_EXPORTACOES)
     arquivos = sorted(pasta.glob("validacao_*.md")) if pasta.exists() else []
     return arquivos[-1] if arquivos else None
+
+
+def relatorio_tem_falhas(relatorio: Path | None) -> bool:
+    """True se `relatorio` existe e teve pelo menos 1 falha (olha o resumo "❌ **N falhas**")."""
+    if not relatorio:
+        return False
+    try:
+        texto = Path(relatorio).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    m = re.search(r"\*\*(\d+)\s+falhas\*\*", texto)
+    return bool(m) and int(m.group(1)) > 0
+
+
+# =====================================================================
+#  "Mandar para o Claude corrigir" (botao na pagina, usa o ultimo relatorio)
+# =====================================================================
+def pedido_de_correcao(relatorio: Path) -> str:
+    """O pedido curto em portugues, pronto para mandar ao Claude Code corrigir as falhas do relatorio."""
+    try:
+        caminho = Path(relatorio).relative_to(PASTA_PROJETO).as_posix()
+    except ValueError:
+        caminho = Path(relatorio).as_posix()
+    return (f"Corrija as falhas do relatório de validação {caminho}. Siga o CLAUDE.md: "
+            "corrigir-transcricao/refinar não são necessários (é relatório do app); para cada falha descubra "
+            "a camada certa (transcrição, vocabulário, regex, resposta), corrija, rode o teste automático "
+            "e rode /entregar.")
+
+
+def salvar_pedido_correcao(pedido: str, agora: datetime | None = None, pasta: Path | None = None) -> Path:
+    """Salva o pedido em exportacoes/pedido_correcao_AAAA-MM-DD_HHMM.md."""
+    agora = agora or datetime.now()
+    pasta = Path(pasta or PASTA_EXPORTACOES)
+    pasta.mkdir(parents=True, exist_ok=True)
+    arquivo = pasta / f"pedido_correcao_{agora:%Y-%m-%d_%H%M}.md"
+    arquivo.write_text(pedido.strip() + "\n", encoding="utf-8")
+    return arquivo
+
+
+def localizar_claude() -> str | None:
+    """O executavel do Claude Code: no PATH (claude/claude.exe) ou em ~/.local/bin/claude.exe. None = nao achou."""
+    exe = shutil.which("claude") or shutil.which("claude.exe")
+    if exe:
+        return exe
+    alvo = Path.home() / ".local" / "bin" / "claude.exe"
+    return str(alvo) if alvo.exists() else None
+
+
+def comando_para_abrir_claude(pedido: str) -> list[str] | None:
+    """Os argumentos (para subprocess, sem shell) que abrem um terminal VISIVEL com o Claude Code
+    INTERATIVO (sem -p/headless, sem flag de permissao) ja com `pedido` como prompt inicial.
+
+    Windows Terminal (wt.exe) se estiver no PATH, senao cmd /k. None = nao achou o Claude Code (nem no
+    PATH, nem em ~/.local/bin/claude.exe); quem chamar deve avisar o usuario e copiar o pedido.
+    """
+    claude = localizar_claude()
+    if not claude:
+        return None
+    comando_claude = [claude, pedido]
+    wt = shutil.which("wt.exe") or shutil.which("wt")
+    if wt:
+        return [wt, "-d", str(PASTA_PROJETO)] + comando_claude
+    return ["cmd", "/k"] + comando_claude
 
 
 # =====================================================================

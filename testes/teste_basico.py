@@ -1076,6 +1076,35 @@ ok(rel is not None and "era outra coisa" in rel.read_text(encoding="utf-8") and 
    and not v.ARQUIVO_ATIVA.exists(),
    "Validação: Parar gera o relatório e o FEEDBACK (arquivo e caixa da página Melhorias)")
 ok(not erros, "Validação: página sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
+
+# "Mandar para o Claude corrigir": pedido, arquivo salvo e comando (sem -p, sem flag de permissao)
+ok(pn.bt_val_claude.cget("state") == "normal",
+   "Validação: botão 'Mandar para o Claude corrigir' ativo (o último relatório tem falha)")
+pn._val_mandar_claude(); pn.update()
+pedidos = sorted(Path("exportacoes").glob("pedido_correcao_*.md"))
+ok(bool(pedidos), "Validação: pedido de correção salvo em exportacoes/")
+texto_pedido = pedidos[-1].read_text(encoding="utf-8") if pedidos else ""
+ok(texto_pedido.startswith("Corrija as falhas do relatório de validação exportacoes/validacao_")
+   and "corrigir-transcricao/refinar não são necessários" in texto_pedido and "/entregar" in texto_pedido,
+   f"Validação: pedido de correção no texto certo ({texto_pedido[:90]!r})")
+cmd = pn._val_ultimo_comando_claude
+ok(cmd is not None and "-p" not in cmd
+   and not any("--dangerously" in c or "--permission" in c for c in cmd) and texto_pedido.strip() in cmd,
+   f"Validação: comando do Claude interativo, sem -p/flags de permissão ({cmd})")
+
+avisos = []
+p.messagebox.showinfo = lambda *a, **k: avisos.append(a)
+v.comando_para_abrir_claude = lambda pedido: None
+pn._val_mandar_claude(); pn.update()
+ok(pn._val_ultimo_comando_claude is None and avisos,
+   "Validação: Claude Code não encontrado avisa o usuário e copia o pedido")
+
+rel_ok = v.gerar_relatorio(v.Sessao([]), "Jarvis", agora=datetime(2099, 1, 1, 0, 0), pasta=Path("exportacoes"))
+ok(not v.relatorio_tem_falhas(rel_ok), "Validação: relatorio_tem_falhas() é False sem falha nenhuma")
+pn._val_atualizar_botao_claude(); pn.update()
+ok(pn.bt_val_claude.cget("state") == "disabled",
+   "Validação: botão 'Mandar para o Claude corrigir' desativado sem falhas no relatório")
+
 pn._fechar()
 print("FIM_VALIDACAO")
 """

@@ -843,6 +843,18 @@ def abrir_terminal_com(linha_de_comando: str, pasta, titulo: str) -> None:
     subprocess.Popen(["cmd", "/c", "start", titulo, "cmd", "/k", str(bat)], cwd=str(pasta))
 
 
+def abrir_com_comando(comando: list[str] | None, pasta) -> bool:
+    """Abre a janela de terminal ja pronta (validacao.comando_para_abrir_claude): Windows Terminal ou
+    cmd, ja rodando o Claude Code interativo. False = `comando` era None (Claude Code nao encontrado)."""
+    if not comando:
+        return False
+    if SIMULADO:
+        log.info("[simulado] terminal com o Claude: %s", comando)
+        return True
+    subprocess.Popen(comando, cwd=str(pasta))
+    return True
+
+
 # --- O proprio Mestre (painel, reiniciar) -----------------------------------
 def _python_sem_janela() -> str:
     """pythonw.exe roda sem abrir a janela preta."""

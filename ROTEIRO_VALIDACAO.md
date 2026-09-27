@@ -52,6 +52,7 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | (visual) olhe o ícone perto do relógio (bandeja) | Ícone novo, na cor escolhida em Aparência | (bandeja) |
 | (painel) abra o painel, ensine uma rotina nova por voz SEM fechar o painel, depois clique Salvar no painel | A rotina nova continua no config.yaml; uma rotina que você apagar no painel continua apagada | (painel) |
 | (painel) Sistema > Validar atualização → "Só novidades" → Começar; fale a frase que aparece; marque ✅/❌ (no ❌ diga "o certo era") → Parar | Mostra OUVI / ENTENDI (com o comando) / FIZ de cada frase e sugere ✅/❌; no fim cria `exportacoes/validacao_AAAA-MM-DD_HHMM.md` e cada ❌ vira FEEDBACK no MELHORIAS.md | (painel) |
+| (painel) depois de um relatório com falha, clique "🛠 Mandar para o Claude corrigir" | Salva o pedido em `exportacoes/pedido_correcao_*.md` e abre um terminal (Windows Terminal ou cmd) com o Claude Code interativo já com o pedido; sem falha nenhuma o botão fica desativado | (painel) |
 
 ## 2. Sempre testar (regressão fixa — todo dia a dia)
 
