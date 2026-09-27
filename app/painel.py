@@ -2431,6 +2431,219 @@ class Painel(ctk.CTk):
         from .comandos import ARQUIVO_MELHORIAS
         ARQUIVO_MELHORIAS.write_text(self.txt_melhorias.get("1.0", "end").rstrip() + "\n", encoding="utf-8")
 
+    # -----------------------------------------------------------------
+    #  Validar atualizacao (frases do ROTEIRO_VALIDACAO.md, uma por vez)
+    # -----------------------------------------------------------------
+    def _aba_validacao(self, pagina):
+        from . import validacao
+        self._val = None            # validacao.Sessao em andamento
+        self._val_captura = None    # o que o assistente registrou para a frase da tela
+        self._val_sugestao = None
+        self._val_errado_desde = 0.0   # clicou ❌: a proxima frase ouvida vira "o certo era"
+        f = secao(pagina, "Validar atualização",
+                  f"Depois de atualizar, fale as frases do roteiro uma por vez ao {self.nome} (ligado, como sempre). "
+                  "Para cada frase o painel mostra o que ele OUVIU, o que ENTENDEU (e qual comando atendeu) e o que "
+                  "FEZ, compara com o esperado e sugere ✅ ou ❌. Você confirma. No fim sai um relatório em "
+                  "exportacoes/ e cada ❌ vira um FEEDBACK na lista de melhorias.")
+        linha = ctk.CTkFrame(f, fg_color="transparent")
+        linha.pack(fill="x", padx=(32, 18), pady=4)
+        self.var_val_escolha = tk.StringVar(value="Só novidades")
+        ctk.CTkSegmentedButton(linha, values=list(validacao.ESCOLHAS), variable=self.var_val_escolha).pack(side="left")
+        self.bt_val_comecar = ctk.CTkButton(linha, text="▶  Começar", width=130, command=self._val_comecar)
+        self.bt_val_comecar.pack(side="left", padx=10)
+        self.rot_val_progresso = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        self.rot_val_progresso.pack(fill="x", padx=(32, 18), pady=(6, 0))
+        self.rot_val_frase = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
+                                          font=tema.fonte(18, True), text_color=tema.ROSA)
+        self.rot_val_frase.pack(fill="x", padx=(32, 18), pady=(2, 0))
+        self.rot_val_esperado = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
+                                             text_color=tema.TEXTO_FRACO)
+        self.rot_val_esperado.pack(fill="x", padx=(32, 18), pady=(0, 6))
+        self.rot_val_linhas = {}
+        for chave, rotulo in (("ouvi", "OUVI"), ("entendi", "ENTENDI"), ("fiz", "FIZ")):
+            lf = ctk.CTkFrame(f, fg_color="transparent")
+            lf.pack(fill="x", padx=(32, 18), pady=1)
+            ctk.CTkLabel(lf, text=rotulo, width=80, anchor="w", font=tema.fonte(13, True)).pack(side="left")
+            valor = ctk.CTkLabel(lf, text="-", anchor="w", justify="left", wraplength=700)
+            valor.pack(side="left", fill="x", expand=True)
+            self.rot_val_linhas[chave] = valor
+        self.rot_val_sugestao = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
+                                             font=tema.fonte(14, True))
+        self.rot_val_sugestao.pack(fill="x", padx=(32, 18), pady=(6, 2))
+        botoes = ctk.CTkFrame(f, fg_color="transparent")
+        botoes.pack(fill="x", padx=(32, 18), pady=4)
+        self.bt_val_ok = ctk.CTkButton(botoes, text="✅  Deu certo", width=130, command=lambda: self._val_marcar("ok"))
+        self.bt_val_ok.pack(side="left", padx=(0, 6))
+        self.bt_val_erro = ctk.CTkButton(botoes, text="❌  Deu errado", width=130, **PERIGO, command=self._val_errado)
+        self.bt_val_erro.pack(side="left", padx=6)
+        self._val_botoes = [self.bt_val_ok, self.bt_val_erro]
+        for texto, acao in (("Pular", lambda: self._val_marcar("pulado")), ("Repetir", self._val_repetir),
+                            ("◀ Anterior", self._val_anterior), ("■ Parar", self._val_parar)):
+            b = ctk.CTkButton(botoes, text=texto, width=96, **SECUNDARIO, command=acao)
+            b.pack(side="left", padx=4)
+            self._val_botoes.append(b)
+        # "o certo era..." (so aparece depois do ❌)
+        self.fr_val_certo = ctk.CTkFrame(f, fg_color="transparent")
+        ctk.CTkLabel(self.fr_val_certo, text="O certo era:", width=100, anchor="w").pack(side="left")
+        self.ent_val_certo = ctk.CTkEntry(self.fr_val_certo, width=420,
+                                          placeholder_text=f"digite, ou fale sem chamar o {self.nome}")
+        self.ent_val_certo.pack(side="left", padx=4, fill="x", expand=True)
+        ctk.CTkButton(self.fr_val_certo, text="Salvar ❌ e seguir", width=150, **PERIGO,
+                      command=self._val_confirmar_erro).pack(side="left", padx=4)
+        self.rot_val_resultado = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
+                                              text_color=tema.TEXTO_FRACO)
+        self.rot_val_resultado.pack(fill="x", padx=(32, 18), pady=(6, 0))
+        self.bt_val_relatorio = ctk.CTkButton(f, text="Abrir o relatório", width=150, **SECUNDARIO,
+                                              command=self._val_abrir_relatorio)
+        self._val_desenhar()
+
+    def _val_comecar(self):
+        from . import validacao
+        itens = validacao.escolher(validacao.ler_roteiro(), self.var_val_escolha.get())
+        if not itens:
+            self.rot_val_resultado.configure(text="Não achei frases no ROTEIRO_VALIDACAO.md para essa escolha.",
+                                             text_color=tema.AVISO)
+            return
+        self._val = validacao.Sessao(itens, self.var_val_escolha.get())
+        validacao.ligar_audio(True)   # o ouvido guarda o audio de cada frase (para o relatorio)
+        self.rot_val_resultado.configure(text="")
+        self.bt_val_relatorio.pack_forget()
+        self._val_nova_frase()
+        self._val_vigiar()
+
+    def _val_nova_frase(self):
+        self._val_captura, self._val_sugestao, self._val_errado_desde = None, None, 0.0
+        self.fr_val_certo.pack_forget()
+        self.ent_val_certo.delete(0, "end")
+        if self._val and self._val.acabou:
+            self._val_parar()
+            return
+        self._val_desenhar()
+
+    def _val_desenhar(self):
+        from . import validacao
+        s = self._val
+        ativo = s is not None and s.atual is not None
+        for b in self._val_botoes:
+            b.configure(state="normal" if ativo else "disabled")
+        self.bt_val_comecar.configure(text="↺  Recomeçar" if ativo else "▶  Começar")
+        if not ativo:
+            self.rot_val_progresso.configure(text="Escolha quais frases e clique em Começar.")
+            self.rot_val_frase.configure(text="")
+            self.rot_val_esperado.configure(text="")
+            self.rot_val_sugestao.configure(text="")
+            for rot in self.rot_val_linhas.values():
+                rot.configure(text="-")
+            return
+        item = s.atual
+        self.rot_val_progresso.configure(
+            text=f"Frase {s.indice + 1} de {len(s.itens)} · {validacao.NOMES_SECAO.get(item.secao, '')} › {item.grupo}")
+        if item.manual:
+            self.rot_val_frase.configure(text=f"Faça: {item.para_falar(self.palavra)}")
+        else:
+            self.rot_val_frase.configure(text=f"Fale: “{item.para_falar(self.palavra)}”")
+        comando = ", ".join(item.comandos) or item.esperado
+        self.rot_val_esperado.configure(text=f"O que deve acontecer: {item.o_que}   ·   esperado: {comando}")
+        c = self._val_captura or {}
+        entendi = c.get("entendi") or ""
+        if c.get("rota"):
+            entendi = f"{entendi}   →   {c['rota']}" if entendi else c["rota"]
+        for chave, texto in (("ouvi", c.get("ouvi")), ("entendi", entendi), ("fiz", c.get("fiz"))):
+            self.rot_val_linhas[chave].configure(text=texto or "-")
+        sug = self._val_sugestao
+        marca = {"ok": "Sugestão: ✅  ", "falha": "Sugestão: ❌  "}.get(sug, "")
+        cor = {"ok": tema.SUCESSO, "falha": tema.AVISO}.get(sug, tema.TEXTO_FRACO)
+        self.rot_val_sugestao.configure(text=marca + validacao.explicar(item, self._val_captura, sug), text_color=cor)
+
+    def _val_vigiar(self):
+        """Uma vez por segundo: o que o assistente registrou desde que a frase apareceu."""
+        from . import validacao
+        s = self._val
+        if s is None or s.atual is None:
+            return
+        try:
+            item = s.atual
+            if self._val_errado_desde:   # esperando o "o certo era..." falado
+                fala = validacao.fala_nova(self._val_errado_desde)
+                if fala and not self.ent_val_certo.get().strip():
+                    self.ent_val_certo.insert(0, fala)
+            elif not item.manual:
+                captura = validacao.capturar(s.exibida_em)
+                if captura != self._val_captura:
+                    self._val_captura = captura
+                    self._val_sugestao = validacao.conferir(item, captura)
+                    self._val_desenhar()
+        except Exception as erro:   # (arquivo sendo escrito pelo outro processo etc.: tenta de novo)
+            self.rot_val_resultado.configure(text=f"Não consegui ler o histórico agora: {erro}", text_color=tema.AVISO)
+        self.after(1000, self._val_vigiar)
+
+    def _val_marcar(self, veredito: str, certo_era: str = ""):
+        if not self._val or self._val.atual is None:
+            return
+        self._val.marcar(veredito, self._val_captura, self._val_sugestao, certo_era)
+        self._val_nova_frase()
+
+    def _val_errado(self):
+        self._val_errado_desde = time.time()
+        self.fr_val_certo.pack(fill="x", padx=(32, 18), pady=4, after=self.rot_val_sugestao)
+        self.ent_val_certo.focus_set()
+
+    def _val_confirmar_erro(self):
+        self._val_marcar("falha", self.ent_val_certo.get())
+
+    def _val_repetir(self):
+        if self._val:
+            self._val.mostrar()
+            self._val_nova_frase()
+
+    def _val_anterior(self):
+        if self._val and self._val.indice > 0:
+            self._val.mostrar(self._val.indice - 1)
+            self._val_nova_frase()
+
+    def _val_parar(self):
+        """Fecha a validacao: relatorio + FEEDBACK no MELHORIAS.md (tambem na caixa da pagina Melhorias)."""
+        from . import validacao
+        s, self._val = self._val, None
+        validacao.ligar_audio(False)
+        self.fr_val_certo.pack_forget()
+        self._val_desenhar()
+        if s is None or not s.resultados:
+            self.rot_val_resultado.configure(text="Validação parada (nenhuma frase conferida).",
+                                             text_color=tema.TEXTO_FRACO)
+            return
+        try:
+            self._val_relatorio = validacao.gerar_relatorio(s, self.nome)
+            self._val_relatorio_feedbacks(s)
+        except Exception as erro:
+            self.rot_val_resultado.configure(text=f"Não consegui gerar o relatório: {erro}", text_color=tema.AVISO)
+            return
+        lista = s.lista()
+        oks = sum(1 for _, r in lista if r["veredito"] == "ok")
+        falhas = sum(1 for _, r in lista if r["veredito"] == "falha")
+        extra = f" {falhas} FEEDBACK(s) entraram na lista de melhorias." if falhas else ""
+        self.rot_val_resultado.configure(
+            text=f"✓ {oks} ok · {falhas} falhas. Relatório: exportacoes/{self._val_relatorio.name}.{extra}",
+            text_color=tema.SUCESSO if not falhas else tema.AVISO)
+        self.bt_val_relatorio.pack(anchor="w", padx=(32, 18), pady=4)
+
+    def _val_relatorio_feedbacks(self, s) -> list[str]:
+        from . import validacao
+        from .comandos import ARQUIVO_MELHORIAS
+        linhas = validacao.salvar_feedbacks(s, ARQUIVO_MELHORIAS)
+        caixa = getattr(self, "txt_melhorias", None)
+        if linhas and caixa is not None:   # o "Salvar" grava a caixa por cima do arquivo: ela precisa ter as linhas
+            atual = caixa.get("1.0", "end").rstrip()
+            caixa.delete("1.0", "end")
+            caixa.insert("1.0", atual + "\n" + "\n".join(linhas) + "\n")
+        return linhas
+
+    def _val_abrir_relatorio(self):
+        from . import validacao
+        arquivo = validacao.ultimo_relatorio()
+        if arquivo:
+            sistema.abrir_arquivo(arquivo)
+
     # =================================================================
     #  Salvar
     # =================================================================
@@ -2585,6 +2798,9 @@ class Painel(ctk.CTk):
 
     def _fechar(self):
         self._parar_teste()
+        if getattr(self, "_val", None) is not None:   # validacao aberta: o ouvido para de guardar audio
+            from . import validacao
+            validacao.ligar_audio(False)
         servidor = getattr(self, "_servidor", None)
         if servidor:   # libera a porta ja (para um painel novo conseguir abrir logo em seguida)
             try:
@@ -2636,6 +2852,8 @@ PAGINAS = {
     "Histórico":         ("☰", "Pedidos, respostas e o que ele lembra de você.", Painel._aba_historico),
     "Aparência":         ("◐", "Cores, fonte e tamanho do texto.", Painel._aba_aparencia),
     "Melhorias":         ("✎", "Ideias e feedbacks para o Claude Code implementar.", Painel._aba_melhorias),
+    "Validar atualização": ("✔", "Fale as frases do roteiro e confira o que ele ouviu, entendeu e fez.",
+                            Painel._aba_validacao),
 }
 
 
@@ -2644,7 +2862,7 @@ GRUPOS_MENU = [
     ("VOZ E OUVIDO", ["Voz", "Áudio"]),
     ("APPS E SITES", ["YouTube", "Spotify", "Programas e sites", "Rotinas", "Atalhos"]),
     ("INTEGRAÇÕES", ["IPM e projetos", "Celular"]),
-    ("SISTEMA", ["Histórico", "Melhorias", "Aparência"]),
+    ("SISTEMA", ["Histórico", "Melhorias", "Validar atualização", "Aparência"]),
 ]
 
 

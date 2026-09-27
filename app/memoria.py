@@ -9,6 +9,7 @@ Fica na pasta memoria/ (a atualizacao pelo painel nunca mexe nela):
 import json
 import logging
 import threading
+import time
 from datetime import datetime
 
 from .config import PASTA_PROJETO
@@ -28,18 +29,19 @@ _trava = threading.Lock()
 # --- Historico ------------------------------------------------------------------------
 def registrar(pedido: str, resposta: str, tipo: str = "comando", extra: dict | None = None) -> None:
     """extra (para a exportacao): "entendi" (a frase depois do vocabulario) e "rota" (qual comando
-    atendeu, "ia", "nao_entendi"...)."""
+    atendeu, "ia", "nao_entendi"...). "ts" (segundos) serve para a validacao achar o pedido certo."""
     if not (pedido or "").strip() and not (resposta or "").strip():
         return
     item = {"data": datetime.now().strftime("%d/%m/%Y %H:%M"), "pedido": pedido.strip(),
-            "resposta": (resposta or "").strip(), "tipo": tipo, **(extra or {})}
+            "resposta": (resposta or "").strip(), "tipo": tipo, "ts": round(time.time(), 2), **(extra or {})}
     _acrescentar(ARQUIVO_HISTORICO, item, MAXIMO_HISTORICO)
 
 
 def ouvido(texto: str, **dados) -> None:
     """Toda frase transcrita pelo microfone, inclusive as ignoradas (sem a palavra de ativacao).
     Serve para descobrir onde o reconhecimento de fala erra (painel > Histórico > Exportar)."""
-    item = {"data": datetime.now().strftime("%d/%m/%Y %H:%M:%S"), "texto": (texto or "").strip(), **dados}
+    item = {"data": datetime.now().strftime("%d/%m/%Y %H:%M:%S"), "texto": (texto or "").strip(),
+            "ts": round(time.time(), 2), **dados}
     _acrescentar(ARQUIVO_OUVIDO, item, MAXIMO_OUVIDO)
 
 

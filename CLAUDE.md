@@ -11,6 +11,7 @@ fale com ele em português simples, explique o que mudou e o que ele precisa tes
 | `app/ouvido.py` | Laço do microfone: corta frases, checa "mestre", janela de conversa, atualiza o estado |
 | `app/audio.py` | Segmentador (limite de volume), ganho, normalização, Transcritor (faster-whisper), diagnóstico |
 | `app/locutor.py` | "Responder só à minha voz": SpeechBrain ECAPA (`modelos/locutor_ecapa`, carrega em segundo plano), impressão em `%APPDATA%\Mestre\voz_dono.json`; `Ouvido._voz_do_dono` confere antes de executar (celular/Telegram não passa por ela) |
+| `app/validacao.py` | "Validar atualização" (painel > Sistema): lê `ROTEIRO_VALIDACAO.md`, casa OUVI/ENTENDI/FIZ pelo `ts` do histórico, gera relatório em `exportacoes/validacao_*.md` e FEEDBACK no MELHORIAS.md; `ultimo_relatorio()` |
 | `app/estado.py` | O que o Mestre está fazendo agora (ouvindo/gravando/...) + pausa por arquivo |
 | `app/overlay.py` | Indicador na tela (tkinter), roda na linha principal; a escuta roda numa thread |
 | `app/painel.py` | Central + painel (customtkinter). Menu lateral em grupos (`GRUPOS_MENU`); cada seção é um cartão: `f = secao(pagina, "Título", "dica")` (dica longa vira "mais ›"; títulos em `RECOLHIDAS` começam fechados). `TabelaChaveValor`: páginas de 40 (◀ ▶) + busca ao digitar; aguenta milhares |

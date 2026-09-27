@@ -40,7 +40,7 @@
 31. **Etapa 28** (versão 10): [Extensão do Brave, sites prontos, monitores por marca, vocabulário amplo, ditado caprichado](#etapa-28--versão-10)
 32. **Etapa 29** (versão 11): [Assessor x Mestre, pensando em silêncio, YouTube direto, janelas e abas nos monitores, exportar o histórico](#etapa-29--versão-11)
 33. **Etapa 30** (versão 12): [Voz Kokoro e Azure, modo descanso, streamings, juntar janelas, áudios do celular](#etapa-30--versão-12)
-34. **Etapa 31** (versão 13): [Painel novo, streamings digitando na busca, tela certa do YouTube, IA sem "pode falar", vozes Natural e ElevenLabs, aviso do Telegram, desligar na hora](#etapa-31--versão-13)
+34. **Etapa 31** (versão 13): [Painel novo, streamings digitando na busca, tela certa do YouTube, IA sem "pode falar", vozes Natural e ElevenLabs, aviso do Telegram, desligar na hora, validar a atualização no painel](#etapa-31--versão-13)
 35. [Personalizar: canais, programas, sites e rotinas](#personalizar)
 36. [Lista de todos os comandos de voz](#lista-de-comandos)
 37. [Problemas comuns e soluções](#problemas-comuns)
@@ -1387,6 +1387,22 @@ Quando chega algo do celular, o indicador fica **azul** por alguns segundos (*"�
 ### 31.8 Desligar na hora
 - *"assessor, desliga"*, *"pode desligar"*, *"desliga o assessor"*, *"encerra por hoje"*: ele se despede e fecha. Antes, sem o nome certo, a frase ia para a IA e demorava.
 - Se algo segurar o programa (microfone, internet), ele fecha em no máximo 2 segundos.
+
+### 31.9 Validar a atualização dentro do painel
+Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por frase:
+1. Depois de atualizar, fale *"assessor, reinicia"* (o assistente precisa estar **ligado**: é ele quem ouve).
+2. Painel > **Sistema** > **Validar atualização**. Escolha **Só novidades**, **Só sempre testar** ou **Tudo** e clique **▶ Começar**.
+3. Aparece uma frase (ex.: *Fale: "Assessor, que horas são"*) e o que deve acontecer. **Fale normalmente**, como no dia a dia.
+4. Em 1 ou 2 segundos aparecem três linhas:
+   - **OUVI**: o que o reconhecimento de voz escreveu;
+   - **ENTENDI**: a frase depois do vocabulário e **qual comando atendeu** (ex.: `_cmd_hora_data`);
+   - **FIZ**: o que ele respondeu.
+   O painel já sugere **✅** (bateu com o esperado) ou **❌**.
+5. Confirme: **✅ Deu certo** ou **❌ Deu errado**. No ❌ aparece "O certo era:": **digite**, ou **fale sem chamar o assistente** (sem a palavra de ativação) que o painel preenche sozinho. Depois **Salvar ❌ e seguir**.
+6. Outros botões: **Pular**, **Repetir** (fale de novo a mesma frase), **◀ Anterior** e **■ Parar**.
+7. Ao parar (ou no fim da lista) sai o relatório `exportacoes/validacao_AAAA-MM-DD_HHMM.md` (quantos ok, quantas falhas e os detalhes de cada falha, com o áudio) e **cada ❌ vira um item FEEDBACK** na lista de Melhorias, pronto para o Claude Code corrigir. Botão **Abrir o relatório** para ver.
+
+Linhas "(painel)" ou "(visual)" do roteiro não têm frase para falar: faça o que a tela diz e marque ✅ ou ❌. Enquanto a validação está aberta, o assistente guarda o áudio de cada frase em `logs/validacao/` (só as últimas 120).
 
 ---
 

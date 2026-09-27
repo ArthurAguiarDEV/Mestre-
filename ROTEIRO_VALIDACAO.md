@@ -29,7 +29,7 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | Frase | O que deve acontecer | Comando esperado |
 |---|---|---|
 | `Mestre, vou te mostrar uma nova rotina` | Indicador muda pra "gravando"; confirma que começou | `_cmd_ensinar_rotina` |
-| `Mestre, abre o Gmail` (ainda gravando) | Executa normalmente E grava esse passo na rotina | `_cmd_ensinar_rotina` |
+| `Mestre, abre o Gmail` (ainda gravando) | Executa normalmente E grava esse passo na rotina | `_cmd_abrir` |
 | `Mestre, pronto` | Pergunta a frase pra chamar a rotina depois | `_cmd_ensinar_rotina` |
 | `<sua frase, ex.: "modo revisão">` | Confirma quantos passos e frases ficaram salvos | `_cmd_ensinar_rotina` |
 | `Mestre, partiu modo revisão` | Roda a rotina que você acabou de ensinar | `_cmd_rotinas` |
@@ -51,6 +51,7 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | (automático) `venv\Scripts\python -m testes.teste_basico` | Linha "Nenhum erro escondido nos botões" fecha OK, teste completo 177 de 177 | (teste automático) |
 | (visual) olhe o ícone perto do relógio (bandeja) | Ícone novo, na cor escolhida em Aparência | (bandeja) |
 | (painel) abra o painel, ensine uma rotina nova por voz SEM fechar o painel, depois clique Salvar no painel | A rotina nova continua no config.yaml; uma rotina que você apagar no painel continua apagada | (painel) |
+| (painel) Sistema > Validar atualização → "Só novidades" → Começar; fale a frase que aparece; marque ✅/❌ (no ❌ diga "o certo era") → Parar | Mostra OUVI / ENTENDI (com o comando) / FIZ de cada frase e sugere ✅/❌; no fim cria `exportacoes/validacao_AAAA-MM-DD_HHMM.md` e cada ❌ vira FEEDBACK no MELHORIAS.md | (painel) |
 
 ## 2. Sempre testar (regressão fixa — todo dia a dia)
 

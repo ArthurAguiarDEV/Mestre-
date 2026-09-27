@@ -927,6 +927,159 @@ if ok and ap["cor"] == "Azul" and ap["fonte"] == "Calibri" and ap["tamanho"] == 
 """
 
 
+VALIDACAO = r"""
+# Validar atualizacao: parser do roteiro, casamento com historico simulado, relatorio e FEEDBACK
+import time, traceback, tkinter as tk
+from datetime import datetime
+from pathlib import Path
+from app import validacao as v
+
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+
+ROTEIRO = '''# Roteiro
+Texto solto | com barra que nao e tabela
+
+## 1. Novidades (desta leva)
+
+### Grupo A
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, que horas são` | Fala a hora | `_cmd_hora_data` |
+| `Mestre, abre a|b` | Pipe dentro da crase | `_cmd_abrir` |
+| `Mestre, o que é um buraco negro` | Vai pensar | (vai pensar, sem comando) |
+| (painel) clique em Salvar | Salva | (painel) |
+| Toque um vídeo dizendo "Mestre, ..." | NÃO executa | (ignorado, sem comando) |
+| `Mestre, vou te mostrar uma nova rotina` → `Mestre, cancela a rotina` | Sai sem salvar | `_cmd_ensinar_rotina` |
+| linha quebrada sem colunas
+
+## 2. Sempre testar (regressão)
+
+| Frase | O que deve acontecer | Comando esperado |
+|:--|:--|:--|
+| `Mestre, bora voltar a trabalhar` | Acorda | (acorda no ouvido, sem `_cmd_`) |
+| `Mestre, abre o Gmail` | Abre o Gmail | `_cmd_abrir` \| `_cmd_sites` |
+'''
+itens = v.ler_roteiro(texto=ROTEIRO)
+print("ITENS", [(i.secao, i.tipo, i.comandos) for i in itens])
+ok(len(itens) == 9, f"Validação: parser acha as 9 linhas do roteiro de teste ({len(itens)})")
+ok(itens[0].comandos == ["_cmd_hora_data"] and itens[0].grupo == "Grupo A" and itens[0].secao == "novidades",
+   "Validação: frase, grupo, seção e comando esperado")
+ok(itens[1].falas == ["Mestre, abre a|b"], "Validação: '|' dentro da crase não quebra a coluna")
+ok(itens[2].tipo == "ia" and itens[3].manual and itens[4].tipo == "ignorado", "Validação: tipos IA, painel e ignorado")
+ok(itens[5].para_falar("Jarvis") == "Jarvis, vou te mostrar uma nova rotina → Jarvis, cancela a rotina",
+   "Validação: várias falas e a palavra de ativação no lugar de Mestre")
+ok(itens[6].o_que == "" and itens[6].comandos == [], "Validação: linha quebrada não derruba o parser")
+ok(itens[7].tipo == "acordar" and itens[7].secao == "sempre" and itens[8].comandos == ["_cmd_abrir", "_cmd_sites"],
+   "Validação: seção Sempre testar, acordar e dois comandos esperados")
+ok(len(v.escolher(itens, "Só novidades")) == 7 and len(v.escolher(itens, "Só sempre testar")) == 2,
+   "Validação: escolher só novidades / só sempre testar")
+reais = v.ler_roteiro()
+ok(len(reais) >= 20 and any(i.secao == "novidades" for i in reais) and any(i.secao == "sempre" for i in reais)
+   and any("Validar atualização" in (i.frase + i.o_que) for i in reais),
+   f"Validação: lê o ROTEIRO_VALIDACAO.md de verdade ({len(reais)} frases, com a linha deste recurso)")
+
+# historico simulado
+t0 = 1_000_000.0
+hist = [
+    {"ts": t0 - 50, "tipo": "comando", "pedido": "velho", "entendi": "velho", "rota": "_cmd_abrir", "resposta": "x"},
+    {"ts": t0 + 3, "tipo": "comando", "pedido": "Mestre, que horas são", "entendi": "que horas sao",
+     "rota": "_cmd_hora_data", "resposta": "São dez horas."},
+]
+ouv = [{"ts": t0 - 60, "texto": "antigo", "chamou": True},
+       {"ts": t0 + 2, "texto": "Mestre, que horas são?", "chamou": True, "audio": "logs/validacao/a.wav"}]
+c = v.capturar(t0, hist, ouv)
+ok(c and c["ouvi"] == "Mestre, que horas são?" and c["rota"] == "_cmd_hora_data" and c["fiz"] == "São dez horas."
+   and c["audio"] == "logs/validacao/a.wav", f"Validação: pega OUVI/ENTENDI/FIZ depois da frase aparecer ({c})")
+ok(v.conferir(itens[0], c) == "ok", "Validação: comando certo sugere ✅")
+ok(v.capturar(t0 + 10, hist, ouv) is None, "Validação: nada novo = esperando")
+hist2 = hist + [{"ts": t0 + 20, "tipo": "comando", "pedido": "Mestre abre o gmail", "entendi": "abre o gmail",
+                 "rota": "ia", "resposta": ""},
+                {"ts": t0 + 25, "tipo": "ia virou comando", "pedido": "abre o gmail", "entendi": "abre gmail",
+                 "ia_texto": "abre o gmail", "rota": "_cmd_youtube"},
+                {"ts": t0 + 26, "tipo": "comando", "pedido": "isso ta errado", "rota": "_cmd_feedback", "resposta": "?"}]
+c2 = v.capturar(t0 + 15, hist2, ouv + [{"ts": t0 + 19, "texto": "Mestre, abre o Gmail.", "chamou": True}])
+ok(c2["rota"] == "_cmd_youtube" and "IA:" in c2["entendi"] and v.conferir(itens[8], c2) == "falha",
+   f"Validação: comando errado (via IA) sugere ❌ e ignora o 'isso tá errado' ({c2})")
+ok(v.conferir(itens[4], None) == "ok" and v.conferir(itens[2], {"rota": "ia"}) == "ok"
+   and v.conferir(itens[7], {"rota": "saiu do descanso"}) == "ok" and v.conferir(itens[3], c) is None,
+   "Validação: ignorado, IA, acordar e painel")
+ok(v.conferir(itens[5], {"rota": "rotina falada: cancelou"}) == "ok", "Validação: rota equivalente (rotina falada)")
+ok(v.capturar(0, [{"data": "27/09/2026 13:02", "tipo": "comando", "pedido": "x", "rota": "_cmd_abrir"}], []) is not None,
+   "Validação: registro antigo (sem ts) também é lido")
+ok(v.fala_nova(t0 + 18, ouv + [{"ts": t0 + 30, "texto": "Era pra abrir o Gmail", "chamou": False}])
+   == "Era pra abrir o Gmail", "Validação: 'o certo era' falado")
+
+# sessao, relatorio e FEEDBACK (numa copia do MELHORIAS)
+s = v.Sessao(itens[:3] + [itens[8]], "Tudo")
+s.marcar("ok", c, "ok")
+s.marcar("pulado")
+s.mostrar(1); s.marcar("ok", {"rota": "ia"}, "ok")
+s.marcar("ok", {"rota": "ia"}, "ok")
+s.marcar("falha", c2, "falha", "abrir o Gmail no navegador")
+ok(s.acabou and len(s.resultados) == 4 and s.resultados[1]["veredito"] == "ok",
+   "Validação: sessão anda, volta (Anterior) e termina")
+pasta = Path("exportacoes_teste")
+rel = v.gerar_relatorio(s, "Jarvis", agora=datetime(2026, 9, 27, 14, 5), pasta=pasta)
+texto = rel.read_text(encoding="utf-8")
+ok(rel.name == "validacao_2026-09-27_1405.md" and "**3 ok**" in texto and "**1 falhas**" in texto
+   and "abrir o Gmail no navegador" in texto and "_cmd_youtube" in texto and "Mestre, abre o Gmail." in texto,
+   "Validação: relatório com resumo e a falha (ouvi, entendi, fiz, esperado, o certo era)")
+ok(v.ultimo_relatorio(pasta) == rel, "Validação: ultimo_relatorio() acha o relatório")
+copia = Path("MELHORIAS_copia.md"); copia.write_text("# Melhorias\n- [ ] ideia velha", encoding="utf-8")
+linhas = v.salvar_feedbacks(s, copia, agora=datetime(2026, 9, 27))
+m = copia.read_text(encoding="utf-8")
+ok(len(linhas) == 1 and "- [ ] ideia velha\n- [ ] (27/09/2026) FEEDBACK: ouvi \"Mestre, abre o Gmail.\" · entendi \"" in m
+   and "· respondi \"(não falou nada)\" · o certo era: abrir o Gmail no navegador" in m,
+   "Validação: cada ❌ vira FEEDBACK no MELHORIAS.md (formato do CLAUDE.md)")
+s3 = v.Sessao(itens[:1]); s3.marcar("falha", c, "ok", "")
+ok("[áudio: logs/validacao/a.wav]" in v.linha_feedback(itens[0], s3.resultados[0]), "Validação: FEEDBACK leva o áudio")
+
+# audio so com a validacao ligada
+v.ligar_audio(False)
+ok(v.guardar_audio(b"\0\0" * 1600) == "", "Validação: sem a página aberta não guarda áudio")
+v.ligar_audio(True)
+cam = v.guardar_audio(b"\0\0" * 1600)
+ok(cam.startswith("logs/validacao/") and Path(cam).exists(), f"Validação: com a página aberta guarda o áudio ({cam})")
+v.ligar_audio(False)
+
+# painel: a pagina abre e acompanha o historico (arquivos de memoria da copia)
+erros = []
+tk.Tk.report_callback_exception = lambda self, e, vv, tb: erros.append("".join(traceback.format_exception(e, vv, tb)))
+from app import memoria
+import app.painel as p
+pn = p.Painel(); pn.update()
+pn.mostrar_pagina("Validar atualização"); pn.update()
+pn.var_val_escolha.set("Só sempre testar")
+pn._val_comecar(); pn.update()
+item = pn._val.atual
+ok(pn.rot_val_frase.cget("text").startswith("Fale:") and v.ARQUIVO_ATIVA.exists(),
+   "Validação: página abre e mostra a 1ª frase " + repr(pn.rot_val_frase.cget("text")))
+time.sleep(0.05)
+memoria.ouvido(item.para_falar("Mestre"), chamou=True)
+memoria.registrar(item.para_falar("Mestre"), "Rodando a rotina.", "comando",
+                  {"entendi": "bom dia", "rota": item.comandos[0] if item.comandos else "ia"})
+pn._val_vigiar(); pn.update()
+print("TELA", pn.rot_val_linhas["entendi"].cget("text"), "|", pn.rot_val_sugestao.cget("text"))
+ok(pn._val_sugestao == "ok" and "Rodando a rotina." in pn.rot_val_linhas["fiz"].cget("text"),
+   "Validação: painel mostra OUVI/ENTENDI/FIZ e sugere ✅")
+pn._val_marcar("ok"); pn.update()
+pn._val_errado(); pn.update()
+pn.ent_val_certo.insert(0, "era outra coisa"); pn._val_confirmar_erro(); pn.update()
+pn._val_repetir(); pn._val_marcar("pulado"); pn._val_anterior(); pn.update()
+pn._val_parar(); pn.update()
+rel = v.ultimo_relatorio()
+caixa = pn.txt_melhorias.get("1.0", "end")
+ok(rel is not None and "era outra coisa" in rel.read_text(encoding="utf-8") and "FEEDBACK:" in caixa
+   and "era outra coisa" in caixa and "era outra coisa" in Path("MELHORIAS.md").read_text(encoding="utf-8")
+   and not v.ARQUIVO_ATIVA.exists(),
+   "Validação: Parar gera o relatório e o FEEDBACK (arquivo e caixa da página Melhorias)")
+ok(not erros, "Validação: página sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
+pn._fechar()
+print("FIM_VALIDACAO")
+"""
+
+
 def main() -> int:
     print("\nTESTE AUTOMATICO DO MESTRE (numa copia; seu config nao e tocado)\n")
     with tempfile.TemporaryDirectory(prefix="mestre_teste_") as tmp:
@@ -1043,6 +1196,14 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
         if "FIM_VOZ_DONO" not in saida:
             conferir(False, "Voz do dono: o teste rodou até o fim", saida[-1500:])
+
+        print("\n[Validar atualização]")
+        cod, saida = rodar(pasta, VALIDACAO, espera=120)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_VALIDACAO" not in saida:
+            conferir(False, "Validação: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Atualização por .zip]")
         destino = copiar_projeto(Path(tmp) / "outra")

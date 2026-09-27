@@ -161,9 +161,13 @@ class Ouvido:
                     guardar_diagnostico(audio, frase)
                 achou, comando = extrair_comando(frase, self.variacoes) if frase else (False, "")
                 if frase:   # (exportacao do historico: inclusive o que foi ignorado)
-                    from . import memoria
+                    from . import memoria, validacao
+                    extra = {}
+                    arquivo_audio = validacao.guardar_audio(audio)   # so com a validacao aberta no painel
+                    if arquivo_audio:
+                        extra["audio"] = arquivo_audio
                     memoria.ouvido(frase, chamou=achou, conversa=em_conversa, ditado=bool(e.get("ditado_desde")),
-                                   audio_seg=round(duracao, 1), transcricao_seg=round(time.time() - inicio, 1))
+                                   audio_seg=round(duracao, 1), transcricao_seg=round(time.time() - inicio, 1), **extra)
                 if frase and not achou and not em_conversa and e.get("descanso") and frase_de_volta(frase):
                     achou, comando = True, normalizar(frase)   # descansando: "bora voltar a trabalhar" acorda
                 if not frase or (not achou and not em_conversa):
