@@ -34,8 +34,9 @@ class Revisao(ctk.CTk):
         nome = self.dados.get("nome") or "Mestre"
         self.title(f"{nome} · Revisar o ditado")
         largura, altura = 920, 540
-        self.geometry(f"{largura}x{altura}+{(self.winfo_screenwidth() - largura) // 2}+"
-                      f"{max(0, (self.winfo_screenheight() - altura) // 2 - 40)}")
+        x, y = tema.posicao_janela((self.winfo_screenwidth() - largura) // 2,
+                                    max(0, (self.winfo_screenheight() - altura) // 2 - 40))
+        self.geometry(f"{largura}x{altura}+{x}+{y}")
         self.minsize(560, 380)
         self.attributes("-topmost", True)
         self.after(1500, lambda: self.attributes("-topmost", False))

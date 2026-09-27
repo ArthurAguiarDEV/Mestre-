@@ -4,6 +4,7 @@ O padrao e grafite escuro com rosa claro. Voce escolhe outra cor de destaque, ou
 a fonte e o tamanho do texto no Painel > Aparencia (fica salvo em config.yaml > aparencia).
 """
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -31,6 +32,20 @@ FONTES = [  # todas vem com o Windows 10/11 (o painel so mostra as que existem n
 ]
 TAMANHOS = {"Normal": 14, "Grande": 16, "Maior": 18}
 PADRAO = {"cor": "Rosa", "fundo": "Grafite", "fonte": "Segoe UI", "tamanho": "Normal"}
+
+FORA_DA_TELA = (-32000, -32000)   # ponto fora de qualquer monitor real
+
+
+def testando() -> bool:
+    """True durante o teste automatico (testes/teste_basico.py, MESTRE_SIMULAR=1): nenhuma
+    janela pode aparecer na tela. No uso normal (sem essa variavel) nada muda."""
+    return os.environ.get("MESTRE_SIMULAR") == "1"
+
+
+def posicao_janela(x: int, y: int) -> tuple[int, int]:
+    """x, y normais, OU um ponto fora da tela durante o teste automatico (os widgets
+    continuam existindo e funcionando: so a posicao muda, nada some da janela em si)."""
+    return FORA_DA_TELA if testando() else (x, y)
 
 
 # --- Contas de cor ------------------------------------------------------------------

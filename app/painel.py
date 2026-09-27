@@ -348,6 +348,7 @@ class Painel(ctk.CTk):
         largura, altura = 1180, 800
         x = max(0, (self.winfo_screenwidth() - largura) // 2)   # centralizado no monitor principal
         y = max(0, (self.winfo_screenheight() - altura) // 2 - 20)
+        x, y = tema.posicao_janela(x, y)
         self.geometry(f"{largura}x{altura}+{x}+{y}")
         self.minsize(980, 660)
         configuracao.migrar()
@@ -1732,7 +1733,8 @@ class Painel(ctk.CTk):
             janela = ctk.CTkToplevel(self)
             janela.overrideredirect(True)
             janela.attributes("-topmost", True)
-            janela.geometry(f"260x260+{m['x'] + m['largura'] // 2 - 130}+{m['y'] + m['altura'] // 2 - 130}")
+            x, y = tema.posicao_janela(m['x'] + m['largura'] // 2 - 130, m['y'] + m['altura'] // 2 - 130)
+            janela.geometry(f"260x260+{x}+{y}")
             ctk.CTkLabel(janela, text=str(m["numero"]), text_color=tema.ROSA, font=tema.fonte(130, True)).pack(expand=True)
             ctk.CTkLabel(janela, text=m.get("descricao", ""), font=tema.fonte(16, True)).pack(pady=(0, 16))
             janela.after(3000, janela.destroy)

@@ -62,6 +62,7 @@ class Indicador:
             raiz.attributes("-transparentcolor", TRANSPARENTE)
 
         x, y = self._posicao_salva()
+        x, y = tema.posicao_janela(x, y)
         raiz.geometry(f"{LARGURA}x{ALTURA}+{x}+{y}")
         self.tela = tk.Canvas(raiz, width=LARGURA, height=ALTURA_ABERTA, bg=fundo_janela,
                               highlightthickness=0, bd=0)
