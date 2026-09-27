@@ -11,7 +11,7 @@ import logging
 import queue
 import time
 
-from . import estado
+from . import estado, locutor
 from .audio import BLOCO, TAXA, Segmentador, Transcritor, aplicar_ganho, guardar_diagnostico, nivel, sugerir_limiar
 from .config import caminho_do_projeto, palavras_ativacao
 from .texto import extrair_comando, frase_de_volta, normalizar
@@ -47,6 +47,9 @@ class Ouvido:
             gramatica = json.dumps(sorted({normalizar(v) for v in self.variacoes}) + ["[unk]"])
             self._vigia = (KaldiRecognizer, Model(str(pasta)), gramatica)
 
+        # Responder so a voz do dono (painel > Audio > Minha voz). Carrega em segundo plano.
+        self.verificador = locutor.Verificador.do_config(cfg)
+
         self.transcritor = Transcritor(o.get("modelo_whisper", "small"), o.get("precisao", "equilibrado"),
                                        o.get("dispositivo", "auto"), palavras_de_dica(cfg), palavra=self.variacoes[0])
 
@@ -57,6 +60,19 @@ class Ouvido:
         rec.AcceptWaveform(audio)
         texto = json.loads(rec.FinalResult()).get("text", "")
         return any(p != "[unk]" for p in texto.split())
+
+    def _voz_do_dono(self, audio: bytes, frase: str, em_conversa: bool) -> bool:
+        """A frase ia ser executada: e a voz do dono? (desligado/sem cadastro/modelo carregando: sim)."""
+        aceita, nota, motivo = self.verificador.verificar(audio, em_conversa=em_conversa)
+        if nota is not None:
+            log.info("Voz: nota %.2f (exigência %.2f) -> %s", nota, self.verificador.exigencia, motivo)
+        if aceita:
+            return True
+        from . import memoria
+        memoria.registrar(frase, f"(ignorado: voz não reconhecida, nota {nota:.2f})", tipo="voz_nao_reconhecida",
+                          extra={"nota_voz": round(nota, 2), "exigencia_voz": round(self.verificador.exigencia, 2)})
+        memoria.ouvido(frase, voz_nao_reconhecida=round(nota, 2))
+        return False
 
     def _calibrar(self, fila: queue.Queue) -> float:
         estado.definir("iniciando", "medindo o ruído do ambiente...")
@@ -151,6 +167,9 @@ class Ouvido:
                 if frase and not achou and not em_conversa and e.get("descanso") and frase_de_volta(frase):
                     achou, comando = True, normalizar(frase)   # descansando: "bora voltar a trabalhar" acorda
                 if not frase or (not achou and not em_conversa):
+                    estado.definir("conversa" if em_conversa else "ouvindo")
+                    continue
+                if not self._voz_do_dono(audio, frase, em_conversa):
                     estado.definir("conversa" if em_conversa else "ouvindo")
                     continue
                 if achou and self.acordar_tela:

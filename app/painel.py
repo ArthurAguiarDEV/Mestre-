@@ -369,6 +369,9 @@ class Painel(ctk.CTk):
         self._niveis: list[float] = []
         self._gravacao: bytes | None = None
         self._gravando = False
+        self._ao_gravar = None        # (cadastro/teste da voz: quem recebe a proxima frase gravada)
+        self._voz_extrair = None      # (modelo de reconhecimento da voz, carregado so quando precisa)
+        self._cad_frases: list[str] | None = None
         self._transcritores: dict = {}
 
         self.grid_columnconfigure(1, weight=1)
@@ -709,6 +712,37 @@ class Painel(ctk.CTk):
         self.resultado_teste.pack(fill="x", padx=(28, 18), pady=4)
         self.resultado_teste.insert("1.0", "O resultado do teste aparece aqui.")
 
+        f = secao(pagina, "Minha voz",
+                  f"Para o {self.nome} obedecer só a você, e não a um vídeo tocando na caixa de som ou a outra pessoa. "
+                  "1) Clique em “Cadastrar minha voz” e leia em voz alta as frases que aparecem, uma de cada vez, do "
+                  "seu jeito normal (a gravação passa sozinha para a próxima quando você faz uma pausa). "
+                  "2) A chave “Responder só à minha voz” liga sozinha no fim. 3) Clique em “Testar” e fale uma frase: "
+                  "aparece a nota de 0 a 1 (quanto mais perto de 1, mais parecida com a sua voz). "
+                  "A régua “Quão exigente” é a nota mínima: mais para a direita, mais rígido. "
+                  "Tudo roda no seu PC, grátis. Salve e reinicie para valer.")
+        from . import locutor
+        ligado, exigencia = locutor.opcoes(self.cfg)
+        self.var_so_minha_voz = tk.BooleanVar(value=ligado)
+        linha_campo(f, "Responder só à minha voz", lambda p: ctk.CTkSwitch(
+            p, text="ignorar vozes que não são a minha (vídeos, outras pessoas)", variable=self.var_so_minha_voz,
+            command=self._mostrar_situacao_voz))
+        self.var_exig_voz = tk.DoubleVar(value=exigencia)
+        linha_campo(f, "Quão exigente", lambda p: ctk.CTkSlider(
+            p, from_=0.2, to=0.7, number_of_steps=50, variable=self.var_exig_voz,
+            command=lambda v: self._mostrar_situacao_voz()))
+        bts = ctk.CTkFrame(f, fg_color="transparent")
+        bts.pack(fill="x", padx=(28, 18), pady=4)
+        self.bt_cadastrar_voz = ctk.CTkButton(bts, text="● Cadastrar minha voz", command=self._cadastrar_voz)
+        self.bt_cadastrar_voz.pack(side="left", padx=4)
+        ctk.CTkButton(bts, text="Testar", **SECUNDARIO, command=self._testar_voz).pack(side="left", padx=4)
+        ctk.CTkButton(bts, text="Apagar cadastro", **SECUNDARIO, command=self._apagar_voz).pack(side="left", padx=4)
+        self.rot_situacao_voz = ctk.CTkLabel(f, text="", anchor="w", justify="left", text_color=tema.TEXTO_FRACO)
+        self.rot_situacao_voz.pack(fill="x", padx=(32, 18))
+        self.txt_voz = ctk.CTkTextbox(f, height=80, wrap="word")
+        self.txt_voz.pack(fill="x", padx=(28, 18), pady=4)
+        self._voz_msg("Aqui aparecem a frase para ler no cadastro e a nota do teste.")
+        self._mostrar_situacao_voz()
+
         f = secao(pagina, "Ajustes de captação")
         self.var_auto = tk.BooleanVar(value=not o.get("limiar_volume"))
         linha_campo(f, "Limite automático ao ligar", lambda p: ctk.CTkSwitch(p, text="medir o ruído sozinho toda vez que ele liga",
@@ -825,6 +859,9 @@ class Painel(ctk.CTk):
                     self._gravacao = frase or b"".join(self._seg._frase)
                     self._mostrar(f"Gravado: {len(self._gravacao) / (TAXA * 2):.1f}s de áudio. "
                                   "Clique em “Ouvir gravação” ou “Transcrever”.")
+                    if self._ao_gravar:
+                        entregar, self._ao_gravar = self._ao_gravar, None
+                        entregar(self._gravacao)
         self._niveis = self._niveis[-60:]
         self._desenhar_nivel()
         self.rotulo_valores.configure(
@@ -900,6 +937,153 @@ class Painel(ctk.CTk):
                 msg = f"Erro ao transcrever: {erro}"
             self.after(0, lambda: self._mostrar(msg))
         threading.Thread(target=trabalho, daemon=True).start()
+
+    # --- Minha voz (responder só ao dono) ---------------------------------
+    def _voz_msg(self, texto: str):
+        self.txt_voz.delete("1.0", "end")
+        self.txt_voz.insert("1.0", texto)
+
+    def _mostrar_situacao_voz(self):
+        from . import locutor
+        info = locutor.info_impressao()
+        cad = (f"Voz cadastrada em {info.get('data', '?')} ({info.get('frases', '?')} frases)." if info.get("impressao")
+               else "Voz ainda não cadastrada.")
+        if self.var_so_minha_voz.get() and not info.get("impressao"):
+            cad += " A chave está ligada, mas sem cadastro ele continua obedecendo a qualquer voz."
+        self.rot_situacao_voz.configure(text=f"{cad}   Exigência: {self.var_exig_voz.get():.2f}")
+
+    def _gravar_para(self, receber) -> bool:
+        """Grava UMA frase pelo teste do microfone e entrega o audio a receber(audio)."""
+        if not self._stream:
+            self._alternar_teste()
+            if not self._stream:
+                return False
+        self._seg = Segmentador(self.var_limiar.get(), self.var_silencio.get())
+        self._tempo_gravado = 0.0
+        self._ao_gravar = receber
+        self._gravando = True
+        return True
+
+    def _com_modelo_voz(self, trabalho):
+        """Roda trabalho(extrair) numa thread, carregando o modelo antes (só na 1a vez)."""
+        from . import locutor
+
+        def rodar():
+            try:
+                if self._voz_extrair is None:
+                    self.after(0, lambda: self._voz_msg("Carregando o reconhecimento de voz (na primeira vez baixa "
+                                                         "uns 85 MB, pode demorar um pouco)..."))
+                    self._voz_extrair = locutor.carregar_modelo()
+                trabalho(self._voz_extrair)
+            except Exception as erro:
+                self.after(0, lambda e=erro: self._voz_msg(f"Não consegui usar o reconhecimento de voz: {e}"))
+        threading.Thread(target=rodar, daemon=True).start()
+
+    def _cadastrar_voz(self):
+        from . import locutor
+        if self._cad_frases is not None:   # clicou de novo: cancela
+            self._cad_frases = None
+            self._ao_gravar = None
+            self._gravando = False
+            self.bt_cadastrar_voz.configure(text="● Cadastrar minha voz")
+            self._parar_teste()
+            self._voz_msg("Cadastro cancelado. Nada foi salvo.")
+            return
+        self._cad_frases = [fr.format(palavra=self.palavra.capitalize()) for fr in locutor.FRASES_CADASTRO]
+        self._cad_audios: list[bytes] = []
+        self.bt_cadastrar_voz.configure(text="■ Parar cadastro")
+        self._proxima_frase_voz()
+
+    def _proxima_frase_voz(self):
+        if self._cad_frases is None:
+            return
+        i = len(self._cad_audios)
+        if i >= len(self._cad_frases):
+            self._concluir_cadastro_voz()
+            return
+        self._voz_msg(f"Frase {i + 1} de {len(self._cad_frases)}. Fale agora, do seu jeito normal:\n\n"
+                      f"“{self._cad_frases[i]}”")
+        if not self._gravar_para(self._frase_voz_gravada):
+            self._cad_frases = None
+            self.bt_cadastrar_voz.configure(text="● Cadastrar minha voz")
+
+    def _frase_voz_gravada(self, audio: bytes):
+        if self._cad_frases is None:
+            return
+        if len(audio) < TAXA * 2 * 0.7:   # menos de 0,7 s: não ouviu direito
+            self._voz_msg("Não ouvi direito. Vamos repetir a mesma frase...")
+            self.after(1200, self._proxima_frase_voz)
+            return
+        self._cad_audios.append(audio)
+        self.after(500, self._proxima_frase_voz)
+
+    def _concluir_cadastro_voz(self):
+        from . import locutor
+        audios = list(self._cad_audios)
+        self._cad_frases = None
+        self.bt_cadastrar_voz.configure(text="● Cadastrar minha voz")
+        self._parar_teste()
+        self._voz_msg(f"Gravei {len(audios)} frases. Gerando a sua impressão de voz...")
+
+        def trabalho(extrair):
+            embs = [extrair(locutor.bytes_para_float(a)) for a in audios]
+            locutor.salvar_impressao(embs)
+            info = locutor.info_impressao()
+
+            def pronto():
+                self.var_so_minha_voz.set(True)
+                self._mostrar_situacao_voz()
+                self._voz_msg(f"Pronto! Sua voz foi cadastrada ({len(audios)} frases). A chave “Responder só à "
+                              f"minha voz” foi ligada. Agora clique em “Testar” e fale uma frase para ver a nota. "
+                              f"Depois clique em Salvar e reinicie o {self.nome} para valer. "
+                              f"(nota mínima entre as frases do cadastro: {info.get('nota_minima_cadastro', '?')})")
+            self.after(0, pronto)
+        self._com_modelo_voz(trabalho)
+
+    def _testar_voz(self):
+        from . import locutor
+        if self._cad_frases is not None:
+            return
+        if locutor.carregar_impressao() is None:
+            self._voz_msg("Cadastre sua voz primeiro (botão “Cadastrar minha voz”).")
+            return
+        if self._voz_extrair is None:   # (carrega enquanto você fala)
+            self._com_modelo_voz(lambda extrair: None)
+        self._voz_msg(f"Fale uma frase agora (ex.: “{self.palavra.capitalize()}, abre o YouTube”). "
+                      "Dica: teste também com um vídeo tocando na caixa de som.")
+        self._gravar_para(self._voz_teste_gravado)
+
+    def _voz_teste_gravado(self, audio: bytes):
+        from . import locutor
+        self._parar_teste()
+        if len(audio) < TAXA * 2 * 0.3:
+            self._voz_msg("Não ouvi nada. Clique em “Testar” de novo e fale um pouco mais alto.")
+            return
+        self._voz_msg("Comparando com a sua voz...")
+
+        def trabalho(extrair):
+            nota = locutor.cosseno(extrair(locutor.bytes_para_float(audio)), locutor.carregar_impressao())
+            exig = self.var_exig_voz.get()
+            aceita, _ = locutor.decidir(nota, exig, len(audio) / (TAXA * 2))
+            veredito = ("✔ reconhecida: ele obedeceria." if aceita
+                        else "✖ não reconhecida: ele ignoraria esta frase.")
+            self.after(0, lambda: self._voz_msg(
+                f"Nota desta frase: {nota:.2f} (exigência atual {exig:.2f}) → {veredito}\n"
+                "Sua voz dá nota alta? Um vídeo ou outra pessoa dá nota baixa? Então está bom. Se a sua voz for "
+                "recusada, diminua a exigência; se o vídeo passar, aumente."))
+        self._com_modelo_voz(trabalho)
+
+    def _apagar_voz(self):
+        from . import locutor
+        if locutor.carregar_impressao() is None:
+            self._voz_msg("Não há voz cadastrada.")
+            return
+        if not messagebox.askyesno(self.nome, "Apagar o cadastro da sua voz? Ele volta a obedecer a qualquer voz."):
+            return
+        locutor.apagar_impressao()
+        self.var_so_minha_voz.set(False)
+        self._mostrar_situacao_voz()
+        self._voz_msg("Cadastro apagado. Salve para valer.")
 
     def _mostrar(self, texto: str):
         self.resultado_teste.delete("1.0", "end")
@@ -2258,6 +2442,8 @@ class Painel(ctk.CTk):
             o["ganho"] = round(self.var_ganho.get(), 1)
             o["silencio_fim"] = round(self.var_silencio.get(), 1)
             o["gravar_diagnostico"] = bool(self.var_diag.get())
+            o["so_minha_voz"] = bool(self.var_so_minha_voz.get())
+            o["exigencia_voz"] = round(float(self.var_exig_voz.get()), 2)
             o["max_frase"] = int(self.var_max.get())
             o["ditado_silencio_max"] = int(self.var_espera_ditado.get())
             configuracao.secao(c, "ditado")["revisar_na_janela"] = bool(self.var_revisar.get())

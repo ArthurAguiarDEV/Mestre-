@@ -805,6 +805,77 @@ raiz.destroy()
 print("NOMES_OK")
 """
 
+VOZ_DONO = r"""
+# Responder so a voz do dono: embeddings FALSOS (nada de baixar o modelo no teste)
+import os, sys, tempfile, time, traceback, tkinter as tk
+os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
+import numpy as np
+from app import locutor
+from app.audio import TAXA
+
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+
+def tom(freq, seg, fase=0.0):   # "voz" sintetica: um tom de 16 bits
+    t = np.arange(int(seg * TAXA)) / TAXA
+    return (np.sin(2 * np.pi * freq * t + fase) * 8000).astype(np.int16).tobytes()
+
+rng = np.random.default_rng(7)
+VOZ_A, VOZ_B = rng.normal(size=192), rng.normal(size=192)
+def falso(a):   # "modelo": tom grave = dono (A), agudo = outra pessoa (B), com um pouco de ruido
+    freq = np.argmax(np.abs(np.fft.rfft(a))) * TAXA / len(a)
+    return (VOZ_A if freq < 250 else VOZ_B) + rng.normal(scale=0.3, size=192)
+
+ok(locutor.opcoes({}) == (False, locutor.EXIGENCIA_PADRAO), "Voz do dono: config antigo = desligado com exigência padrão")
+locutor.salvar_impressao([falso(locutor.bytes_para_float(tom(150, 2, i))) for i in range(10)])
+ok(locutor.carregar_impressao() is not None and locutor.arquivo_impressao().parent == __import__("pathlib").Path(os.environ["MESTRE_SEGREDOS"]) / "Mestre",
+   "Voz do dono: impressão salva fora do projeto")
+v = locutor.Verificador(True, 0.4, extrair=falso)
+dono, outra = tom(150, 2), tom(400, 2)
+a1, n1, _ = v.verificar(dono)
+a2, n2, m2 = v.verificar(outra)
+ok(a1 and n1 > 0.8, f"Voz do dono: mesma voz aceita (nota {n1:.2f})")
+ok(not a2 and m2 == "voz não reconhecida", f"Voz do dono: outra voz recusada (nota {n2:.2f})")
+ok(locutor.Verificador(False, 0.4, extrair=falso).verificar(outra)[0], "Voz do dono: desligado aceita tudo")
+ok(locutor.Verificador(True, 0.4, extrair=None).verificar(outra)[:2] == (True, None), "Voz do dono: modelo não carregado aceita")
+ok(v.verificar(tom(400, 0.6), em_conversa=True)[0], "Voz do dono: frase curta na conversa passa")
+ok(locutor.decidir(0.33, 0.4, 0.6)[0] and not locutor.decidir(0.33, 0.4, 2.0)[0], "Voz do dono: frase curta tem tolerância")
+
+# No ouvido: a frase de outra voz nao e executada e vai para o historico
+from app.ouvido import Ouvido
+from app import memoria
+o = object.__new__(Ouvido); o.verificador = v
+ok(o._voz_do_dono(dono, "mestre abre o youtube", False), "Voz do dono: ouvido deixa passar o dono")
+ok(not o._voz_do_dono(outra, "mestre abre o youtube", False) and memoria.historico(5)[-1].get("tipo") == "voz_nao_reconhecida",
+   "Voz do dono: ouvido ignora outra voz e registra no histórico")
+locutor.apagar_impressao()
+ok(locutor.Verificador(True, 0.4, extrair=falso).verificar(outra)[0], "Voz do dono: sem cadastro aceita tudo")
+
+# Painel: cadastrar (gravacao simulada), campos e salvar
+erros = []
+tk.Tk.report_callback_exception = lambda self, e, v, tb: erros.append("".join(traceback.format_exception(e, v, tb)))
+import app.painel as p
+pn = p.Painel(); pn.update()
+pn.mostrar_pagina("Áudio"); pn.update()
+pn._com_modelo_voz = lambda trabalho: trabalho(falso)   # (sem mainloop no teste: nada de thread)
+pn._gravar_para = lambda receber: (pn.after(20, lambda: receber(tom(150, 2))), True)[1]
+pn._cadastrar_voz()
+fim = time.time() + 20
+while time.time() < fim and not pn.var_so_minha_voz.get():
+    pn.update(); time.sleep(0.05)
+info = locutor.info_impressao()
+ok(info.get("frases") == len(locutor.FRASES_CADASTRO) and pn.var_so_minha_voz.get(), "Voz do dono: cadastro pelo painel grava e liga a chave")
+pn.var_exig_voz.set(0.55)
+ok(pn.salvar(), "Voz do dono: painel salva")
+import yaml
+ov = yaml.safe_load(open("config.yaml", encoding="utf-8"))["ouvido"]
+ok(ov.get("so_minha_voz") is True and abs(float(ov.get("exigencia_voz")) - 0.55) < 0.001, "Voz do dono: opções no config.yaml")
+ok(not erros, "Voz do dono: sem erros na tela" + ("".join(erros)[-600:] if erros else ""))
+ok("speechbrain" not in sys.modules and "torch" not in sys.modules, "Voz do dono: teste não carrega o modelo de verdade")
+pn._fechar()
+print("FIM_VOZ_DONO")
+"""
+
+
 APARENCIA = r"""
 import yaml
 import app.painel as p
@@ -923,6 +994,14 @@ def main() -> int:
         print("\n[Aparência]")
         cod, saida = rodar(pasta, APARENCIA)
         conferir("APARENCIA_OK" in saida, "Trocar cor, fonte e tamanho e salvar", saida[-800:])
+
+        print("\n[Responder só à voz do dono]")
+        cod, saida = rodar(pasta, VOZ_DONO, espera=120)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_VOZ_DONO" not in saida:
+            conferir(False, "Voz do dono: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Atualização por .zip]")
         destino = copiar_projeto(Path(tmp) / "outra")

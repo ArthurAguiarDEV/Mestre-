@@ -617,6 +617,38 @@ A aba **Áudio** do painel resolve os três, nesta ordem:
 
 **Diagnóstico contínuo:** ligue **"Guardar áudios ouvidos"**. O Mestre guarda as últimas 30 frases em `logs\audios`, com o arquivo `transcricoes.txt` mostrando o que ele entendeu de cada uma. Assim você ouve o que chegou quando algo der errado. O botão **"Áudios de diagnóstico"** da aba Início abre a pasta.
 
+### 17.1 Responder só à sua voz
+
+Um vídeo tocando na caixa de som (ou outra pessoa na sala) pode dizer algo parecido com o nome dele, e ele obedecia.
+Agora ele pode **comparar cada pedido com a sua voz** e ignorar as outras. Roda no seu PC, grátis
+(um modelo de uns 85 MB, baixado na primeira vez para `modelos\locutor_ecapa`).
+
+**Cadastrar (uma vez só):**
+1. Painel > **Áudio** > cartão **"Minha voz"** > **"● Cadastrar minha voz"**.
+2. Aparece uma frase na caixinha. Leia em voz alta, do seu jeito normal, no lugar onde você costuma falar com ele.
+   Quando você faz uma pausa, ele passa sozinho para a próxima. São 10 frases (menos de 1 minuto).
+   Errou ou quer parar? Clique em **"■ Parar cadastro"** (nada é salvo).
+3. No fim, a chave **"Responder só à minha voz"** liga sozinha. A sua "impressão de voz" fica guardada
+   fora da pasta do projeto, em `%APPDATA%\Mestre\voz_dono.json`.
+4. Clique em **Salvar e reiniciar**.
+
+**Testar:**
+1. Clique em **"Testar"** e fale uma frase normal. Aparece a **nota** (de 0 a 1): sua voz costuma dar 0,55 ou mais.
+2. Agora ponha um vídeo com alguém falando para tocar na caixa de som e clique em **"Testar"** de novo, sem falar.
+   A nota do vídeo deve ficar **abaixo** da exigência (padrão 0,40) e aparecer "não reconhecida".
+3. Depois de reiniciar, faça o teste de verdade: com o vídeo tocando, fale um pedido normal (ele deve obedecer).
+   Quando o vídeo disser algo parecido com o nome dele, ele deve ficar quieto. No Histórico aparece
+   "(ignorado: voz não reconhecida, nota ...)".
+
+**Régua "Quão exigente":**
+- Ele está ignorando **você**? Puxe a régua para a esquerda (ex.: 0,30) ou refaça o cadastro no lugar/microfone de sempre.
+- O **vídeo** ainda passa? Puxe para a direita (ex.: 0,50).
+- Frases bem curtas (menos de 1 segundo, como "sim", "não") têm pouca voz para comparar: dentro da conversa
+  elas passam, e fora dela a exigência fica um pouco menor.
+- Logo depois de ligar, o reconhecimento da voz leva alguns segundos para carregar; nesse meio-tempo ele aceita qualquer voz.
+- **Áudios do celular/Telegram** não passam por essa verificação (o Telegram já sabe que é você).
+- Quer desligar? Desligue a chave (ou **"Apagar cadastro"**) e salve.
+
 ---
 
 ## Etapa 18: O indicador na tela

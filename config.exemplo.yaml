@@ -63,6 +63,9 @@ ouvido:
   espera_ditado: 60
   ditado_silencio_max: 180
   palavras_conhecidas: ["Ollama", "IPM", "Atende.Net", "Claude", "Claude Code", "skill", "prompt", "Spotify", "YouTube", "playlist", "painel", "melhorias", "finalizei"]
+  # Responder so a voz do dono (painel > Audio > Minha voz). Desligado ate cadastrar a voz.
+  so_minha_voz: false
+  exigencia_voz: 0.4
 cerebro:
   # "nenhum" = so executa comandos (recomendado para comecar)
   # "ollama" = IA local e GRATIS rodando no seu PC (veja o guia, Etapa 9)
