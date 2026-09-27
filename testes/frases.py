@@ -239,6 +239,12 @@ FRASES = [
     ("Mestre, que dia é hoje", "_cmd_hora_data"),
     ("Mestre, bora trabalhar", "_cmd_rotinas"),
     ("Mestre, bom dia", "_cmd_rotinas"),
+    # --- ensinar uma rotina falando ---
+    ("Mestre, vou te mostrar uma nova rotina", "_cmd_ensinar_rotina"),
+    ("Mestre, grava uma rotina", "_cmd_ensinar_rotina"),
+    ("Mestre, aprende uma rotina nova", "_cmd_ensinar_rotina"),
+    ("Mestre, quero te ensinar uma rotina", "_cmd_ensinar_rotina"),
+    ("Mestre, vamos criar uma rotina", "_cmd_ensinar_rotina"),
     ("Mestre, desliga a tela", "_cmd_tela"),
     ("Mestre, bloqueia o computador", "_cmd_tela"),
     ("Mestre, isso tá errado, era outra coisa", "_cmd_feedback"),
@@ -314,6 +320,7 @@ def main() -> int:
     falhas = []
     for frase, esperado in FRASES:
         ex._pendente, ex._ditado_ativo, ex.ultimo_comando, ex._descansando = None, False, None, False
+        ex._gravacao = None
         achou, comando = extrair_comando(frase, variacoes)
         try:
             ex.executar(comando if achou else frase, frase)

@@ -684,6 +684,18 @@ A versão 3 já vem com (no `config.yaml` novo; no antigo, crie pelo painel):
 
 Também dá para falar direto: *"Mestre, como tá o tempo?"*, *"vai chover?"*, *"quais as notícias?"*, *"notícias sobre tecnologia"*.
 
+### Ensinar uma rotina falando (sem abrir o painel)
+
+1. Fale: *"Assessor, vou te mostrar uma nova rotina"* (também vale *"grava uma rotina"*, *"aprende uma rotina nova"*, *"quero te ensinar uma rotina"*).
+2. Fale os comandos um de cada vez, do jeito de sempre: *"Assessor, abre o Gmail"*, *"Assessor, abre o Claude"*, *"Assessor, toca a playlist Foco no Spotify"*. **Cada um já acontece na hora** e fica gravado.
+   - Para a rotina falar algo: *"fala assim: bom trabalho!"*. Para esperar: *"espera 5 segundos"*.
+   - O que não dá para repetir (conversa com a IA, ditado, "desliga"...) ele avisa: *"Esse passo não entra na rotina."*
+3. No fim fale *"pronto"* (ou *"terminei"*, *"fim da rotina"*). Ele pergunta: *"Rotina aprendida. Qual frase eu uso para chamar?"*
+4. Fale a frase, por exemplo *"modo mergulho"*. Se ela já for de outro comando, ele pede outra.
+5. Ele salva a rotina no `config.yaml` (aparece no painel, aba **Rotinas**). Com a IA ligada, ela inventa em segundo plano uns 50 outros jeitos de pedir (*"partiu modo mergulho"*, *"bora pro modo mergulho"*...), tira as repetidas e as que roubariam outros comandos (tipo "abre o Gmail" ou "pausa"), e ele avisa quantas frases ficaram. Sem IA, ficam a sua frase e alguns jeitos simples (*"rotina modo mergulho"*, *"roda a rotina modo mergulho"*...).
+
+Desistiu no meio? *"cancela a rotina"* sai sem salvar nada.
+
 **Ideias para a sua rotina de trabalho** (monte no painel):
 - Abrir o **Atende.Net** e o **projeto do agente IPM** (ação "Abrir site").
 - Abrir a **pasta dos arquivos de integração** (ação "Abrir pasta").
@@ -1386,7 +1398,7 @@ Copie um bloco de rotina existente e mude. Exemplo, uma rotina de estudos:
       - abrir_site: "https://www.youtube.com/@CienciaTodoDia"
       - abrir_programa: "bloco de notas"
 ```
-Ações possíveis: `acordar_tela`, `falar`, `abrir_programa`, `abrir_site`, `youtube_ultimo_video`, `youtube_canal`, `esperar`, `volume`, `bloquear`, `desligar_tela`.
+Ações possíveis: `acordar_tela`, `falar`, `abrir_programa`, `abrir_site`, `youtube_ultimo_video`, `youtube_canal`, `esperar`, `volume`, `bloquear`, `desligar_tela`, `comando` (qualquer frase que você falaria, ex.: `comando: "toca lofi no youtube"`). Também dá para criar uma rotina **falando** (veja a Etapa 20).
 
 ### Trocar a voz
 Veja a [Etapa 13](#etapa-13--voz-e-personalidade): dá para trocar falando.
@@ -1406,6 +1418,7 @@ Os exemplos abaixo são só um ponto de partida: fale do seu jeito ("pô, bota a
 | **Mídia** | "pausa" · "continua" |
 | **Agente IPM** | "agente IPM, ..." · "ditado pro agente IPM" (… "pronto") · "manda o que eu copiei pro agente IPM" · "abre o agente IPM" |
 | **Área de transferência** | "lê pra mim" · "lê o que eu copiei" |
+| **Rotina falada** | "vou te mostrar uma nova rotina" → comandos → "pronto" → a frase de chamar · "cancela a rotina" |
 | **Ensinar** | "aprende um atalho" · "quando eu falar X, [comando]" · "quais são os atalhos" · "esquece o atalho X" |
 | **Voz** | "apresenta as vozes" · "muda a voz" · "usa a voz do Andrew" · "fala mais rápido/devagar" · "fala mais grave/agudo" · "voz normal" |
 | **Melhorias** | "anota uma melhoria: ..." · "lê minhas melhorias" · "aplica as melhorias" · "reinicia" |

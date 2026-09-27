@@ -56,6 +56,19 @@ PROPOR = (
     "um resumo de uma frase e de 3 a 5 primeiros passos praticos. Portugues do Brasil, linguagem simples. "
     "Responda SOMENTE com o JSON."
 )
+VARIACOES = (
+    "Voce ajuda um assistente de voz brasileiro. O usuario gravou uma ROTINA (uma sequencia de comandos) e escolheu "
+    "uma frase para chamar. Escreva {n} jeitos DIFERENTES e naturais de pedir essa mesma rotina FALANDO, em portugues "
+    "do Brasil informal: girias ('bora', 'partiu', 'manda ver', 'solta'), jeitos de pedir ('pode', 'quero', 'vamos'), "
+    "com e sem artigo. Frases curtas (2 a 6 palavras), sem pontuacao, sem o nome do assistente. Mantenha o sentido da "
+    "frase e NAO descreva os passos (nada de 'abre o X' ou 'toca Y'). Responda SOMENTE com o JSON."
+)
+ESQUEMA_VARIACOES = {
+    "type": "object",
+    "properties": {"frases": {"type": "array", "items": {"type": "string"}}},
+    "required": ["frases"],
+    "additionalProperties": False,
+}
 PERSONALIDADE_PADRAO = ("parceiro brasileiro, bem-humorado e informal; fala curto, "
                         "usa girias leves como 'beleza', 'ja e', 'bora' e chama o usuario de {apelido}")
 
@@ -151,6 +164,22 @@ class Cerebro:
             return [o for o in opcoes if o.get("titulo")][:3]
         except Exception:
             log.exception("A IA nao conseguiu propor opcoes")
+            return []
+
+    def variacoes_de_frase(self, frase: str, passos: str = "", n: int = 50) -> list[str]:
+        """Jeitos naturais de pedir a mesma rotina (a "rotina ensinada falando"). Falhou: lista vazia."""
+        pedido = f"Frase escolhida: {frase}" + (f". O que a rotina faz: {passos}" if passos else "")
+        mensagens = [{"role": "user", "content": pedido}]
+        try:
+            sistema = VARIACOES.format(n=n)
+            if self.tipo == "ollama":
+                bruto = self._ollama(sistema, mensagens, formato=ESQUEMA_VARIACOES)
+            else:
+                bruto = self._claude_api(sistema, mensagens, formato=ESQUEMA_VARIACOES)
+            frases = json.loads(bruto[bruto.find("{"):bruto.rfind("}") + 1]).get("frases") or []
+            return [str(f) for f in frases if str(f).strip()]
+        except Exception:
+            log.exception("A IA nao conseguiu criar variacoes da frase")
             return []
 
     # --- Deixar a IA "quente" (o Ollama demora so na PRIMEIRA pergunta) ------

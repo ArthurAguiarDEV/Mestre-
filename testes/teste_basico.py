@@ -621,6 +621,107 @@ print("FIM_FLUXOS", flush=True)  # os._exit nao esvazia o buffer
 os._exit(0)
 """
 
+ROTINA_FALADA = r"""
+import os, time, logging, yaml
+logging.basicConfig(level=logging.WARNING)
+from app.config import carregar_config
+from app.comandos import Executor
+from app.voz import Voz
+from app import sistema
+from app.texto import extrair_comando
+from app.vocabulario import Vocabulario
+ditos, abertos = [], []
+class VozTeste(Voz):
+    def falar(self, texto): ditos.append(texto)
+class IAFalsa:
+    ligado = True
+    def interpretar(self, frase, comandos): return {"tipo": "resposta", "texto": "Isso é conversa."}
+    def perguntar(self, frase, perfil="geral"): return "Isso é conversa."
+    def esquecer(self): pass
+    def variacoes_de_frase(self, frase, passos="", n=50):
+        time.sleep(0.4)   # a IA demora: vai para a fila em segundo plano
+        return ["Partiu modo mergulho", "partiu modo mergulho!", "bora pro modo mergulho", "Mestre, modo mergulho total",
+                "modo concentração", "abre o gmail", "que horas são", "bora trabalhar", "mergulho",
+                "toca a playlist foco total no spotify", "manda ver no mergulho", "pausa"]
+class SemIA:
+    ligado = False
+    def esquecer(self): pass
+sistema.abrir_site = lambda url: abertos.append(url)
+sistema.abrir_programa = lambda caminho: abertos.append("programa:" + str(caminho)) or True
+cfg = carregar_config()
+cfg.setdefault("cerebro", {}).update(segundo_plano_seg=0.1, aviso_ao_terminar="voz")
+cfg["spotify"] = {"playlists": {"Foco total": "https://open.spotify.com/playlist/37i9dQZF1DX8NTLI2TtZa6"},
+                  "apertar_play": False}
+ex = Executor(cfg, VozTeste(cfg, mudo=True), IAFalsa(), Vocabulario())
+ex._extensao = lambda: False
+def diga(completa):
+    achou, cmd = extrair_comando(completa, ["mestre"])
+    ditos.clear(); ex.executar(cmd if achou else completa, completa); return list(ditos)
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+def rotina(nome):
+    c = yaml.safe_load(open("config.yaml", encoding="utf-8"))
+    return next((r for r in c.get("rotinas") or [] if r["nome"] == nome), None), len(c.get("rotinas") or [])
+
+diga("Mestre, vou te mostrar uma nova rotina")
+ok(ex.ultimo_comando == "_cmd_ensinar_rotina" and ex._gravacao is not None, "Rotina falada: “vou te mostrar uma nova rotina” começa a gravar")
+diga("Mestre, abre o Gmail"); diga("Mestre, abre o Claude")
+falas_ia = diga("Mestre, me explica a teoria da relatividade")
+diga("Mestre, toca a playlist Foco total no Spotify")
+ok(abertos[:1] == ["https://mail.google.com"] and "programa:claude" in abertos and any("spotify" in a for a in abertos),
+   f"Rotina falada: cada comando roda na hora ({abertos})")
+ok(any("não entra na rotina" in f for f in falas_ia), f"Rotina falada: passo que foi pra IA fica de fora com aviso ({falas_ia})")
+falas = diga("Mestre, pronto")
+ok(any("Rotina aprendida. Qual frase eu uso para chamar?" in f for f in falas) and ex._pendente is not None,
+   f"Rotina falada: “pronto” pergunta a frase ({falas})")
+falas = diga("Que horas são")
+ok(any("já chama outro comando" in f for f in falas) and ex._pendente is not None,
+   f"Rotina falada: frase que já é de outro comando pede outra ({falas})")
+diga("Modo mergulho")
+fim = time.time() + 10
+while time.time() < fim and ex._pensamento:
+    time.sleep(0.1)
+time.sleep(0.3)
+r, _ = rotina("Modo mergulho")
+acoes = r["acoes"] if r else []
+ok(acoes == [{"abrir_site": "https://mail.google.com"}, {"abrir_programa": "claude"},
+             {"comando": "toca a playlist foco total no spotify"}], f"Rotina falada: 3 passos salvos no config ({acoes})")
+frases = r["frases"] if r else []
+ok(frases[:1] == ["modo mergulho"] and "partiu modo mergulho" in frases and "modo concentracao" in frases
+   and "bora pro modo mergulho" in frases and "modo mergulho total" in frases and len(frases) == len(set(frases)),
+   f"Rotina falada: frase dita + variações da IA, sem repetidas ({frases})")
+ok(not any(f in frases for f in ("abre o gmail", "que horas sao", "bora trabalhar", "mergulho", "pausa", "manda ver no mergulho",
+                                 "toca a playlist foco total no spotify")),
+   f"Rotina falada: variações que roubariam outros comandos ficam de fora ({frases})")
+ok(any("ficou com" in f and "frases" in f for f in ditos), f"Rotina falada: confirma quantas frases ficaram ({ditos})")
+texto = open("config.yaml", encoding="utf-8").read()
+ok("# 1c) PERSONALIDADE" in texto and 'nome: "Modo mergulho"' in texto, "Rotina falada: config salvo com comentários e aspas")
+abertos.clear()
+diga("Mestre, partiu modo mergulho")
+ok(ex.ultimo_comando == "_cmd_rotinas" and "https://mail.google.com" in abertos and "programa:claude" in abertos
+   and any("spotify" in a for a in abertos), f"Rotina falada: a frase nova dispara a rotina ({ex.ultimo_comando} {abertos})")
+ex2 = Executor(carregar_config(), VozTeste(cfg, mudo=True), SemIA(), Vocabulario())
+ex2._extensao = lambda: False
+ex2.executar("modo concentracao", "Mestre, modo concentração")
+ok(ex2.ultimo_comando == "_cmd_rotinas", f"Rotina falada: depois de reiniciar ela continua valendo ({ex2.ultimo_comando})")
+diga("Mestre, que horas são")
+ok(ex.ultimo_comando == "_cmd_hora_data", "Rotina falada: “que horas são” continua sendo horas")
+
+_, antes = rotina("x")
+diga("Mestre, grava uma rotina"); diga("Mestre, abre o Gmail")
+falas = diga("Mestre, cancela a rotina")
+_, depois = rotina("x")
+ok(ex._gravacao is None and antes == depois and not ex._pendente, f"Rotina falada: “cancela a rotina” sai sem salvar ({falas})")
+
+ex.cerebro = SemIA()
+diga("Mestre, aprende uma rotina nova"); diga("Mestre, abre o Gmail"); diga("Mestre, fala assim: Bom estudo!")
+diga("Mestre, terminei"); falas = diga("Hora do estudo")
+r, _ = rotina("Hora do estudo")
+ok(r is not None and r["frases"][0] == "hora do estudo" and len(r["frases"]) >= 3 and {"falar": "Bom estudo!"} in r["acoes"]
+   and any("É só falar" in f for f in falas), f"Rotina falada sem IA: frase dita + variações simples ({r} {falas})")
+print("FIM_ROTINA_FALADA", flush=True)
+os._exit(0)
+"""
+
 VOZES_PAINEL = r"""
 import os, tempfile, tkinter as tk, traceback
 os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
@@ -778,6 +879,14 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1200:])
         if "FIM_FLUXOS" not in saida:
             conferir(False, "Fluxos de ditado/pensamento rodaram até o fim", saida[-1500:])
+
+        print("\n[Ensinar uma rotina falando]")
+        cod, saida = rodar(pasta, ROTINA_FALADA, espera=120)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_ROTINA_FALADA" not in saida:
+            conferir(False, "Rotina falada: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Vocabulário: muitos jeitos de pedir]")
         r = subprocess.run([sys.executable, "-m", "testes.frases"], cwd=str(pasta), capture_output=True, text=True,
