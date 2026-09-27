@@ -162,30 +162,43 @@ def aplicar() -> None:
 
 # --- Icone (bandeja do relogio e atalho) --------------------------------------------
 def desenhar_icone(cor: str | None = None, tamanho: int = 512):
-    """O "M" do Mestre na cor de destaque. Devolve uma imagem do Pillow."""
-    from PIL import Image, ImageDraw, ImageFont
+    """O "A" do Assessor (moldura, balão de fala e ondas de voz) na cor de destaque.
+    Desenha em escala 4x e reduz, para as linhas ficarem lisas. Devolve uma imagem do Pillow."""
+    from PIL import Image, ImageDraw
 
     cor = cor or ROSA
-    r, g, b = _rgb(cor)
-    im = Image.new("RGBA", (tamanho, tamanho), (0, 0, 0, 0))
+    destaque = (*_rgb(cor), 255)
+    fundo = (28, 20, 24, 255)
+    verde = (125, 227, 184, 255)
+    grande = tamanho * 4
+    im = Image.new("RGBA", (grande, grande), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    u = tamanho / 512
-    d.rounded_rectangle((16 * u, 16 * u, tamanho - 16 * u, tamanho - 16 * u), radius=120 * u, fill=(r, g, b, 255))
-    d.rounded_rectangle((52 * u, 52 * u, tamanho - 52 * u, tamanho - 52 * u), radius=92 * u, fill=(28, 17, 23, 255))
-    fonte_m = None
-    for nome in ("arialbd.ttf", "segoeuib.ttf", "DejaVuSans-Bold.ttf",
-                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
-        try:
-            fonte_m = ImageFont.truetype(nome, int(290 * u))
-            break
-        except OSError:
-            continue
-    fonte_m = fonte_m or ImageFont.load_default()
-    caixa = d.textbbox((0, 0), "M", font=fonte_m)
-    w, h = caixa[2] - caixa[0], caixa[3] - caixa[1]
-    d.text(((tamanho - w) / 2 - caixa[0], (tamanho - h) / 2 - caixa[1]), "M", font=fonte_m, fill=(r, g, b, 255))
-    d.ellipse((tamanho - 150 * u, tamanho - 150 * u, tamanho - 80 * u, tamanho - 80 * u), fill=(126, 226, 184, 255))
-    return im
+    u = grande / 100  # desenho pensado numa grade de 100 x 100
+
+    def p(x, y):
+        return (x * u, y * u)
+
+    d.rounded_rectangle((*p(3, 3), *p(97, 97)), radius=22 * u, fill=fundo)
+    d.rounded_rectangle((*p(11, 11), *p(89, 89)), radius=16 * u, outline=destaque, width=round(4 * u))
+    d.line([p(30, 74), p(50, 26), p(70, 74)], fill=destaque, width=round(10 * u), joint="curve")
+    d.line([p(38, 58), p(62, 58)], fill=destaque, width=round(10 * u))
+    for x, y1, y2 in ((71, 45, 55), (78, 40, 60), (85, 45, 55)):  # ondas de voz
+        d.line([p(x, y1), p(x, y2)], fill=verde, width=round(4 * u))
+        for y in (y1, y2):
+            d.ellipse((*p(x - 2, y - 2), *p(x + 2, y + 2)), fill=verde)
+    d.rounded_rectangle((*p(66, 14), *p(86, 28)), radius=7 * u, fill=destaque)  # balão de fala
+    for x in (73, 80):
+        d.ellipse((*p(x - 2.5, 18.5), *p(x + 2.5, 23.5)), fill=fundo)
+    return im.resize((tamanho, tamanho), Image.LANCZOS)
+
+
+def definir_icone_da_barra() -> None:
+    """Faz o Windows mostrar o ícone do programa na barra de tarefas, não o do Python."""
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Assessor.Painel")
+    except Exception:
+        pass
 
 
 def salvar_icones(cor: str | None = None) -> None:

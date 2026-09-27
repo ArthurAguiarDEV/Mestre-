@@ -5,7 +5,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo Lembrete do projeto Mestre: se esta mensagem traz um pedido novo, primeiro use a skill corrigir-transcricao, mostre Entendi assim, depois a skill refinar-pedido, e espere o ok antes de implementar."
+            "command": "echo Lembrete do projeto: se esta mensagem traz um pedido novo, primeiro use a skill corrigir-transcricao e mostre Entendi assim, depois a skill refinar-pedido, depois a skill avaliar-esforco em cada cartao, e espere o ok antes de implementar."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 .claude/hooks/guarda.py",
+            "timeout": 10
           }
         ]
       }

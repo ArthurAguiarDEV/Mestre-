@@ -106,6 +106,7 @@ class Revisao(ctk.CTk):
 def main() -> None:
     if not ARQUIVO.exists():
         sys.exit(0)
+    tema.definir_icone_da_barra()
     Revisao().mainloop()
 
 

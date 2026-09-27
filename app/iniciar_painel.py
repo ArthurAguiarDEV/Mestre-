@@ -51,7 +51,10 @@ def main() -> None:
     if avisar_painel_aberto():
         return
     try:
+        from . import tema
         from .painel import main as abrir
+
+        tema.definir_icone_da_barra()
 
         abrir()
     except Exception as erro:
