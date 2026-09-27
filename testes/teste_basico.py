@@ -138,6 +138,39 @@ texto = open("config.yaml", encoding="utf-8").read()
 print("ORDEM_OK", texto.index("spotify:") < texto.index("# 8) SITES") if "# 8) SITES" in texto else True)
 """
 
+# O painel abre e guarda em memoria a lista de rotinas que tinha no config. Enquanto ele
+# esta aberto, uma "outra fonte" (o Mestre rodando, ensinar rotina por voz) grava uma rotina
+# nova no config.yaml. Depois o usuario apaga, NO PAINEL, uma rotina que ja existia quando ele
+# abriu. Ao salvar: a rotina gravada por fora tem de sobreviver e a apagada tem de continuar apagada.
+PAINEL_ROTINA_EXTERNA = r"""
+from app import configuracao
+import app.painel as p
+
+pn = p.Painel(); pn.update()
+pn.mostrar_pagina("Rotinas"); pn.update()
+
+c = configuracao.carregar()
+nova = configuracao.aspas({"nome": "Rotina de fora", "acoes": [{"falar": "Cheguei de fora!"}]})
+nova.insert(1, "frases", configuracao.lista_em_linha(["rotina de fora"]))
+c["rotinas"].append(nova)
+configuracao.salvar(c)
+
+alvo = next(i for i, r in enumerate(pn.rotinas) if r["nome"] == "Hora do cafe")
+del pn.rotinas[alvo]
+pn.rotina_atual = 0 if pn.rotinas else None
+pn._desenhar_lista_rotinas(); pn.update()
+
+print("SALVOU", pn.salvar())
+pn.update()
+pn._fechar()
+"""
+
+CONFERIR_ROTINA_EXTERNA = """
+import yaml
+c = yaml.safe_load(open("config.yaml", encoding="utf-8"))
+print("NOMES", [r["nome"] for r in c.get("rotinas") or []])
+"""
+
 
 FLUXOS = r"""
 import json, os, time, logging
@@ -927,6 +960,14 @@ def main() -> int:
 
         cod, saida = rodar(pasta, "import app.painel as p; pn = p.Painel(); pn.update(); print('REABRIU'); pn._fechar()")
         conferir("REABRIU" in saida, "Painel reabre depois de salvar", saida[-800:])
+
+        print("\n[Painel não apaga rotina]")
+        cod, saida = rodar(pasta, PAINEL_ROTINA_EXTERNA)
+        conferir(cod == 0 and "SALVOU True" in saida, "Painel salva com rotina gravada por fora", saida[-800:])
+        cod, saida = rodar(pasta, CONFERIR_ROTINA_EXTERNA)
+        conferir("Rotina de fora" in saida, "Rotina gravada por fora (enquanto o painel estava aberto) sobrevive", saida)
+        conferir("Hora do cafe" not in saida, "Rotina apagada no painel continua apagada", saida)
+        conferir("Bora trabalhar" in saida, "Rotina não mexida continua lá", saida)
 
         print("\n[Comandos, como se você falasse]")
         s = comando(pasta, "mestre abre o spotify")

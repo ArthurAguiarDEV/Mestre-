@@ -16,7 +16,7 @@ import customtkinter as ctk
 from . import configuracao, estado, personalidades, segredos, sistema, tema, youtube
 from .audio import BLOCO, TAXA, Segmentador, Transcritor, aplicar_ganho, nivel, sugerir_limiar
 from .config import PASTA_LOGS, PASTA_PROJETO
-from .vocabulario import Vocabulario
+from .vocabulario import Vocabulario, atalhos_no_disco
 
 ACOES_ROTINA = {
     "acordar_tela": "Ligar a tela",
@@ -1946,6 +1946,9 @@ class Painel(ctk.CTk):
         f = secao(pagina, "Rotinas", "Uma frase dispara várias ações em sequência. Escolha a rotina à esquerda e edite à direita.")
         self.rotinas = [dict(nome=r.get("nome", ""), frases=list(r.get("frases", [])),
                              acoes=[dict(a) for a in r.get("acoes", [])]) for r in (self.cfg.get("rotinas") or [])]
+        # nomes de quando o painel abriu: uma rotina ensinada por voz DEPOIS disso (nome novo no
+        # arquivo) precisa sobreviver ao salvar; ver configuracao.mesclar_novas_por_nome
+        self._rotinas_iniciais = {str(r["nome"]).strip().lower() for r in self.rotinas}
         corpo = ctk.CTkFrame(f, fg_color="transparent")
         corpo.pack(fill="both", expand=True)
         self.lista_rotinas = ctk.CTkFrame(corpo, width=220)
@@ -2399,6 +2402,8 @@ class Painel(ctk.CTk):
         f = secao(pagina, "Atalhos ensinados", "Frase curta → comando completo. (Os que você ensina por voz aparecem aqui.)")
         self.tab_atalhos = TabelaChaveValor(f, self.vocab.aprendido.get("atalhos") or {}, "Quando eu falar", f"O {self.nome} faz")
         self.tab_atalhos.pack(fill="x", padx=(24, 14))
+        # frases de quando o painel abriu: um atalho ensinado por voz DEPOIS disso precisa sobreviver ao salvar
+        self._atalhos_iniciais = {str(k).strip().lower() for k in (self.vocab.aprendido.get("atalhos") or {})}
         ctk.CTkButton(f, text="+ Adicionar atalho", command=lambda: self.tab_atalhos.adicionar()).pack(anchor="w", pady=4)
         f = secao(pagina, "Vocabulário avançado", "Sinônimos e palavras ignoradas ficam no vocabulario.yaml.")
         ctk.CTkButton(f, text="Abrir vocabulario.yaml", **SECUNDARIO,
@@ -2554,10 +2559,19 @@ class Painel(ctk.CTk):
                 item = configuracao.aspas({"nome": r["nome"], "acoes": r["acoes"]})
                 item.insert(1, "frases", configuracao.lista_em_linha(r["frases"]))
                 rotinas.append(item)
-            c["rotinas"] = rotinas
+            # releia o disco: uma rotina ensinada por voz enquanto o painel estava aberto nao pode
+            # se perder quando o painel salva por cima do que tinha em memoria
+            rotinas_no_disco = configuracao.carregar().get("rotinas") or []
+            c["rotinas"] = configuracao.mesclar_novas_por_nome(rotinas_no_disco, self._rotinas_iniciais, rotinas)
             configuracao.salvar(c)
 
-            self.vocab.aprendido["atalhos"] = {str(k): str(x) for k, x in self.tab_atalhos.valores().items()}
+            atalhos_editados = {str(k): str(x) for k, x in self.tab_atalhos.valores().items()}
+            # releia o disco: um atalho ensinado por voz enquanto o painel estava aberto nao pode
+            # se perder quando o painel salva por cima do que tinha em memoria
+            chaves_editadas = {k.strip().lower() for k in atalhos_editados}
+            novos = {k: v for k, v in atalhos_no_disco().items()
+                     if k.strip().lower() not in self._atalhos_iniciais and k.strip().lower() not in chaves_editadas}
+            self.vocab.aprendido["atalhos"] = {**atalhos_editados, **novos}
             self.vocab.salvar_aprendido()
             self._salvar_melhorias()
         except Exception as erro:

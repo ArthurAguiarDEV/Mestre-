@@ -107,6 +107,24 @@ def trocar_mapa(dados: CommentedMap, nome: str, novo: dict) -> None:
         atual.ca.items[list(atual)[-1]] = [None, None, fim, None]
 
 
+def mesclar_novas_por_nome(atual_no_disco: list, nomes_iniciais: set, editado: list, chave: str = "nome") -> list:
+    """Mescla uma lista que o programa tambem escreve sozinho (rotinas, atalhos aprendidos...).
+
+    O painel carrega essa lista quando abre e o usuario pode editar/apagar itens nela. Mas o
+    Mestre (rodando à parte) pode ter ACRESCENTADO um item novo nesse meio-tempo (ex.: rotina
+    ensinada por voz). Ao salvar, devolve os itens editados (do jeito que o painel os deixou,
+    inclusive apagados) + os itens que apareceram no disco com um nome que nao estava em
+    `nomes_iniciais` (novos de fora do painel) e que o painel nao tem (evita duplicar).
+    """
+    def nome_de(item) -> str:
+        return str(dict(item).get(chave, "")).strip().lower()
+
+    nomes_editados = {nome_de(item) for item in editado}
+    novas = [item for item in atual_no_disco
+             if nome_de(item) not in nomes_iniciais and nome_de(item) not in nomes_editados]
+    return list(editado) + novas
+
+
 def lista_em_linha(itens: list) -> CommentedSeq:
     """Lista no estilo ["a", "b"] (igual ao resto do arquivo)."""
     seq = CommentedSeq([aspas(i) for i in itens])

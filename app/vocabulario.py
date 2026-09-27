@@ -135,6 +135,15 @@ class Vocabulario:
         self.recarregar()
 
 
+def atalhos_no_disco() -> dict:
+    """So os atalhos aprendidos gravados AGORA no aprendido.yaml (sem instanciar Vocabulario).
+
+    Usado pelo painel ao salvar, pra nao apagar um atalho que voce ensinou por voz enquanto
+    o painel estava aberto (o painel so tinha, em memoria, a foto de quando abriu).
+    """
+    return dict(_ler_yaml(ARQUIVO_APRENDIDO).get("atalhos") or {})
+
+
 def combina(texto: str, frase: str, minimo: float = 0.8) -> bool:
     """A frase aparece no texto, mesmo com pequenas diferencas de pronuncia?
 

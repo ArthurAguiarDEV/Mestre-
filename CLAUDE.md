@@ -135,6 +135,11 @@ Digite frases como o usuário falaria (ex.: `po mestre, bota o youtube ai`) e co
 terminal a linha `Entendi como: ...` e a ação executada. O microfone não dá para testar
 aqui: diga ao usuário quais frases ele deve testar falando, depois de `Mestre, reinicia`.
 
+## Roteiro de validação
+
+`ROTEIRO_VALIDACAO.md` (raiz) tem as frases que o usuário deve testar falando: "Novidades" (desta
+entrega) e "Sempre testar" (regressão fixa do dia a dia). O `/entregar` atualiza a seção Novidades.
+
 ## Ao terminar os itens do MELHORIAS.md
 
 - Marque cada item feito com `[x]`.
