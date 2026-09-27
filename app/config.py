@@ -13,6 +13,11 @@ PASTA_RESPOSTAS = PASTA_PROJETO / "respostas"
 PASTA_PERFIS = PASTA_PROJETO / "perfis"
 PASTA_MODELOS = PASTA_PROJETO / "modelos"
 
+# config.yaml e do usuario e fica fora do git: numa instalacao nova, comeca pelo exemplo
+if not ARQUIVO_CONFIG.exists() and (PASTA_PROJETO / "config.exemplo.yaml").exists():
+    import shutil
+    shutil.copyfile(PASTA_PROJETO / "config.exemplo.yaml", ARQUIVO_CONFIG)
+
 
 def carregar_config() -> dict:
     try:

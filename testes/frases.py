@@ -290,6 +290,9 @@ def main() -> int:
     from app.voz import Voz
     configuracao.migrar()
     cfg = carregar_config()
+    # As frases de teste começam com "Mestre": não depender da palavra que o usuário escolheu
+    cfg.setdefault("assistente", {})["palavra_ativacao"] = "mestre"
+    cfg["rotinas"] = list(cfg.get("rotinas") or []) + [{"nome": "Bom dia", "frases": ["bom dia"], "acoes": []}]
     cfg["canais_youtube"] = {"Manual do Mundo": "@manualdomundo"}
     cfg["spotify"] = {"playlists": {"Foco": "https://open.spotify.com/playlist/x"}, "apertar_play": False}
     for nome in ("abrir_site", "abrir_programa", "abrir_arquivo", "midia", "volume", "volume_do_pc", "atalho",

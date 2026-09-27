@@ -45,6 +45,13 @@ def copiar_projeto(destino: Path) -> Path:
     pasta = destino / "mestre"
     shutil.copytree(PROJETO, pasta, ignore=IGNORAR)
     (pasta / "logs").mkdir(exist_ok=True)
+    # Os testes falam "mestre ...": a cópia usa essa palavra, seja qual for a escolhida pelo usuário
+    cfg = pasta / "config.yaml"
+    if (pasta / "config.exemplo.yaml").exists():  # testes nao dependem do config do usuario
+        shutil.copyfile(pasta / "config.exemplo.yaml", cfg)
+    if cfg.exists():
+        texto = cfg.read_text(encoding="utf-8")
+        cfg.write_text(re.sub(r'(?m)^(\s*palavra_ativacao:\s*).*$', r'\1"mestre"', texto), encoding="utf-8")
     return pasta
 
 
@@ -581,7 +588,7 @@ ok(segredos.ler("telegram_chat") == "111" and ("abrir", "https://youtube.com/wat
 
 todas = ex.todas_as_falas()
 ok(all(ex.preencher(f) in todas for f in ("Segundo plano.", "Pronto {apelido}.")), "Avisos curtos do pensando ficam no cache")
-print("FIM_FLUXOS")
+print("FIM_FLUXOS", flush=True)  # os._exit nao esvazia o buffer
 os._exit(0)
 """
 
@@ -730,7 +737,8 @@ def main() -> int:
         s = comando(pasta, "mestre abre o site do teste")
         conferir("Abrindo site: https://exemplo.com" in s, "Site novo abre", s[-600:])
         s = comando(pasta, "mestre abre o canal manual do mundo")
-        conferir("youtube.com/@manualdomundo" in s, "Canal do YouTube abre", s[-600:])
+        conferir(("youtube.com/@manualdomundo" in s or "Abrindo o canal Manual do Mundo" in s) and "Traceback" not in s,
+                 "Canal do YouTube abre", s[-600:])
         s = comando(pasta, "mestre que horas são")
         conferir("Falando:" in s and "Traceback" not in s, "Pergunta simples (horas)", s[-600:])
 

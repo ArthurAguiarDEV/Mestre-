@@ -9,3 +9,8 @@ navegador_mestre/
 exportacoes/
 memoria/
 recebidos/
+
+# Configuracao pessoal (fica so no PC; modelo em config.exemplo.yaml)
+config.yaml
+config.yaml.bak
+config.yaml.antes_do_conserto
