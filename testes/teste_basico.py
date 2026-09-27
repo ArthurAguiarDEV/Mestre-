@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 
 PROJETO = Path(__file__).resolve().parent.parent
+VERSAO_ATUAL = re.search(r'VERSAO = "(\d+)"', (PROJETO / "app" / "versao.py").read_text(encoding="utf-8")).group(1)
 IGNORAR = shutil.ignore_patterns("venv", "modelos", "logs", "*.zip", "__pycache__", ".git", "mestre.pid",
                                  "notas", "respostas")
 resultados: list[tuple[bool, str, str]] = []
@@ -1169,7 +1170,7 @@ def main() -> int:
 
         print("\n[Painel novo: versão e vozes]")
         cod, saida = rodar(pasta, VOZES_PAINEL)
-        conferir("VERSAO_TELA Versão 13" in saida, "Painel mostra a versão do projeto (menu lateral)", saida[-600:])
+        conferir(f"VERSAO_TELA Versão {VERSAO_ATUAL}" in saida, "Painel mostra a versão do projeto (menu lateral)", saida[-600:])
         conferir("ABRIU_SECAO True elevenlabs" in saida, "Clicar no cartão da voz escolhe e abre a configuração dela",
                  saida[-600:])
         conferir("SALVOU_VOZ natural francisca onwK4e9ZLuTAKqWW03F9 eleven_flash_v2_5 chave-de-teste" in saida,
@@ -1215,7 +1216,7 @@ def main() -> int:
                 z.write(arq, "mestre/" + arq.relative_to(pasta).as_posix())
             z.writestr("mestre/config.yaml", "sobrescrito!")
             z.writestr("mestre/OBSOLETOS.txt", "ANTIGO.bat\nconfig.yaml\n")
-        (destino / "app" / "versao.py").write_text('VERSAO = "12"\n', encoding="utf-8")
+        (destino / "app" / "versao.py").write_text(f'VERSAO = "{int(VERSAO_ATUAL) - 1}"\n', encoding="utf-8")
         cod, saida = rodar(destino, f"""
             from pathlib import Path
             from app import atualizar
@@ -1223,7 +1224,7 @@ def main() -> int:
             print(atualizar.aplicar(r"{pacote}", Path.cwd(), instalar_bibliotecas=False))
         """)
         conferir("VERIFICAR ''" in saida and "Atualizado" in saida, "Atualização aplicada", saida[-500:])
-        conferir("da versão 12 para a 13" in saida, "Atualização diz de qual versão para qual foi", saida[-500:])
+        conferir(f"da versão {int(VERSAO_ATUAL) - 1} para a {VERSAO_ATUAL}" in saida, "Atualização diz de qual versão para qual foi", saida[-500:])
         conferir((destino / "config.yaml").read_text(encoding="utf-8") == "# MEU CONFIG\n",
                  "Atualização NÃO mexe no seu config.yaml")
         conferir(not (destino / "ANTIGO.bat").exists(), "Atualização retira arquivos antigos")

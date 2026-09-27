@@ -1,3 +1,3 @@
 """Versao do Mestre (aparece no painel). Cada zip de atualizacao sobe este numero."""
-VERSAO = "13"
-DATA = "26/09/2026"
+VERSAO = "14"
+DATA = "27/09/2026"

@@ -2801,6 +2801,7 @@ class Painel(ctk.CTk):
         if getattr(self, "_val", None) is not None:   # validacao aberta: o ouvido para de guardar audio
             from . import validacao
             validacao.ligar_audio(False)
+            self._val = None   # para o laco _val_vigiar nao mexer em widgets ja destruidos
         servidor = getattr(self, "_servidor", None)
         if servidor:   # libera a porta ja (para um painel novo conseguir abrir logo em seguida)
             try:

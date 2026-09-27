@@ -802,6 +802,9 @@ class Executor:
                 self._tentar_comandos(self._separar_monitor(self.vocab.traduzir(str(valor))))
             finally:
                 self._frase_original = original
+            if self._pendente is not None:   # passo de rotina nao fica esperando resposta falada
+                log.info("Rotina: o passo %r fez uma pergunta; ignorada", valor)
+                self._pendente = None
         else:
             log.warning("Ação desconhecida na rotina: %s", tipo)
 

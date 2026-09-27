@@ -52,7 +52,7 @@ class Indicador:
         raiz.overrideredirect(True)
         raiz.attributes("-topmost", True)
         try:
-            raiz.attributes("-alpha", 0.94)
+            raiz.attributes("-alpha", 0.0 if tema.testando() else 0.94)
         except tk.TclError:
             pass
         self.cantos_redondos = sys.platform == "win32"

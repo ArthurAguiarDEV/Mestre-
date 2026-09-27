@@ -21,4 +21,5 @@ playwright        # YouTube controlado por voz (usa o Edge do PC; nao baixa nave
 kokoro-onnx       # voz Kokoro: natural e rapida, roda no PC (baixa o modelo de 330 MB uma vez)
 torch             # base do reconhecimento da SUA voz (versao so processador, ~540 MB instalado)
 torchaudio
-speechbrain       # "responder so a minha voz": compara a voz com o cadastro (modelo de 85 MB, gratis, local)
+huggingface_hub   # baixa o modelo de voz do speechbrain
+speechbrain      # "responder so a minha voz": compara a voz com o cadastro (modelo de 85 MB, gratis, local)
