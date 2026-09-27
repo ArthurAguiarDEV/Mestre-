@@ -37,6 +37,7 @@ juntas, repetições e palavras de transcrição ("né", "tipo assim", "entendeu
 **Fora do escopo:** <o que NÃO faz parte, para não crescer demais>
 **Perguntas:** <dúvidas + sugestão padrão; ou "nenhuma">
 **Tamanho:** pequeno | médio | grande
+**Esforço:** baixo | médio | alto | extra · Sonnet | Opus (skill avaliar-esforco; sempre preencher)
 ```
 
 ## Regras
