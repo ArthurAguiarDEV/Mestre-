@@ -12,6 +12,7 @@ Para criar um comando novo:
   3. coloque o nome dele na lista ORDEM, logo abaixo
 """
 import logging
+import queue
 import random
 import re
 import shutil
@@ -163,7 +164,9 @@ class Executor:
         self.ultimo_comando: str | None = None
         self._rota, self._entendi = "", ""
         # pensamento da IA em segundo plano
-        self._pensamento: dict | None = None
+        self._pensamentos: list[dict] = []   # FILA: cada pedido termina na sua vez (nunca descarta)
+        self._fila_ia: queue.Queue = queue.Queue()
+        self._trabalhador_ia: threading.Thread | None = None
         self._pensamento_id = 0
         self._trava_pensamento = threading.Lock()
         self._trava_execucao = threading.RLock()   # um comando de cada vez (voz e IA em segundo plano)
@@ -487,55 +490,96 @@ class Executor:
         return self.cfg.get("cerebro") or {}
 
     def _pensar(self, frase: str, trabalho, entregar) -> None:
+        """Coloca o pedido na FILA da IA (um de cada vez, na ordem). Nunca descarta o anterior.
+        Espera no maximo `segundo_plano_seg` (so se for o unico da fila); depois volta a ouvir."""
         limite = float(self._cfg_cerebro().get("segundo_plano_seg", 3))
         with self._trava_pensamento:
             self._pensamento_id += 1
             meu = self._pensamento_id
-            if self._pensamento:
-                log.info("Pensamento anterior deixado de lado: %r", self._pensamento["pergunta"])
-            self._pensamento = {"id": meu, "pergunta": frase, "estado": "pensando", "inicio": time.time(),
-                                "resultado": None, "fundo": False, "entregar": entregar}
+            na_frente = sum(1 for x in self._pensamentos if x["estado"] == "pensando")
+            p = {"id": meu, "pergunta": frase, "estado": "pensando", "inicio": time.time(), "resultado": None,
+                 "fundo": False, "entregar": entregar, "trabalho": trabalho, "pronto": threading.Event()}
+            self._pensamentos.append(p)
+            if self._trabalhador_ia is None or not self._trabalhador_ia.is_alive():
+                self._trabalhador_ia = threading.Thread(target=self._trabalhar_fila_ia, daemon=True, name="fila-ia")
+                self._trabalhador_ia.start()
+            # atras de outro na fila (ou pedido feito pela propria fila): nem espera, ja vai para segundo plano
+            ja_fundo = na_frente > 0 or threading.current_thread() is self._trabalhador_ia
+            p["fundo"] = ja_fundo
+        if na_frente:
+            log.info("Pensamento na fila (%d na frente): %r", na_frente, frase)
+        self._fila_ia.put(p)
         estado.definir("pensando", frase)
+        if ja_fundo:
+            self._atualizar_indicador()
+            self._aviso_curto("fundo")
+            return
         if str(self._cfg_cerebro().get("aviso_som", "nenhum")) != "nenhum":
             self.voz.falar_em_segundo_plano(self.sortear("pensando"))
-        pronto = threading.Event()
-
-        def rodar():
-            try:
-                resultado = trabalho()
-            except Exception:
-                log.exception("A IA falhou")
-                resultado = None
-            self._pensamento_terminou(meu, resultado)
-            pronto.set()
-        threading.Thread(target=rodar, daemon=True).start()
-
-        if not pronto.wait(limite):
+        if not p["pronto"].wait(limite):
             with self._trava_pensamento:
-                p = self._pensamento
-                fundo = bool(p and p["id"] == meu and p["estado"] == "pensando")
+                fundo = p["estado"] == "pensando" and p in self._pensamentos
                 if fundo:
                     p["fundo"] = True
             if fundo:   # demorou: vai para segundo plano e o Mestre volta a ouvir
-                estado.atualizar(pensamento="pensando", pensamento_pergunta=frase, pensamento_desde=p["inicio"])
+                self._atualizar_indicador()
                 self._aviso_curto("fundo")
                 return
         self._entregar_se_pronto(meu)
 
+    def _trabalhar_fila_ia(self) -> None:
+        """Uma thread so: a IA pensa um pedido de cada vez (Ollama e historico da conversa nao se misturam)."""
+        while True:
+            p = self._fila_ia.get()
+            with self._trava_pensamento:
+                cancelado = p not in self._pensamentos
+            if cancelado:
+                p["pronto"].set()
+                continue
+            try:
+                resultado = p["trabalho"]()
+            except Exception:
+                log.exception("A IA falhou")
+                resultado = None
+            try:
+                self._pensamento_terminou(p["id"], resultado)
+            except Exception:
+                log.exception("Erro entregando o pensamento")
+            finally:
+                p["pronto"].set()
+
+    def _atualizar_indicador(self) -> None:
+        """Bolinha: roxa se algum pedido (em segundo plano) ainda pensa, verde se tem resposta guardada."""
+        with self._trava_pensamento:
+            fundo = [x for x in self._pensamentos if x["fundo"]]
+        pensando = [x for x in fundo if x["estado"] == "pensando"]
+        if pensando:
+            estado.atualizar(pensamento="pensando", pensamento_pergunta=pensando[0]["pergunta"],
+                             pensamento_desde=pensando[0]["inicio"], pensamentos_fila=len(pensando))
+        else:
+            estado.atualizar(pensamento="pronto" if fundo else "", pensamentos_fila=0)
+
+    def _achar_pensamento(self, meu: int) -> dict | None:
+        return next((x for x in self._pensamentos if x["id"] == meu), None)
+
     def _pensamento_terminou(self, meu: int, resultado) -> None:
         with self._trava_pensamento:
-            p = self._pensamento
-            if not p or p["id"] != meu:
-                return   # cancelado ou trocado por outro
+            p = self._achar_pensamento(meu)
+            if not p:
+                return   # cancelado
             p["resultado"] = resultado
             p["estado"] = "pronto" if resultado else "falhou"
             fundo = p["fundo"]
         if not fundo:
             return   # quem esta esperando (sem segundo plano) entrega
+        if self._descansando:   # descansando: nao fala nada; fica guardado (verde)
+            self._atualizar_indicador()
+            return
         if p["estado"] == "falhou":
             with self._trava_pensamento:
-                self._pensamento = None
-            estado.atualizar(pensamento="")
+                if p in self._pensamentos:
+                    self._pensamentos.remove(p)
+            self._atualizar_indicador()
             self.voz.falar("A IA não conseguiu responder aquela pergunta. Tenta de novo daqui a pouco.")
             return
         if isinstance(resultado, dict) and resultado.get("tipo") in ("comando", "pergunta"):
@@ -545,7 +589,7 @@ class Executor:
             with self._trava_execucao:
                 self._entregar_se_pronto(meu)
             return
-        estado.atualizar(pensamento="pronto")
+        self._atualizar_indicador()
         texto = resultado if isinstance(resultado, str) else (resultado or {}).get("texto", "") \
             if isinstance(resultado, dict) else ""
         if texto:   # guarda ja no historico: mesmo que se perca, "repete a resposta" acha
@@ -554,7 +598,7 @@ class Executor:
         if aviso == "falar_direto" and not self._ditado_ativo:   # no ditado: fica guardada (indicador verde)
             self._esperar_voce_parar_de_falar()
             with self._trava_execucao:
-                self.entregar_pensamento()
+                self._entregar_se_pronto(meu)
             return
         if aviso == "voz" and not self._ditado_ativo:
             self._aviso_curto("pronto")
@@ -572,33 +616,42 @@ class Executor:
 
     def _entregar_se_pronto(self, meu: int) -> None:
         with self._trava_pensamento:
-            p = self._pensamento
-            if not p or p["id"] != meu:
+            p = self._achar_pensamento(meu)
+            if not p or p["estado"] == "pensando":
                 return
-            self._pensamento = None
-        estado.atualizar(pensamento="")
+            self._pensamentos.remove(p)
+        self._atualizar_indicador()
         if p["estado"] == "falhou":
             self.falar("erro")
             return
         p["entregar"](p["resultado"])
 
-    def entregar_pensamento(self) -> bool:
-        """Fala a resposta guardada (ou avisa que ainda esta pensando). Tambem pelo clique no indicador."""
+    @property
+    def _pensamento(self) -> dict | None:
+        """O pedido mais antigo da fila (compatibilidade: "tem pensamento?")."""
         with self._trava_pensamento:
-            p = self._pensamento
-        if not p:
+            return self._pensamentos[0] if self._pensamentos else None
+
+    def entregar_pensamento(self) -> bool:
+        """Fala a resposta guardada mais antiga (ou avisa que ainda esta pensando). Tambem pelo clique no indicador."""
+        with self._trava_pensamento:
+            prontos = [x for x in self._pensamentos if x["estado"] != "pensando"]
+            pensando = [x for x in self._pensamentos if x["estado"] == "pensando"]
+        if prontos:
+            self._entregar_se_pronto(prontos[0]["id"])
+            return True
+        if not pensando:
             self.voz.falar("Não tem nenhuma resposta guardada.")
             return False
-        if p["estado"] == "pensando":
-            self.voz.falar(f"Ainda tô pensando. Faz {int(time.time() - p['inicio'])} segundos.")
-            return True
-        self._entregar_se_pronto(p["id"])
+        extra = f" Tem {len(pensando)} pedidos na fila." if len(pensando) > 1 else ""
+        self.voz.falar(f"Ainda tô pensando. Faz {int(time.time() - pensando[0]['inicio'])} segundos.{extra}")
         return True
 
     def cancelar_pensamento(self) -> None:
+        """Descarta tudo que esta na fila da IA (o que ja esta rodando termina e e ignorado)."""
         with self._trava_pensamento:
-            self._pensamento = None
-        estado.atualizar(pensamento="")
+            self._pensamentos.clear()
+        estado.atualizar(pensamento="", pensamentos_fila=0)
 
     def _responder_aviso_pensamento(self, resposta: str) -> None:
         n = normalizar(resposta)

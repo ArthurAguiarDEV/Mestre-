@@ -28,7 +28,10 @@ def conferir(ok: bool, nome: str, detalhe: str = "") -> None:
 
 def rodar(pasta: Path, codigo: str, espera: int = 300) -> tuple[int, str]:
     """Roda um trecho de Python dentro da copia do projeto."""
-    r = subprocess.run([sys.executable, "-c", textwrap.dedent(codigo)], cwd=str(pasta), capture_output=True,
+    # (em arquivo: pelo "-c" o trecho grande passa do limite de linha de comando do Windows)
+    script = pasta / "_trecho_teste.py"
+    script.write_text(textwrap.dedent(codigo), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(script)], cwd=str(pasta), capture_output=True,
                        text=True, encoding="utf-8", errors="replace", timeout=espera,
                        env={**os.environ, "MESTRE_SIMULAR": "1", "PYTHONIOENCODING": "utf-8"})
     return r.returncode, (r.stdout or "") + (r.stderr or "")
@@ -585,6 +588,32 @@ ok("Mensagem do Telegram." in ditos and "Telegram" in estado.ler()["aviso"] and 
 caixa._mensagem_telegram({"chat": {"id": 999}, "text": "Mestre, abre o primeiro vídeo"})
 ok(segredos.ler("telegram_chat") == "111" and ("abrir", "https://youtube.com/watch?v=3") in yt.feito
    and not any(c == 999 for c, _ in respostas_tg), "Telegram: o 1º chat vira o seu, executa comando e ignora estranhos")
+
+# --- fila do "pensando": 3 pedidos seguidos para a IA lenta + comando simples no meio, nada trava ---------
+class IAFila(IALenta):
+    atraso = 1.2
+    def interpretar(self, frase, comandos):
+        time.sleep(self.atraso)
+        if "terceiro" in frase:
+            return {"tipo": "comando", "texto": "abre o terceiro video"}
+        return {"tipo": "resposta", "texto": f"Resposta pensada sobre {frase}"}
+ex.cerebro = IAFila(); yt.feito.clear(); ditos.clear()
+ex.cfg["cerebro"]["aviso_ao_terminar"] = "falar_direto"; ex.cfg["cerebro"]["segundo_plano_seg"] = 0.5
+tempos = [diga(f, f)[0] for f in ("fila pedido um", "fila pedido dois")]
+t_simples, falas_s = diga("que horas sao", "Que horas são")
+tempos.append(diga("fila abre o terceiro la", "Fila abre o terceiro lá")[0])
+fila_roxa = estado.ler()["pensamento"] == "pensando" and estado.ler().get("pensamentos_fila", 0) >= 2
+fim = time.time() + 15
+while time.time() < fim and ex._pensamento:
+    time.sleep(0.1)
+ordem = [f for f in ditos if "Resposta pensada sobre fila" in f]
+ok(max(tempos) < 1.5 and t_simples < 1 and bool(falas_s) and fila_roxa and not ex._pensamento
+   and ordem == ["Resposta pensada sobre fila pedido um", "Resposta pensada sobre fila pedido dois"]
+   and ("abrir", "https://youtube.com/watch?v=3") in yt.feito and estado.ler()["pensamento"] == "",
+   f"Fila do pensando: 3 pedidos + comando simples no meio, cada um na sua vez, sem travar ({ordem}, {yt.feito})")
+t_depois, falas_d = diga("que horas sao", "Que horas são")
+ok(t_depois < 1 and bool(falas_d), "Depois da fila o Assessor continua respondendo")
+ex.cerebro = IALenta(); ex.cfg["cerebro"]["aviso_ao_terminar"] = "voz"; ex.cfg["cerebro"]["segundo_plano_seg"] = 1
 
 todas = ex.todas_as_falas()
 ok(all(ex.preencher(f) in todas for f in ("Segundo plano.", "Pronto {apelido}.")), "Avisos curtos do pensando ficam no cache")

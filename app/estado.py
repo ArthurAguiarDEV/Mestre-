@@ -15,7 +15,7 @@ _atual = {"nome": "iniciando", "detalhe": "", "desde": time.time(), "nivel": 0.0
           "limiar": 0.0, "conversa_ate": 0.0, "ultima_frase": "", "ultima_resposta": "",
           "ditado": 0, "ditado_desde": 0.0, "ditado_contexto": "", "ultimo_audio": b"", "audio_anterior": b"",
           # IA pensando em segundo plano: "" | "pensando" | "pronto"
-          "pensamento": "", "pensamento_pergunta": "", "pensamento_desde": 0.0,
+          "pensamento": "", "pensamento_pergunta": "", "pensamento_desde": 0.0, "pensamentos_fila": 0,
           # "pode descansar": so "bora voltar a trabalhar" acorda
           "descanso": False,
           # aviso rapido no indicador (ex.: "Telegram: abre o YouTube") ate o horario "aviso_ate"
