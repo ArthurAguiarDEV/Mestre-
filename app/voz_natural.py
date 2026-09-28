@@ -53,6 +53,17 @@ def tem_placa_nvidia() -> bool:
     return bool(shutil.which("nvidia-smi")) or Path(r"C:\Windows\System32\nvidia-smi.exe").exists()
 
 
+def placa_serie_50() -> bool:
+    """Placa NVIDIA de arquitetura 12.x (RTX 50): precisa do PyTorch feito para CUDA 12.8."""
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+                           capture_output=True, text=True, timeout=15, creationflags=NO_WINDOW)
+        return any(linha.strip().split(".")[0].isdigit() and int(linha.strip().split(".")[0]) >= 12
+                   for linha in r.stdout.splitlines())
+    except Exception:
+        return False
+
+
 def _python_base() -> str:
     python = Path(sys.executable)
     if python.name.lower() == "pythonw.exe":
@@ -73,6 +84,12 @@ def instalar(progresso=None) -> str:
               ("Baixando o PyTorch para a " + ("placa de vídeo" if "cu" in indice else "CPU") + " (uns 2,5 GB)...",
                [py, "-m", "pip", "install", "-q", "torch==2.6.0", "torchaudio==2.6.0", "--index-url", indice]),
               ("Instalando a voz Chatterbox...", [py, "-m", "pip", "install", "-q", "chatterbox-tts"])]
+    if placa_serie_50():
+        # RTX 50 (Blackwell, sm_120): o torch 2.6 (cu124) que a Chatterbox pede nao roda nela ("no kernel
+        # image"). Depois da Chatterbox, troca pelo torch 2.8 feito para CUDA 12.8.
+        passos.append(("Ajustando o PyTorch para a sua placa RTX 50 (uns 3 GB)...",
+                       [py, "-m", "pip", "install", "-q", "--force-reinstall", "--no-deps", "torch==2.8.0",
+                        "torchaudio==2.8.0", "--index-url", "https://download.pytorch.org/whl/cu128"]))
     with open(diario, "a", encoding="utf-8") as d:
         for texto, comando in passos:
             if comando[1:3] == ["-m", "venv"] and python_do_ambiente().exists():
