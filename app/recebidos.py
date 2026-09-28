@@ -33,6 +33,22 @@ from .texto import extrair_comando, normalizar
 
 log = logging.getLogger(__name__)
 PASTA_TEXTOS = PASTA_PROJETO / "recebidos"
+ARQUIVO_POSICAO_TELEGRAM = PASTA_PROJETO / "logs" / "telegram_posicao.json"
+
+
+def _ler_posicao_telegram() -> int:
+    try:
+        return int(json.loads(ARQUIVO_POSICAO_TELEGRAM.read_text(encoding="utf-8")).get("proximo", 0))
+    except (OSError, ValueError, AttributeError):
+        return 0
+
+
+def _salvar_posicao_telegram(proximo: int) -> None:
+    try:
+        ARQUIVO_POSICAO_TELEGRAM.parent.mkdir(exist_ok=True)
+        ARQUIVO_POSICAO_TELEGRAM.write_text(json.dumps({"proximo": proximo}), encoding="utf-8")
+    except OSError as erro:
+        log.debug("Telegram: nao gravei a posicao: %s", erro)
 EXTENSOES = {".ogg", ".opus", ".oga", ".m4a", ".mp3", ".wav", ".aac", ".amr", ".3gp", ".webm", ".mp4", ".flac"}
 CABECALHO = "[Áudio do celular transcrito pelo {nome}: corrija a transcrição e refine antes de implementar.]\n\n"
 
@@ -227,11 +243,14 @@ class Caixa:
 
     def _vigiar_telegram(self) -> None:
         log.info("Telegram ligado: esperando mensagens do seu robo")
-        proximo = 0
+        proximo = _ler_posicao_telegram()
         while self.executor.rodando:
             try:
                 for item in self._api("getUpdates", offset=proximo, timeout=25):
                     proximo = item["update_id"] + 1
+                    # grava ANTES de executar: "reinicia"/"desligar" encerram o processo antes da proxima
+                    # busca confirmar a mensagem ao Telegram, e ela voltaria ao ligar (loop de reinicio)
+                    _salvar_posicao_telegram(proximo)
                     self._mensagem_telegram(item.get("message") or {})
             except Exception as erro:
                 log.info("Telegram: %s (tento de novo em 20 s)", erro)
