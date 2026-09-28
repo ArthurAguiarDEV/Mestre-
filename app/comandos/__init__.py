@@ -33,6 +33,7 @@ import queue
 import random
 import re
 import threading
+import time
 from datetime import datetime
 from .. import estado, memoria, personalidades, sistema
 from ..config import palavras_ativacao
@@ -159,12 +160,14 @@ class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixi
         self._tipo_registro = "comando"
         self._rota, self._entendi = "", ""
         gravacao, atendidos = self._gravacao, self._n_atendidos
+        inicio = time.time()
         try:
             segundos = self._executar(frase, frase_completa, seguimento)
             if gravacao is not None and gravacao is self._gravacao:   # gravando uma rotina: guarda o passo
                 self._proteger(self._gravar_passo, atendidos)
         finally:
             falado, self.voz.registro = self.voz.registro or [], None
+            memoria.registrar_tempo("frase_para_comando", time.time() - inicio)
         if self._tipo_registro != "historico" and (normalizar(frase) or falado):
             memoria.registrar(frase_completa or frase, " ".join(falado), self._tipo_registro,
                               {"entendi": self._entendi, "rota": self._rota, "seguimento": bool(seguimento)})

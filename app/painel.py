@@ -3927,6 +3927,104 @@ class Painel(ctk.CTk):
             text_color=tema.SUCESSO)
         self._sug_desenhar()
 
+    # -----------------------------------------------------------------
+    #  Tempos (memoria/tempos.jsonl): media e pior caso das ultimas N medidas de cada etapa,
+    #  para achar o que esta lento. So leitura (nada para salvar); le em segundo plano.
+    # -----------------------------------------------------------------
+    TEMPOS_LINHAS_MAX = 10
+    TEMPOS_N = 50
+    TEMPOS_ROTULOS = {
+        "fala_para_texto": "Fala → texto (Whisper)",
+        "frase_para_comando": "Frase → comando",
+        "ate_falar": "Até começar a falar (voz)",
+    }
+
+    def _aba_tempos(self, pagina):
+        f = secao(pagina, "Tempos",
+                  f"Quanto tempo cada etapa leva, para achar o que está lento: da fala ao texto (Whisper), "
+                  f"da frase ao comando, o tempo de cada IA e o tempo até o {self.nome} começar a falar. "
+                  f"Média e pior caso das últimas {self.TEMPOS_N} vezes.")
+        topo = ctk.CTkFrame(f, fg_color="transparent")
+        topo.pack(fill="x", padx=(32, 18), pady=4)
+        ctk.CTkButton(topo, text="🔄  Atualizar", width=130, command=self._tempos_atualizar).pack(side="left")
+        self.rot_tempos_info = ctk.CTkLabel(topo, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        self.rot_tempos_info.pack(side="left", padx=12, fill="x", expand=True)
+        cabecalho = ctk.CTkFrame(f, fg_color="transparent")
+        cabecalho.pack(fill="x", padx=(32, 18), pady=(8, 0))
+        for texto, largura in [("Etapa", 280), ("Média", 90), ("Pior caso", 90), ("Amostras", 90)]:
+            ctk.CTkLabel(cabecalho, text=texto, width=largura, anchor="w",
+                        font=tema.fonte(12, True), text_color=tema.TEXTO_FRACO).pack(side="left")
+        self._tempos_linhas = []
+        for _ in range(self.TEMPOS_LINHAS_MAX):
+            linha = ctk.CTkFrame(f, fg_color="transparent")
+            etapa = ctk.CTkLabel(linha, text="", width=280, anchor="w", text_color=tema.TEXTO)
+            etapa.pack(side="left")
+            media = ctk.CTkLabel(linha, text="", width=90, anchor="w", text_color=tema.TEXTO)
+            media.pack(side="left")
+            pior = ctk.CTkLabel(linha, text="", width=90, anchor="w", text_color=tema.TEXTO)
+            pior.pack(side="left")
+            n = ctk.CTkLabel(linha, text="", width=90, anchor="w", text_color=tema.TEXTO_FRACO)
+            n.pack(side="left")
+            self._tempos_linhas.append({"frame": linha, "etapa": etapa, "media": media, "pior": pior, "n": n})
+        self.rot_tempos_vazio = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        self.rot_tempos_vazio.pack(fill="x", padx=(32, 18), pady=(4, 8))
+        self._tempos_coletando = False
+        self._tempos_dados = None
+        self._tempos_atualizar()
+
+    def _rotulo_tempo(self, etapa: str) -> str:
+        if etapa in self.TEMPOS_ROTULOS:
+            return self.TEMPOS_ROTULOS[etapa]
+        if etapa.startswith("ia_"):
+            from .cerebro import ROTULOS_OPCOES_IA
+            id_ = etapa[len("ia_"):]
+            return f"IA: {ROTULOS_OPCOES_IA.get(id_, id_)}"
+        return etapa
+
+    def _tempos_atualizar(self):
+        """So dispara a leitura (arquivo em memoria/): roda numa thread para nunca travar o painel."""
+        if getattr(self, "_tempos_coletando", False):
+            return
+        self._tempos_coletando = True
+        if hasattr(self, "rot_tempos_info"):
+            self.rot_tempos_info.configure(text="Lendo…")
+        threading.Thread(target=self._tempos_coletar_fundo, daemon=True).start()
+
+    def _tempos_coletar_fundo(self):
+        from . import memoria
+        try:
+            self._tempos_dados = memoria.tempos_resumo(self.TEMPOS_N)
+        except Exception:
+            self._tempos_dados = {}
+        finally:
+            self._tempos_coletando = False
+            self.after(0, self._tempos_desenhar)
+
+    def _tempos_desenhar(self):
+        if not hasattr(self, "_tempos_linhas"):
+            return   # (a pagina fechou antes da leitura terminar)
+        dados = self._tempos_dados or {}
+        ordem = list(self.TEMPOS_ROTULOS) + sorted(k for k in dados if k not in self.TEMPOS_ROTULOS)
+        etapas = [k for k in ordem if k in dados][:self.TEMPOS_LINHAS_MAX]
+        for i, linha in enumerate(self._tempos_linhas):
+            if i < len(etapas):
+                etapa = etapas[i]
+                d = dados[etapa]
+                linha["etapa"].configure(text=self._rotulo_tempo(etapa))
+                linha["media"].configure(text=f"{d['media']:.2f}s")
+                linha["pior"].configure(text=f"{d['pior']:.2f}s")
+                linha["n"].configure(text=f"{d['n']}x")
+                linha["frame"].pack(fill="x", padx=(32, 18), pady=1)
+            else:
+                linha["frame"].pack_forget()
+        if etapas:
+            self.rot_tempos_vazio.configure(text="")
+            self.rot_tempos_info.configure(text=f"Atualizado às {time.strftime('%H:%M:%S')}.")
+        else:
+            self.rot_tempos_vazio.configure(
+                text="Ainda não tem medidas. Fale com ele um pouco e clique em “Atualizar”.")
+            self.rot_tempos_info.configure(text="")
+
     # =================================================================
     #  Salvar
     # =================================================================
@@ -4237,6 +4335,7 @@ PAGINAS = {
                             Painel._aba_validacao),
     "Sugestões de melhoria": ("brilho", "Todo dia ele olha o que deu errado e sugere melhorias para o Claude.",
                               Painel._aba_sugestoes),
+    "Tempos":            ("chip", "Quanto tempo cada etapa leva: fala, comando, IA e voz.", Painel._aba_tempos),
 }
 
 
@@ -4245,7 +4344,7 @@ GRUPOS_MENU = [
     ("VOZ E OUVIDO", ["Voz", "Áudio"]),
     ("APPS E SITES", ["YouTube", "Spotify", "Programas e sites", "Rotinas", "Atalhos"]),
     ("INTEGRAÇÕES", ["IPM e projetos", "Celular"]),
-    ("SISTEMA", ["Histórico", "Melhorias", "Validar atualização", "Sugestões de melhoria", "Aparência"]),
+    ("SISTEMA", ["Histórico", "Melhorias", "Validar atualização", "Sugestões de melhoria", "Tempos", "Aparência"]),
 ]
 
 

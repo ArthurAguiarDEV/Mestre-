@@ -230,8 +230,10 @@ class Cerebro:
             if liberado_em > agora:
                 log.info("IA de castigo, pulando %s (libera em %ds)", op["rotulo"], int(liberado_em - agora))
                 continue
+            comeco = time.time()
             try:
                 resultado = op["chamar"](sistema, historico, formato=formato, modelo=op["modelo"], timeout=timeout)
+                memoria.registrar_tempo(f"ia_{op['id']}", time.time() - comeco)
                 with self._trava_castigo:
                     self._castigo.pop(op["id"], None)
                 self.ultima_ia_respondeu = op["rotulo"]

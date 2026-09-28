@@ -364,6 +364,8 @@ class Voz:
         partes = self.partes(texto)
         prontos: queue.Queue = queue.Queue()
         geracao = self._geracao
+        inicio = time.time()
+        primeira = True
 
         def produzir():
             for parte in partes:
@@ -387,6 +389,10 @@ class Voz:
                 return tocou_algo
             arquivo, temporario = item
             if geracao == self._geracao:
+                if primeira:
+                    from . import memoria
+                    memoria.registrar_tempo("ate_falar", time.time() - inicio)
+                    primeira = False
                 self._tocar(arquivo)
                 tocou_algo = True
             if temporario:

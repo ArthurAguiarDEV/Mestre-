@@ -14,6 +14,19 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Painel > Sistema > Tempos: quanto tempo cada etapa leva
+
+Nova página no painel que mostra a média e o pior caso das últimas 50 vezes de cada etapa: da
+fala ao texto (Whisper), da frase ao comando, o tempo de cada IA configurada e o tempo até o
+Assessor começar a falar. Serve para achar o que está lento.
+
+| Frase/ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Abra o painel, menu SISTEMA > "Tempos" | Mostra uma lista com etapa / média / pior caso / quantas amostras | (painel) |
+| (painel) Clique em "Atualizar" | A lista atualiza sem travar o painel (lê em segundo plano) | (painel) |
+| Fale algumas frases com o Assessor e volte na página "Tempos" | Depois de "Atualizar", aparecem "Fala → texto (Whisper)" e "Frase → comando" com pelo menos 1 amostra | (painel) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | `tempos_resumo`/`registrar_tempo` e a página "Tempos" OK | (automático) |
+
 ### Conserto: "mover janela" pro monitor (quando falava e não acontecia nada)
 
 Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"pro" no meio

@@ -1690,6 +1690,20 @@ agora, com um campo pra você escrever o apelido de cada um (o padrão já vem c
 e um botão **"Usar agora"** pra trocar na hora, sem precisar salvar. Se você usa outros nomes (por
 exemplo "home office" e "caixa da sala"), é só trocar os apelidos ali e salvar.
 
+## Etapa 37: Ver o que está lento (Tempos)
+
+Nova página **Painel > Sistema > Tempos**: mostra quanto tempo cada etapa está levando, pra achar
+o que está deixando ele mais devagar.
+
+- **Fala → texto (Whisper):** quanto tempo ele demora pra transcrever o que você falou.
+- **Frase → comando:** quanto tempo demora entre entender o pedido e executar.
+- **IA:** um tempo por provedor (Ollama, Claude, Groq...), pra saber qual está mais rápido.
+- **Até começar a falar:** quanto tempo demora entre a decisão de responder e o som começar a sair.
+
+Cada linha mostra a **média** e o **pior caso** das últimas 50 vezes, e quantas vezes ele já mediu.
+Clique em **"Atualizar"** para reler (não trava o painel: ele lê em segundo plano). Quanto mais você
+usa o Assessor, mais completa fica a lista.
+
 ---
 
 ## Personalizar

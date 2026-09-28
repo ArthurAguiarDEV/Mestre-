@@ -316,6 +316,22 @@ ok("ipm" in normalizar(contexto_trabalho) and "ana" not in normalizar(contexto_t
    and "wifi" not in normalizar(contexto_trabalho),
    "Contexto pra IA: pergunta sobre trabalho manda só trabalho.md (+ índice), sem pessoas nem casa")
 
+# --- Tempos por etapa (memoria/tempos.jsonl): media e pior caso das ultimas N medidas ------------------
+memoria.ARQUIVO_TEMPOS.unlink(missing_ok=True)
+for s in [1.0, 2.0, 3.0, 0.5]:
+    memoria.registrar_tempo("teste_etapa", s)
+memoria.registrar_tempo("teste_etapa", -1)   # negativo: ignorado, nao entra na conta
+resumo = memoria.tempos_resumo(50)
+ok(resumo.get("teste_etapa") == {"media": 1.62, "pior": 3.0, "n": 4},
+   f"tempos_resumo: media e pior caso das medidas guardadas ({resumo.get('teste_etapa')})")
+muitas = list(range(1, 61))   # 60 medidas: so as ultimas 50 entram na media/pior
+for v in muitas:
+    memoria.registrar_tempo("teste_etapa_2", v)
+resumo2 = memoria.tempos_resumo(50)
+ok(resumo2["teste_etapa_2"]["n"] == 50 and resumo2["teste_etapa_2"]["pior"] == 60.0,
+   "tempos_resumo: so olha as ultimas 50 (nao pesa o arquivo todo crescendo)")
+memoria.ARQUIVO_TEMPOS.unlink(missing_ok=True)
+
 tempo, _ = diga("me explica a teoria da relatividade")
 ok(tempo < 2 and estado.ler()["pensamento"] == "pensando", "IA demorou: vai para segundo plano (bolinha roxa)")
 tempo, falas = diga("que horas sao")
@@ -385,6 +401,11 @@ ok(bool(colados) and "modo claro" in colados[-1] and colados[-1].startswith("[Pe
 for resposta, esperado in [("manda pro claude code", "projeto"), ("manda pro agente ipm", "ipm"), ("pro projeto", "projeto")]:
     ex._frase_original = resposta
     ok(ex._qual_destino(resposta) == esperado, f"“{resposta}” vai para {esperado}")
+
+# --- Painel > Sistema > Tempos: os comandos acima ja gravaram "frase_para_comando" sozinhos -------------
+resumo_comando = memoria.tempos_resumo(50)
+ok("frase_para_comando" in resumo_comando and resumo_comando["frase_para_comando"]["n"] > 0,
+   "Cada comando executado guarda quanto tempo levou (frase_para_comando) em memoria/tempos.jsonl")
 
 # --- musica, volume, janelas e YouTube -------------------------------------------------
 feitos = []

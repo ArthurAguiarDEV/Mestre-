@@ -7,6 +7,8 @@ Fica na pasta memoria/ (a atualizacao pelo painel nunca mexe nela):
   memoria/fatos.md.antes_da_migracao -> backup do fatos.md antigo (uma versao anterior guardava tudo junto)
   memoria/conversa.json          -> ultimas trocas com a IA (a conversa continua depois de reiniciar)
   memoria/ouvido.jsonl           -> tudo que o microfone transcreveu (para achar erros de reconhecimento)
+  memoria/tempos.jsonl           -> quanto cada etapa demorou (painel > Tempos): fala->texto, frase->comando,
+                                     IA por provedor, ate comecar a falar
 """
 import json
 import logging
@@ -26,8 +28,10 @@ PASTA_FATOS = PASTA_MEMORIA / "fatos"
 ARQUIVO_INDICE = PASTA_FATOS / "INDICE.md"
 ARQUIVO_CONVERSA = PASTA_MEMORIA / "conversa.json"
 ARQUIVO_OUVIDO = PASTA_MEMORIA / "ouvido.jsonl"
+ARQUIVO_TEMPOS = PASTA_MEMORIA / "tempos.jsonl"
 MAXIMO_HISTORICO = 2000
 MAXIMO_OUVIDO = 3000
+MAXIMO_TEMPOS = 4000
 _trava = threading.Lock()
 
 # --- Fatos por assunto ("lembra que ...") --------------------------------------------------
@@ -75,6 +79,45 @@ def ouvido(texto: str, **dados) -> None:
     item = {"data": datetime.now().strftime("%d/%m/%Y %H:%M:%S"), "texto": (texto or "").strip(),
             "ts": round(time.time(), 2), **dados}
     _acrescentar(ARQUIVO_OUVIDO, item, MAXIMO_OUVIDO)
+
+
+def registrar_tempo(etapa: str, segundos: float) -> None:
+    """Quanto uma etapa demorou (painel > Sistema > Tempos), para achar o que esta lento: "fala_para_texto"
+    (Whisper), "frase_para_comando" (achar e rodar o comando), "ia_<id>" (cada provedor de IA) e
+    "ate_falar" (da decisao ate o audio comecar a tocar). Nunca atrapalha quem chamou: so registra."""
+    try:
+        if segundos is None or segundos < 0:
+            return
+        item = {"ts": round(time.time(), 2), "etapa": str(etapa), "segundos": round(float(segundos), 3)}
+        _acrescentar(ARQUIVO_TEMPOS, item, MAXIMO_TEMPOS)
+    except Exception:
+        log.warning("Nao consegui guardar o tempo da etapa %s", etapa, exc_info=True)
+
+
+def tempos_resumo(n: int = 50) -> dict[str, dict]:
+    """Media e pior caso das ultimas `n` medidas de cada etapa (memoria/tempos.jsonl).
+    Devolve {etapa: {"media": s, "pior": s, "n": quantas}}."""
+    if not ARQUIVO_TEMPOS.exists():
+        return {}
+    por_etapa: dict[str, list[float]] = {}
+    try:
+        linhas = ARQUIVO_TEMPOS.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    for linha in linhas:
+        try:
+            d = json.loads(linha)
+            por_etapa.setdefault(str(d["etapa"]), []).append(float(d["segundos"]))
+        except (ValueError, KeyError, TypeError):
+            continue
+    resumo = {}
+    for etapa, valores in por_etapa.items():
+        ultimos = valores[-n:]
+        if not ultimos:
+            continue
+        resumo[etapa] = {"media": round(sum(ultimos) / len(ultimos), 2), "pior": round(max(ultimos), 2),
+                          "n": len(ultimos)}
+    return resumo
 
 
 def _acrescentar(arquivo, item: dict, maximo: int) -> None:

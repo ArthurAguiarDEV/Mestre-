@@ -372,6 +372,8 @@ class Ouvido:
             frase = self.transcritor.transcrever(audio)
         gasto = round(time.time() - inicio, 1)
         log.info("Ouvi (%.1fs de áudio, %.1fs para transcrever): %r", duracao, gasto, frase)
+        from . import memoria
+        memoria.registrar_tempo("fala_para_texto", gasto)
         if self.diagnostico:
             guardar_diagnostico(audio, frase)
         if not frase:
