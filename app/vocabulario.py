@@ -66,8 +66,11 @@ class Vocabulario:
         self._re_qualquer = re.compile(rf"\b(?:{qualquer})\b") if qualquer else None
 
         # Cada jeito de falar aponta para a forma "oficial" (inclusive ela mesma).
+        # aprendido.yaml tambem pode ter "sinonimos" (ex.: aplicados pelo botao "Aplicar" das
+        # sugestoes de melhoria, painel > Sistema): mesmo formato do vocabulario.yaml, escrito pelo programa.
         self._troca: dict[str, str] = {}
-        for oficial, jeitos in list(SINONIMOS_EMBUTIDOS.items()) + list((v.get("sinonimos") or {}).items()):
+        for oficial, jeitos in list(SINONIMOS_EMBUTIDOS.items()) + list((v.get("sinonimos") or {}).items()) \
+                + list((self.aprendido.get("sinonimos") or {}).items()):
             for jeito in [oficial] + list(jeitos or []):
                 self._troca[normalizar(jeito)] = normalizar(oficial)
         alternativas = _alternativas(self._troca)
@@ -117,6 +120,51 @@ class Vocabulario:
         if not chave:
             return False
         del atalhos[chave[0]]
+        self.salvar_aprendido()
+        return True
+
+    # --- Botao "Aplicar" das sugestoes de melhoria (vocabulario/sinonimo, sem IA) -----------
+    def pode_aplicar_sinonimo(self, jeito: str, oficial: str, protegidas=()) -> tuple[bool, str]:
+        """Confere se da para trocar "jeito" por "oficial" sem quebrar comandos. Nao muda nada."""
+        jeito, oficial = normalizar(jeito), normalizar(oficial)
+        if not jeito or not oficial:
+            return False, "Palavra vazia: não dá para aplicar."
+        if len(jeito) < 3:
+            return False, f"“{jeito}” é curta demais (menos de 3 letras): poderia trocar palavras demais sem querer."
+        if jeito == oficial:
+            return False, "Já é a própria palavra: não há troca para fazer."
+        if jeito in {normalizar(p) for p in protegidas}:
+            return False, f"“{jeito}” é a palavra de ativação: não posso trocar o que ela significa."
+        if jeito in self._troca:
+            atual = self._troca[jeito]
+            if atual == oficial:
+                return False, "Essa troca já existe no vocabulário."
+            return False, f"“{jeito}” já é sinônimo de “{atual}”: apague essa troca antes, se quiser mudar."
+        return True, ""
+
+    def aplicar_sinonimo(self, jeito: str, oficial: str, protegidas=()) -> tuple[bool, str]:
+        """Grava "jeito" como sinonimo de "oficial" em aprendido.yaml (escrito pelo programa).
+
+        Confere antes com pode_aplicar_sinonimo; devolve (aplicou, mensagem)."""
+        pode, motivo = self.pode_aplicar_sinonimo(jeito, oficial, protegidas)
+        if not pode:
+            return False, motivo
+        jeito, oficial = normalizar(jeito), normalizar(oficial)
+        lista = self.aprendido.setdefault("sinonimos", {}).setdefault(oficial, [])
+        if jeito not in lista:
+            lista.append(jeito)
+        self.salvar_aprendido()
+        return True, f"“{jeito}” agora vira “{oficial}”."
+
+    def desfazer_sinonimo(self, jeito: str, oficial: str) -> bool:
+        """Desfaz um aplicar_sinonimo (tira "jeito" da lista de "oficial" em aprendido.yaml)."""
+        jeito, oficial = normalizar(jeito), normalizar(oficial)
+        lista = (self.aprendido.get("sinonimos") or {}).get(oficial)
+        if not lista or jeito not in lista:
+            return False
+        lista.remove(jeito)
+        if not lista:
+            del self.aprendido["sinonimos"][oficial]
         self.salvar_aprendido()
         return True
 

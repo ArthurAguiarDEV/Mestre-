@@ -1495,6 +1495,7 @@ O assistente olha sozinho, uma vez por dia, o que aconteceu desde a última olha
 - Na mesma página: **🔍 Analisar agora** faz a análise na hora. As sugestões aparecem em páginas de 8 (◀ ▶), cada uma com as frases, os horários e os motivos.
 - Marque as que valem a pena e clique **🛠 Mandar marcadas para o Claude**: o painel salva o pedido em `exportacoes/pedido_sugestoes_*.md` e abre o **Claude Code** no terminal já com ele (igual ao botão da validação; você acompanha e aprova tudo).
 - Com a IA ligada, a análise automática ainda ganha um **resumo da IA** no topo da lista (feito em segundo plano, nunca atrapalha).
+- Sugestão de "a palavra de ativação escrita errada" (ex.: o reconhecimento ouviu "acesor" em vez de "assessor")? Ela tem um botão **✓ Aplicar** (e dá para marcar várias e clicar **✓ Aplicar marcadas**): SEM passar pelo Claude, ele mostra a troca exata ("vai trocar X por Y e também vai acordar com essa pronúncia"), você confirma, e ele grava sozinho no vocabulário (`aprendido.yaml`) **e** nas variações aceitas da palavra de ativação (`config.yaml`) — então a partir daí ele também **acorda** quando você falar daquele jeito. Recusa trocas que dariam problema (palavra vazia, curta demais, a própria palavra de ativação, ou uma troca que já existe). Depois de aplicar, a sugestão some da lista; se aplicou errado, **↩ Desfazer última aplicação** desfaz nos dois arquivos. As outras sugestões (frases jogadas fora, caíram na IA, "não entendi"...) continuam só indo para o Claude.
 
 ## Etapa 32: Versão 2.5
 

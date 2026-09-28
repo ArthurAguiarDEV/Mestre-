@@ -3666,8 +3666,9 @@ class Painel(ctk.CTk):
             detalhe = ctk.CTkLabel(textos, text="", anchor="w", justify="left", wraplength=720,
                                    text_color=tema.TEXTO_FRACO, font=tema.fonte(12))
             detalhe.pack(fill="x")
+            aplicar = ctk.CTkButton(linha, text="✓ Aplicar", width=100, **SECUNDARIO)
             self._sug_linhas.append({"frame": linha, "var": var, "caixa": caixa, "titulo": titulo_sug,
-                                     "detalhe": detalhe, "id": None})
+                                     "detalhe": detalhe, "aplicar": aplicar, "id": None})
         self.rot_sug_vazia = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
         nav = ctk.CTkFrame(f, fg_color="transparent")
         nav.pack(fill="x", padx=(32, 18), pady=4)
@@ -3687,13 +3688,19 @@ class Painel(ctk.CTk):
         self.bt_sug_claude = ctk.CTkButton(fim, text="🛠  Mandar marcadas para o Claude", width=260,
                                            command=self._sug_mandar_claude)
         self.bt_sug_claude.pack(side="left")
-        self.rot_sug_status = ctk.CTkLabel(fim, text="", anchor="w", justify="left", wraplength=520,
+        self.bt_sug_aplicar_marcadas = ctk.CTkButton(fim, text="✓ Aplicar marcadas", width=170, **SECUNDARIO,
+                                                     command=self._sug_aplicar_marcadas)
+        self.bt_sug_aplicar_marcadas.pack(side="left", padx=(8, 0))
+        self.bt_sug_desfazer = ctk.CTkButton(fim, text="↩ Desfazer última aplicação", width=200, **SECUNDARIO,
+                                             command=self._sug_desfazer)
+        self.bt_sug_desfazer.pack(side="left", padx=(8, 0))
+        self.rot_sug_status = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
                                            text_color=tema.TEXTO_FRACO)
-        self.rot_sug_status.pack(side="left", padx=12, fill="x", expand=True)
+        self.rot_sug_status.pack(fill="x", padx=(32, 18), pady=(0, 8))
         self._sug_desenhar()
 
     def _sug_lista(self) -> list[dict]:
-        return list((self._sug_dados or {}).get("sugestoes") or [])
+        return [s for s in (self._sug_dados or {}).get("sugestoes") or [] if not s.get("aplicada")]
 
     def _sug_recarregar(self):
         """Ao abrir a página: pega a análise mais nova (o Assessor pode ter rodado a das 8h)."""
@@ -3733,6 +3740,11 @@ class Painel(ctk.CTk):
             linha["titulo"].configure(text=str(sug.get("titulo") or ""))
             linha["detalhe"].configure(text=str(sug.get("detalhe") or "") + ("\n• " + "\n• ".join(exemplos)
                                                                            if exemplos else "") + mais)
+            if sug.get("tipo") == "palavra":
+                linha["aplicar"].configure(command=lambda s=sug: self._sug_aplicar(s))
+                linha["aplicar"].pack(side="right", anchor="n", padx=(0, 10), pady=10)
+            else:
+                linha["aplicar"].pack_forget()
             linha["frame"].pack(fill="x", padx=(32, 18), pady=3, before=self._sug_nav)
         if lista:
             self.rot_sug_vazia.pack_forget()
@@ -3746,6 +3758,8 @@ class Painel(ctk.CTk):
         self.bt_sug_claude.configure(state="normal" if n else "disabled",
                                      text=f"🛠  Mandar marcadas para o Claude ({n})" if n
                                      else "🛠  Mandar marcadas para o Claude")
+        from . import sugestoes
+        self.bt_sug_desfazer.configure(state="normal" if sugestoes.ultima_aplicacao() else "disabled")
 
     def _sug_alternar(self, linha):
         if not linha["id"]:
@@ -3795,6 +3809,76 @@ class Painel(ctk.CTk):
         messagebox.showinfo(self.nome, "Não encontrei o Claude Code instalado (comando \"claude\"). "
                                        "Copiei o pedido para a área de transferência: abra um terminal na "
                                        "pasta do projeto, rode \"claude\" e cole (Ctrl+V).")
+
+    # -----------------------------------------------------------------
+    #  Aplicar (so tipo "palavra": Whisper ouviu a palavra de ativação errado). Grava sem IA,
+    #  direto no vocabulário (aprendido.yaml) E nas variações aceitas da palavra de ativação
+    #  (config.yaml, o mesmo que app/ouvido.py usa pra "acordar"), com confirmação antes.
+    # -----------------------------------------------------------------
+    def _sug_confirmar_e_aplicar(self, sug: dict) -> bool:
+        from . import sugestoes, configuracao
+        from .config import palavras_ativacao
+        troca = sugestoes.troca_da_sugestao(sug, self.palavra)
+        if not troca:
+            return False
+        jeito, oficial = troca
+        pode, motivo = self.vocab.pode_aplicar_sinonimo(jeito, oficial, palavras_ativacao(self.cfg))
+        if not pode:
+            messagebox.showwarning(self.nome, f"Não posso aplicar: {motivo}")
+            return False
+        if not messagebox.askyesno(self.nome, f"Vai trocar “{jeito}” por “{oficial}” no vocabulário e o "
+                                              f"{self.nome} passa a ACORDAR também quando ouvir “{jeito}” "
+                                              f"(gravado em aprendido.yaml e no config.yaml). Confirma?"):
+            return False
+        aplicou, msg = self.vocab.aplicar_sinonimo(jeito, oficial, palavras_ativacao(self.cfg))
+        if not aplicou:
+            messagebox.showwarning(self.nome, f"Não posso aplicar: {msg}")
+            return False
+        entrou_config = configuracao.adicionar_variacao_aceita(jeito)
+        sugestoes.marcar_aplicada(sug.get("id"), jeito, oficial, no_config=entrou_config)
+        for s in (self._sug_dados or {}).get("sugestoes") or []:
+            if s.get("id") == sug.get("id"):
+                s["aplicada"] = True
+        self._sug_marcadas.discard(sug.get("id"))
+        return True
+
+    def _sug_aplicar(self, sug: dict):
+        if self._sug_confirmar_e_aplicar(sug):
+            self.rot_sug_status.configure(text=f"✓ Aplicada: {sug.get('titulo')}", text_color=tema.SUCESSO)
+        self._sug_desenhar()
+
+    def _sug_aplicar_marcadas(self):
+        from . import sugestoes
+        marcadas = [s for s in self._sug_lista() if s.get("id") in self._sug_marcadas]
+        aplicaveis = [s for s in marcadas if s.get("tipo") == "palavra"]
+        if not aplicaveis:
+            self.rot_sug_status.configure(
+                text="Nenhuma marcada é do tipo vocabulário (só essas têm “Aplicar”; as outras vão para o Claude).",
+                text_color=tema.AVISO)
+            return
+        aplicadas = sum(1 for s in aplicaveis if self._sug_confirmar_e_aplicar(s))
+        if aplicadas:
+            self.rot_sug_status.configure(text=f"✓ {aplicadas} de {len(aplicaveis)} aplicada(s).",
+                                          text_color=tema.SUCESSO)
+        self._sug_desenhar()
+
+    def _sug_desfazer(self):
+        from . import sugestoes, configuracao
+        ultima = sugestoes.desfazer_ultima_aplicacao()
+        if not ultima:
+            self.rot_sug_status.configure(text="Nenhuma aplicação para desfazer.", text_color=tema.AVISO)
+            return
+        self.vocab.desfazer_sinonimo(ultima.get("jeito", ""), ultima.get("oficial", ""))
+        if ultima.get("no_config"):
+            configuracao.remover_variacao_aceita(ultima.get("jeito", ""))
+        for s in (self._sug_dados or {}).get("sugestoes") or []:
+            if s.get("id") == ultima.get("id"):
+                s.pop("aplicada", None)
+        self.rot_sug_status.configure(
+            text=f"↩ Desfeito: “{ultima.get('jeito')}” não vira mais “{ultima.get('oficial')}” "
+                 f"(e não acorda mais com essa pronúncia).",
+            text_color=tema.SUCESSO)
+        self._sug_desenhar()
 
     # =================================================================
     #  Salvar

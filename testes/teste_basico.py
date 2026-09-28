@@ -1969,6 +1969,75 @@ class IAFalsa:
 ok(sg.resumir_com_ia(IAFalsa(), dict(dados2, sugestoes=dados["sugestoes"]), arq) == "Resumo: corrigir a palavra."
    and sg.ler(arq)["resumo_ia"] == "Resumo: corrigir a palavra.", "Sugestões: IA ligada resume (em segundo plano)")
 
+# Aplicar (vocabulario/sinonimo, sem IA) -----------------------------------------------
+from app.vocabulario import Vocabulario
+Path("aprendido.yaml").unlink(missing_ok=True)   # copia do teste: nunca mexe no aprendido.yaml de verdade
+
+troca = sg.troca_da_sugestao(por["palavra:acessor"], "assessor")
+ok(troca == ("acessor", "assessor"), f"Sugestões: troca_da_sugestao extrai (jeito, oficial) ({troca})")
+ok(sg.troca_da_sugestao(por["ia:abre"], "assessor") is None,
+   "Sugestões: só o tipo palavra tem troca automática (os outros continuam só pro Claude)")
+
+v = Vocabulario()
+pode, motivo = v.pode_aplicar_sinonimo("acessor", "assessor")
+ok(pode and not motivo, "Vocabulário: pode aplicar uma troca válida")
+ok(not v.pode_aplicar_sinonimo("", "assessor")[0], "Vocabulário: recusa palavra vazia")
+ok(not v.pode_aplicar_sinonimo("ok", "assessor")[0], "Vocabulário: recusa palavra curta demais (<3 letras)")
+ok(not v.pode_aplicar_sinonimo("assessor", "abre", protegidas=["assessor", "assessores"])[0],
+   "Vocabulário: recusa trocar a própria palavra de ativação")
+ok(not v.pode_aplicar_sinonimo("mestre", "mestre")[0], "Vocabulário: recusa trocar uma palavra por ela mesma")
+
+aplicou, msg = v.aplicar_sinonimo("acessor", "assessor")
+ok(aplicou and "acessor" in (v.aprendido.get("sinonimos") or {}).get("assessor", []),
+   f"Vocabulário: Aplicar grava o sinônimo em aprendido.yaml ({msg})")
+aprendido_disco = Path("aprendido.yaml").read_text(encoding="utf-8")
+ok("sinonimos" in aprendido_disco and "acessor" in aprendido_disco,
+   "Vocabulário: aprendido.yaml no disco tem a troca")
+v2 = Vocabulario()   # recarrega do disco, como o Assessor faria
+ok(v2.traduzir("acessor") == "assessor", "Vocabulário: depois de Aplicar, o vocabulário já traduz a palavra")
+ok(not v2.pode_aplicar_sinonimo("acessor", "assessor")[0],
+   "Vocabulário: recusa aplicar de novo uma troca que já existe")
+
+sg._gravar(dict(dados), arq)   # dados2 (3 dias depois) tinha sobrescrito arq com uma lista vazia
+sg.marcar_aplicada("palavra:acessor", "acessor", "assessor", arquivo=arq, no_config=True)
+marcada = next(s for s in sg.ler(arq)["sugestoes"] if s["id"] == "palavra:acessor")
+ok(marcada.get("aplicada") is True, "Sugestões: marcar_aplicada marca a sugestão no arquivo")
+u = sg.ultima_aplicacao(arq)
+ok(u["id"] == "palavra:acessor" and u["jeito"] == "acessor" and u["oficial"] == "assessor" and u.get("quando")
+   and u.get("no_config") is True, "Sugestões: fica no histórico para o Desfazer (com no_config)")
+
+ok(v2.desfazer_sinonimo("acessor", "assessor"), "Vocabulário: Desfazer tira o sinônimo do aprendido.yaml")
+v3 = Vocabulario()
+ok(v3.traduzir("acessor") == "acessor", "Vocabulário: depois de desfazer, a palavra não traduz mais")
+desfeita = sg.desfazer_ultima_aplicacao(arq)
+ok(desfeita["id"] == "palavra:acessor", "Sugestões: desfazer_ultima_aplicacao devolve a última aplicação")
+volta = next(s for s in sg.ler(arq)["sugestoes"] if s["id"] == "palavra:acessor")
+ok("aplicada" not in volta, "Sugestões: depois de desfazer, a sugestão volta a aparecer na lista")
+ok(sg.desfazer_ultima_aplicacao(arq) is None, "Sugestões: sem mais nada para desfazer (histórico vazio)")
+
+# Aplicar tambem faz ele ACORDAR com a pronuncia (config.yaml > assistente > variacoes_aceitas) --------
+from app import configuracao
+from app.texto import extrair_comando
+
+variacoes_antes = sg._palavra_do_config(configuracao.carregar())[1]
+ok("acesor" not in variacoes_antes, "Config: antes de aplicar, 'acesor' não está nas variações aceitas")
+achou0, _ = extrair_comando("acesor, que horas sao", variacoes_antes)
+ok(not achou0, "Ouvido: antes de aplicar, 'acesor, que horas são' não acorda o assistente")
+
+ok(configuracao.adicionar_variacao_aceita("acesor"), "Config: adicionar_variacao_aceita acrescenta a grafia")
+ok(not configuracao.adicionar_variacao_aceita("acesor"), "Config: não duplica se já está lá")
+variacoes_depois = sg._palavra_do_config(configuracao.carregar())[1]
+ok("acesor" in variacoes_depois, "Config: depois de aplicar, 'acesor' entra nas variações aceitas")
+achou1, comando1 = extrair_comando("acesor, que horas sao", variacoes_depois)
+ok(achou1 and comando1 == "que horas sao",
+   f"Ouvido: depois de aplicar, aceita 'acesor, que horas são' ({achou1}, {comando1!r})")
+
+ok(configuracao.remover_variacao_aceita("acesor"), "Config: remover_variacao_aceita (Desfazer) tira a grafia")
+variacoes_final = sg._palavra_do_config(configuracao.carregar())[1]
+ok("acesor" not in variacoes_final, "Config: depois de desfazer, 'acesor' sai das variações aceitas")
+achou2, _ = extrair_comando("acesor, que horas sao", variacoes_final)
+ok(not achou2, "Ouvido: depois de desfazer, 'acesor' não acorda mais o assistente")
+
 # painel
 erros = []
 tk.Tk.report_callback_exception = lambda self, e, vv, tb: erros.append("".join(traceback.format_exception(e, vv, tb)))
@@ -1996,6 +2065,55 @@ ok(arquivos and "frase 0" in texto and "frase 16" in texto and "frase 5" not in 
    "Sugestões (painel): pedido com as marcadas salvo em exportacoes/")
 ok(cmd is None or (cmd[-1].startswith("Leia o arquivo exportacoes/pedido_sugestoes_") and "-p" not in cmd),
    f"Sugestões (painel): mesmo fluxo supervisionado do Claude, nada abre no teste ({cmd})")
+
+# botão Aplicar (só tipo "palavra") ------------------------------------------------------
+sg._gravar({"gerado_em": "28/09/2026 08:30", "ts": 456.0, "desde_texto": "27/09/2026 08:30", "automatica": True,
+            "sugestoes": [
+                {"id": "palavra:acesor", "tipo": "palavra",
+                 "titulo": "O Whisper escreveu a palavra de ativação como “acesor” (3x)", "detalhe": "d", "quantas": 3,
+                 "evidencias": [{"data": "28/09 08:00", "frase": "acesor abre o youtube",
+                                "info": "sem a palavra de ativação"}]},
+                {"id": "ia:v0", "tipo": "ia", "titulo": "Sugestão 0", "detalhe": "d", "quantas": 1,
+                 "evidencias": [{"data": "28/09 08:00", "frase": "frase 0", "info": "motivo x"}]},
+            ], "resumo_ia": ""}, sg.ARQUIVO_SUGESTOES)
+pn._sug_recarregar(); pn.update()
+l0, l1 = pn._sug_linhas[0], pn._sug_linhas[1]
+ok(l0["id"] == "palavra:acesor" and bool(l0["aplicar"].winfo_manager()),
+   "Sugestões (painel): botão Aplicar aparece na sugestão de vocabulário")
+ok(l1["id"] == "ia:v0" and not l1["aplicar"].winfo_manager(),
+   "Sugestões (painel): sem Aplicar nos outros tipos (continuam só indo pro Claude)")
+
+perguntas, avisos = [], []
+p.messagebox.askyesno = lambda *a, **k: perguntas.append(a) or True
+p.messagebox.showwarning = lambda *a, **k: avisos.append(a)
+palavra_oficial = sg.normalizar(pn.palavra)   # a palavra do config da copia de teste (ex.: "jarvis")
+pn._sug_aplicar({"id": "palavra:acesor", "tipo": "palavra"}); pn.update()
+ok(perguntas and "acesor" in perguntas[0][1] and palavra_oficial in perguntas[0][1],
+   f"Sugestões (painel): mostra a troca exata antes de aplicar ({perguntas})")
+ok("palavra:acesor" not in [l["id"] for l in pn._sug_linhas if l["frame"].winfo_manager()],
+   "Sugestões (painel): depois de aplicar, some da lista")
+v4 = Vocabulario()
+ok(v4.traduzir("acesor") == palavra_oficial,
+   "Sugestões (painel): Aplicar realmente grava no vocabulário (aprendido.yaml)")
+variacoes_pos_aplicar = sg._palavra_do_config(configuracao.carregar())[1]
+achou_pos, comando_pos = extrair_comando("acesor, que horas sao", variacoes_pos_aplicar)
+ok("acesor" in variacoes_pos_aplicar and achou_pos and comando_pos == "que horas sao",
+   "Sugestões (painel): Aplicar também acorda com essa pronúncia (config.yaml > variações aceitas)")
+ok(pn.bt_sug_desfazer.cget("state") == "normal", "Sugestões (painel): Desfazer fica disponível depois de aplicar")
+
+pn._sug_aplicar({"id": "palavra:acesor", "tipo": "palavra"}); pn.update()
+ok(len(avisos) >= 1, "Sugestões (painel): aplicar de novo a mesma troca é recusado (já existe/já aplicada)")
+
+pn._sug_desfazer(); pn.update()
+v5 = Vocabulario()
+ok(v5.traduzir("acesor") == "acesor", "Sugestões (painel): Desfazer tira a troca do vocabulário")
+variacoes_pos_desfazer = sg._palavra_do_config(configuracao.carregar())[1]
+achou_final, _ = extrair_comando("acesor, que horas sao", variacoes_pos_desfazer)
+ok("acesor" not in variacoes_pos_desfazer and not achou_final,
+   "Sugestões (painel): Desfazer também tira das variações aceitas (não acorda mais)")
+ok(pn.bt_sug_desfazer.cget("state") == "disabled",
+   "Sugestões (painel): Desfazer desativa quando não há mais nada pra desfazer")
+
 pn._sug_analisar(); pn.update()
 ok(pn._sug_dados.get("ts") != 123.0 and "Última análise" in pn.rot_sug_info.cget("text"),
    "Sugestões (painel): Analisar agora")

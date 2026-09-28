@@ -257,6 +257,57 @@ def _gravar(dados: dict, arquivo: Path) -> None:
     temp.replace(arquivo)
 
 
+# =====================================================================
+#  Botao "Aplicar" (so tipo "palavra": Whisper escreveu a palavra de ativacao errado).
+#  Grava direto no vocabulario (sem IA); os outros tipos continuam so indo ao Claude.
+# =====================================================================
+def troca_da_sugestao(sugestao: dict, palavra_oficial: str) -> tuple[str, str] | None:
+    """Para uma sugestao tipo "palavra": (jeito ouvido, palavra oficial) a trocar. None se nao for desse tipo."""
+    if (sugestao or {}).get("tipo") != "palavra":
+        return None
+    partes = str(sugestao.get("id") or "").split(":", 1)
+    jeito = normalizar(partes[1]) if len(partes) > 1 else ""
+    return (jeito, normalizar(palavra_oficial)) if jeito else None
+
+
+def marcar_aplicada(sugestao_id: str, jeito: str, oficial: str, arquivo: Path | None = None,
+                     no_config: bool = False) -> None:
+    """Marca a sugestao como aplicada (some da lista ativa) e guarda no historico p/ Desfazer.
+
+    no_config: True se "jeito" tambem foi acrescentado em config.yaml (assistente > variacoes_aceitas),
+    pra ele ACORDAR com essa pronuncia (nao so traduzir); o Desfazer usa isso pra saber se tira de la tambem."""
+    arquivo = Path(arquivo or ARQUIVO_SUGESTOES)
+    dados = ler(arquivo)
+    for s in dados.get("sugestoes") or []:
+        if s.get("id") == sugestao_id:
+            s["aplicada"] = True
+    dados.setdefault("aplicadas", []).append({
+        "id": sugestao_id, "jeito": jeito, "oficial": oficial, "no_config": bool(no_config),
+        "quando": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+    })
+    _gravar(dados, arquivo)
+
+
+def desfazer_ultima_aplicacao(arquivo: Path | None = None) -> dict | None:
+    """Tira a marca "aplicada" da ultima sugestao aplicada (ela volta a aparecer na lista)."""
+    arquivo = Path(arquivo or ARQUIVO_SUGESTOES)
+    dados = ler(arquivo)
+    aplicadas = dados.get("aplicadas") or []
+    if not aplicadas:
+        return None
+    ultima = aplicadas.pop()
+    for s in dados.get("sugestoes") or []:
+        if s.get("id") == ultima.get("id"):
+            s.pop("aplicada", None)
+    _gravar(dados, arquivo)
+    return ultima
+
+
+def ultima_aplicacao(arquivo: Path | None = None) -> dict | None:
+    aplicadas = ler(arquivo).get("aplicadas") or []
+    return aplicadas[-1] if aplicadas else None
+
+
 def _palavra_do_config(cfg: dict | None) -> tuple[str, list[str]]:
     from .config import palavras_ativacao
     variacoes = palavras_ativacao(cfg or {})

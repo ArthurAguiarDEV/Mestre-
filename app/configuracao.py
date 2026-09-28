@@ -7,7 +7,8 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
-from .config import ARQUIVO_CONFIG
+from .config import ARQUIVO_CONFIG, gerar_variacoes, palavras_ativacao
+from .texto import normalizar
 
 log = logging.getLogger(__name__)
 ultimo_conserto: list[str] = []   # secoes repetidas removidas na ultima leitura (o painel avisa)
@@ -123,6 +124,40 @@ def mesclar_novas_por_nome(atual_no_disco: list, nomes_iniciais: set, editado: l
     novas = [item for item in atual_no_disco
              if nome_de(item) not in nomes_iniciais and nome_de(item) not in nomes_editados]
     return list(editado) + novas
+
+
+# --- Variacoes aceitas da palavra de ativacao (assistente > variacoes_aceitas) -------------
+# Mesma lista que app/ouvido.py usa (config.palavras_ativacao) pra decidir se ele "acordou".
+def adicionar_variacao_aceita(grafia: str) -> bool:
+    """Acrescenta 'grafia' as variacoes aceitas da palavra de ativacao, sem duplicar, preservando
+    comentarios do config.yaml. Devolve True se acrescentou (False: vazia ou ja aceita)."""
+    dados = carregar()
+    a = secao(dados, "assistente")
+    palavra = normalizar(a.get("palavra_ativacao") or "mestre").split()[-1] if normalizar(a.get("palavra_ativacao") or "") else "mestre"
+    grafia = normalizar(grafia)
+    if not grafia or grafia in palavras_ativacao(dados):
+        return False
+    atuais = [normalizar(v) for v in (a.get("variacoes_aceitas") or []) if normalizar(v)]
+    if not atuais or atuais[0] != palavra:   # a palavra mudou (ou nunca teve extras): recomeca do zero
+        atuais = [palavra]
+    atuais.append(grafia)
+    a["variacoes_aceitas"] = lista_em_linha(atuais)
+    salvar(dados)
+    return True
+
+
+def remover_variacao_aceita(grafia: str) -> bool:
+    """Desfaz um adicionar_variacao_aceita. Devolve True se tirou algo."""
+    dados = carregar()
+    a = secao(dados, "assistente")
+    grafia = normalizar(grafia)
+    atuais = [normalizar(v) for v in (a.get("variacoes_aceitas") or []) if normalizar(v)]
+    if grafia not in atuais:
+        return False
+    atuais.remove(grafia)
+    a["variacoes_aceitas"] = lista_em_linha(atuais)
+    salvar(dados)
+    return True
 
 
 def lista_em_linha(itens: list) -> CommentedSeq:
