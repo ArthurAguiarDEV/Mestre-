@@ -68,7 +68,7 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 |---|---|---|
 | `Mestre, pausa o vídeo` (YouTube em 2 telas, só um tocando) | Pausa o que está tocando, sem perguntar a tela | `_cmd_youtube_controle` |
 | `Mestre, continua o vídeo` (um pausado, mesmo que à mão) | Volta o vídeo pausado por último, sem perguntar | `_cmd_youtube_controle` |
-| `Mestre, pausa` (os dois vídeos tocando) | Pergunta "No monitor 1 ou no 2?" e usa a resposta | `_cmd_youtube_controle` |
+| `Mestre, pausa o vídeo` (os dois vídeos tocando) | Pergunta "No monitor 1 ou no 2?" e usa a resposta | `_cmd_youtube_controle` |
 
 ### Outras novidades
 
