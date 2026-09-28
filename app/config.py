@@ -1,5 +1,6 @@
 """Leitura do config.yaml e caminhos do projeto."""
 import logging
+import logging.handlers
 import sys
 from pathlib import Path
 
@@ -35,6 +36,18 @@ def caminho_do_projeto(relativo: str) -> Path:
     return caminho if caminho.is_absolute() else PASTA_PROJETO / caminho
 
 
+class _RotativoSemTravar(logging.handlers.RotatingFileHandler):
+    """Rodizio de log (5 arquivos de 1 MB). No Windows, se outro processo (o painel, por exemplo)
+    estiver com o arquivo aberto na hora do rodizio, da PermissionError: em vez de travar o programa,
+    so pula o rodizio desta vez e continua escrevendo (tenta de novo na proxima)."""
+
+    def doRollover(self) -> None:
+        try:
+            super().doRollover()
+        except PermissionError:
+            pass
+
+
 def configurar_log() -> None:
     PASTA_LOGS.mkdir(exist_ok=True)
     logging.basicConfig(
@@ -42,10 +55,33 @@ def configurar_log() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%d/%m %H:%M:%S",
         handlers=[
-            logging.FileHandler(PASTA_LOGS / "mestre.log", encoding="utf-8"),
+            _RotativoSemTravar(PASTA_LOGS / "mestre.log", maxBytes=1_000_000, backupCount=5, encoding="utf-8"),
             logging.StreamHandler(sys.stdout),
         ],
     )
+
+
+def faxina_de_logs(zips_manter: int = 3, arquivos_manter: int = 30) -> None:
+    """Limpeza ao ligar o Assessor: em logs/ mantem so os zips de backup e os arquivos mais novos
+    (senao a pasta cresce pra sempre). So mexe DENTRO de logs/, nas subpastas conhecidas de
+    audio/print de diagnostico -- nunca em arquivos de estado (.json, "pausado"...) nem fora de logs/."""
+    log = logging.getLogger(__name__)
+    try:
+        if not PASTA_LOGS.exists():
+            return
+        zips = sorted(PASTA_LOGS.glob("antes_da_atualizacao_*.zip"), key=lambda p: p.stat().st_mtime)
+        for velho in zips[:-zips_manter] if zips_manter > 0 else zips:
+            velho.unlink(missing_ok=True)
+        for sub, extensoes in (("validacao", (".wav",)), ("feedback", (".wav",)), ("diagnostico", (".png",))):
+            pasta = PASTA_LOGS / sub
+            if not pasta.is_dir():
+                continue
+            arquivos = sorted((p for p in pasta.iterdir() if p.is_file() and p.suffix.lower() in extensoes),
+                              key=lambda p: p.stat().st_mtime)
+            for velho in arquivos[:-arquivos_manter] if arquivos_manter > 0 else arquivos:
+                velho.unlink(missing_ok=True)
+    except OSError as erro:
+        log.warning("Faxina de logs falhou (sem problema, tenta de novo na proxima vez que ligar): %s", erro)
 
 
 def gerar_variacoes(palavra: str) -> list[str]:

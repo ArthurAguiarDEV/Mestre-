@@ -105,6 +105,42 @@ def comando_ja_descoberto(pedido: str) -> str:
     return melhor if nota_melhor >= 0.9 else ""
 
 
+def confirmar_comando_ia(pedido: str, texto_ia: str, comando: str, rota: str) -> None:
+    """Grava frase->comando na memoria (`comando_ja_descoberto` usa depois). So chame isto depois de
+    confirmado: o comando rodou sem correcao por uns 30s, ou a mesma frase repetiu o mesmo comando."""
+    registrar(pedido, "", "ia virou comando", {"entendi": comando, "ia_texto": texto_ia, "rota": rota})
+
+
+def esquecer_comando_ia(pedido: str) -> list[dict]:
+    """Apaga do historico as vezes que a IA transformou uma frase parecida com `pedido` em comando.
+    Usado quando o usuario corrige (FEEDBACK, "nao era isso", cancelar): a lembranca errada some.
+    Devolve os itens apagados."""
+    from difflib import SequenceMatcher
+
+    alvo = normalizar(pedido)
+    if len(alvo) < 4:
+        return []
+    todos = _ler(ARQUIVO_HISTORICO, MAXIMO_HISTORICO * 2)
+    mantidos, apagados = [], []
+    for item in todos:
+        if item.get("tipo") == "ia virou comando":
+            visto = normalizar(item.get("pedido", ""))
+            nota = 1.0 if visto == alvo else SequenceMatcher(None, visto, alvo).ratio()
+            if visto and nota >= 0.9:
+                apagados.append(item)
+                continue
+        mantidos.append(item)
+    if apagados:
+        with _trava:
+            try:
+                PASTA_MEMORIA.mkdir(exist_ok=True)
+                corpo = "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in mantidos)
+                ARQUIVO_HISTORICO.write_text(corpo, encoding="utf-8")
+            except OSError as erro:
+                log.warning("Nao consegui apagar memoria da IA: %s", erro)
+    return apagados
+
+
 def respostas(limite: int = 50) -> list[dict]:
     """So os itens que tiveram resposta falada (mais recentes por ultimo)."""
     return [i for i in historico(limite * 4) if i.get("resposta")][-limite:]

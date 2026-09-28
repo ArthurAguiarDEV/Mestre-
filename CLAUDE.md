@@ -112,7 +112,10 @@ na camada certa: erro de transcrição costuma se resolver com vocabulário/sin�
   As ações do YouTube vão para a aba escolhida por `YouTubeNoBraveComExtensao.aba_alvo` (→ `ponte.pedir(..., aba=)`).
 - Streaming: `STREAMINGS` com "{}" busca pelo endereço; sem "{}" abre o site e a extensão DIGITA na busca (`buscar`).
 - IA: saídas "comando" (roda na hora), "pergunta" (pergunta e pensa de novo com a resposta) e "resposta" (fala direto,
-  `aviso_ao_terminar: falar_direto`). Frase que virou comando fica na memória (`memoria.comando_ja_descoberto`): sem IA na próxima.
+  `aviso_ao_terminar: falar_direto`). Frase que virou comando só entra na memória (`memoria.comando_ja_descoberto`,
+  sem IA na próxima) depois de rodar ~30s sem correção (`Executor._agendar_memoria_ia`/`_pendente_ia`) ou se a
+  mesma frase repetir o mesmo comando antes disso; FEEDBACK/"não era isso"/cancelar apagam a memória pendente
+  (ou já gravada) daquela frase (`Executor._cancelar_memoria_ia`, `memoria.esquecer_comando_ia`).
 - Comandos de YouTube/navegador ficam fora da IA: frase nova do usuário que caiu na IA ("rota": "ia" no
   histórico exportado) vira regex no comando certo + linha em `testes/frases.py`.
 

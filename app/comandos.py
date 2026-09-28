@@ -174,6 +174,7 @@ class Executor:
         self._acabou_de_chamar = False
         self._ultimo: dict = {}
         self._foi_feedback = False
+        self._pendente_ia: dict | None = None   # frase->comando da IA esperando ~30s sem correcao p/ virar memoria
         # ditado longo
         self._ditado: list[str] = []
         self._destino_ditado: str | None = None
@@ -294,6 +295,13 @@ class Executor:
                 self.falar("cancelado")
             else:
                 self._proteger(responder, frase)
+            return self._janela()
+
+        if self._pendente_ia and re.match(CANCELAR, normalizar(frase)):
+            # "cancela" logo depois de um comando que a IA descobriu: nao guarda na memoria
+            self._cancelar_memoria_ia()
+            self._rota = "cancelou memoria da ia"
+            self.falar("cancelado")
             return self._janela()
 
         if not normalizar(frase):  # so chamaram "mestre"
@@ -468,9 +476,9 @@ class Executor:
             log.info("IA entendeu como comando: %r", comando)
             if comando and self._tentar_comandos(comando):
                 # (na exportacao: frases que a IA transformou em comando = comandos que faltam no vocabulario)
-                # e a "memoria": na proxima vez a mesma frase vai direto, sem IA
-                memoria.registrar(frase, "", "ia virou comando",
-                                  {"entendi": comando, "ia_texto": texto_ia, "rota": self.ultimo_comando})
+                # e a "memoria": so grava depois de ~30s sem correcao (ou na hora, se repetir igual),
+                # senao um erro da IA (tipo "dica de livro" virar "abre o youtube") fica preso pra sempre
+                self._agendar_memoria_ia(frase, texto_ia, comando, self.ultimo_comando)
                 return
         if decisao.get("tipo") == "pergunta" and decisao.get("texto"):
             # a IA precisa de uma decisao sua (qual dos dois? tem certeza?): pergunta e pensa de novo com a resposta
@@ -479,6 +487,42 @@ class Executor:
                 f"{f} (eu perguntei: {p} e o usuario respondeu: {resposta})"), espera=15)
             return
         self._responder(decisao.get("texto") or self.sortear("nao_entendi"), frase)
+
+    def _agendar_memoria_ia(self, frase: str, texto_ia: str, comando: str, rota: str) -> None:
+        """So grava frase->comando na memoria (`memoria.comando_ja_descoberto`) depois de rodar sem
+        correcao por ~30s; se a mesma frase virar o mesmo comando de novo antes disso, confirma na hora."""
+        alvo = normalizar(frase)
+        anterior = self._pendente_ia
+        if anterior and normalizar(anterior["frase"]) == alvo and anterior["comando"] == comando:
+            anterior["timer"].cancel()
+            memoria.confirmar_comando_ia(frase, texto_ia, comando, rota)
+            self._pendente_ia = None
+            return
+        pendente: dict = {"frase": frase, "ia_texto": texto_ia, "comando": comando, "rota": rota}
+
+        def _confirmar() -> None:
+            if self._pendente_ia is pendente:
+                self._pendente_ia = None
+            memoria.confirmar_comando_ia(frase, texto_ia, comando, rota)
+
+        timer = threading.Timer(30.0, _confirmar)
+        timer.daemon = True
+        pendente["timer"] = timer
+        self._pendente_ia = pendente
+        timer.start()
+
+    def _cancelar_memoria_ia(self, frase: str = "") -> None:
+        """FEEDBACK / "nao era isso" / cancelar logo depois: nao deixa a IA memorizar (nem usar)
+        esta frase como comando, e apaga da memoria se ja tinha ficado gravada antes."""
+        pendente = self._pendente_ia
+        if pendente:
+            pendente["timer"].cancel()
+            self._pendente_ia = None
+        alvo = frase or (pendente["frase"] if pendente else self._ultimo.get("ouvi", ""))
+        if alvo:
+            apagados = memoria.esquecer_comando_ia(alvo)
+            if apagados:
+                log.info("Memoria da IA apagada por correcao: %r (%d entrada(s))", alvo, len(apagados))
 
     def _resumo_de_comandos(self) -> str:
         c = self.cfg
@@ -1132,6 +1176,7 @@ class Executor:
         if not achado:
             return False
         self._foi_feedback = True
+        self._cancelar_memoria_ia()   # FEEDBACK/"nao era isso": nao guarda (e apaga se ja tinha guardado)
         if not self._ultimo:
             self.voz.falar("Ainda não fiz nada pra você corrigir.")
             return True

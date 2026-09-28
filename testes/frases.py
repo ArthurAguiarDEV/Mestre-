@@ -278,6 +278,8 @@ def main() -> int:
     import tempfile
     from pathlib import Path
 
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # aceita acento sem PYTHONIOENCODING
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     os.environ["MESTRE_SIMULAR"] = "1"
     logging.basicConfig(level=logging.ERROR)
     projeto = Path(__file__).resolve().parent.parent

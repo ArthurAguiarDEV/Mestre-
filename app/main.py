@@ -16,7 +16,7 @@ import time
 from . import estado, sistema
 from .cerebro import Cerebro
 from .comandos import Executor
-from .config import PASTA_PROJETO, carregar_config, configurar_log, palavras_ativacao
+from .config import PASTA_PROJETO, carregar_config, configurar_log, faxina_de_logs, palavras_ativacao
 from .texto import extrair_comando
 from .vocabulario import Vocabulario
 from .voz import Voz
@@ -83,6 +83,10 @@ def main() -> None:
         return
 
     configurar_log()
+    try:   # limpa logs velhos (zips de backup, audios de validacao/feedback/diagnostico)
+        faxina_de_logs()
+    except Exception:
+        log.exception("Faxina de logs falhou (seguindo mesmo assim)")
     try:   # novidades de versao entram no config UMA vez (ex.: sites padrao)
         from . import configuracao
         configuracao.migrar()

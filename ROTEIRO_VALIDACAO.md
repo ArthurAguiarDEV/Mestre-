@@ -83,6 +83,13 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | (painel) marque 1 ou 2 sugestões → "🛠 Mandar marcadas para o Claude" | Salva `exportacoes/pedido_sugestoes_*.md` e abre o Claude Code no terminal já com o pedido | (painel) |
 | (painel) Sugestões de melhoria → Horário 08:00, ligado → Salvar e reiniciar; no outro dia abra a página | "Última análise: ... (automática)" das 8h (ou de quando o PC ligou, se estava desligado) | (painel) |
 
+### Memória da IA e modelos offline
+
+| Frase / ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Assessor, me dá uma dica de livro` | Pensa e responde com uma dica (conversa), NÃO abre o YouTube | (vai pensar, sem comando) |
+| Desligue o Wi-Fi do computador e reinicie o Assessor (`Mestre, reinicia`) | Liga normal, escuta e entende comandos (Whisper e o reconhecimento de voz sobem do que já está baixado, sem precisar de internet) | (nenhum, é o ligar) |
+
 ### Outras novidades
 
 | Frase / ação | O que deve acontecer | Comando esperado |

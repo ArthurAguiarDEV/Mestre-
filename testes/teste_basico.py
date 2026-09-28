@@ -16,6 +16,10 @@ import textwrap
 import zipfile
 from pathlib import Path
 
+# aceita acento na saida sem precisar de PYTHONIOENCODING=utf-8 no ambiente
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 PROJETO = Path(__file__).resolve().parent.parent
 VERSAO_ATUAL = re.search(r'VERSAO = "(\d+)"', (PROJETO / "app" / "versao.py").read_text(encoding="utf-8")).group(1)
 IGNORAR = shutil.ignore_patterns("venv", "modelos", "logs", "*.zip", "__pycache__", ".git", "mestre.pid",
@@ -37,6 +41,58 @@ def rodar(pasta: Path, codigo: str, espera: int = 300) -> tuple[int, str]:
                        text=True, encoding="utf-8", errors="replace", timeout=espera,
                        env={**os.environ, "MESTRE_SIMULAR": "1", "PYTHONIOENCODING": "utf-8"})
     return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+_SCRIPT_OFFLINE = r"""
+import socket
+
+def _bloqueado(self, endereco):
+    raise OSError("rede bloqueada no teste (simulando sem internet)")
+
+socket.socket.connect = _bloqueado   # simula "sem internet": qualquer tentativa de rede estoura
+
+from pathlib import Path
+import yaml
+
+cfg = yaml.safe_load(open("config.yaml", encoding="utf-8")) or {}
+modelo_whisper = (cfg.get("ouvido") or {}).get("modelo_whisper", "small")
+
+try:
+    from app.audio import Transcritor
+    Transcritor(modelo=modelo_whisper, dispositivo="cpu")
+    print("OK Whisper liga so com o cache local (sem internet)")
+except Exception as erro:
+    print(f"FALHOU Whisper liga so com o cache local (sem internet)::{erro!r}")
+
+pasta_locutor = Path("modelos") / "locutor_ecapa"
+necessarios = ("hyperparams.yaml", "embedding_model.ckpt", "mean_var_norm_emb.ckpt", "classifier.ckpt",
+               "label_encoder.txt")
+if all((pasta_locutor / n).exists() for n in necessarios):
+    try:
+        from app import locutor
+        import numpy as np
+
+        extrair = locutor.carregar_modelo()
+        extrair(np.zeros(16000, dtype=np.float32))
+        print("OK Reconhecimento de voz (locutor) liga so com o cache local (sem internet)")
+    except Exception as erro:
+        print(f"FALHOU Reconhecimento de voz (locutor) liga so com o cache local (sem internet)::{erro!r}")
+else:
+    print("PULOU Reconhecimento de voz (locutor): modelo nao esta em modelos/locutor_ecapa nesta maquina")
+"""
+
+
+def _rodar_offline_no_projeto_real(espera: int = 180) -> str:
+    """Roda _SCRIPT_OFFLINE dentro do projeto de verdade (nao na copia dos testes), simulando sem
+    internet: confere que Whisper e o reconhecimento de voz sobem so do que ja esta baixado."""
+    script = Path(tempfile.gettempdir()) / "_mestre_teste_offline.py"
+    script.write_text(_SCRIPT_OFFLINE, encoding="utf-8")
+    venv_python = PROJETO / "venv" / "Scripts" / "python.exe"
+    python_exec = str(venv_python) if venv_python.exists() else sys.executable
+    env = {**os.environ, "MESTRE_SIMULAR": "1", "PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(PROJETO)}
+    r = subprocess.run([python_exec, str(script)], creationflags=SEM_JANELA, cwd=str(PROJETO),
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=espera, env=env)
+    return (r.stdout or "") + (r.stderr or "")
 
 
 def comando(pasta: Path, frase: str) -> str:
@@ -479,6 +535,12 @@ diga("aquele outro la da lista", "Aquele outro lá da lista")
 time.sleep(2.5)
 ok(("abrir", "https://youtube.com/watch?v=3") in yt.feito and not ex._pensamento,
    f"IA: comando em segundo plano roda sozinho e abre o 3º vídeo ({yt.feito})")
+# a memoria so grava depois de rodar sem correcao por uns 30s (ou na hora, se a MESMA frase repetir
+# o MESMO comando antes disso): repete pra confirmar na hora, sem esperar o timer
+yt.feito.clear()
+diga("aquele outro la da lista", "Aquele outro lá da lista")
+time.sleep(2.5)
+ok(ex._pendente_ia is None, f"IA: frase repetida com o mesmo comando confirma a memória na hora ({ex._pendente_ia})")
 ex.cerebro = IALenta()
 
 # --- v13: a IA pergunta quando precisa; a resposta fala sozinha; frase ja resolvida nao passa pela IA -----
@@ -489,6 +551,15 @@ ex.cerebro = SemIA(); yt.feito.clear()
 diga("aquele outro la da lista", "Aquele outro lá da lista")
 ok(("abrir", "https://youtube.com/watch?v=3") in yt.feito and ex._rota.startswith("memoria da ia"),
    f"IA: frase que ela já resolveu roda direto da memória, sem pensar ({ex._rota})")
+
+# --- correcao apaga a memoria da IA (sem ficar repetindo um erro pra sempre) --------------------------
+ex.cerebro = IAComando(); yt.feito.clear()
+diga("mais um comando novo que a ia vai inventar", "Mais um comando novo que a IA vai inventar")
+time.sleep(2.5)
+ok(ex._pendente_ia is not None, "IA: comando novo fica pendente de confirmação por uns 30s")
+diga("isso ta errado", "Isso tá errado, era outra coisa")
+ok(ex._pendente_ia is None, "IA: “isso tá errado” cancela a memória pendente (não fica preso pra sempre)")
+ex.cerebro = IALenta()
 class IAPergunta(IALenta):
     atraso = 1.4
     def interpretar(self, frase, comandos):
@@ -1692,6 +1763,21 @@ def main() -> int:
         print("\n[Central e ícone]")
         cod, saida = rodar(pasta, "import app.central, app.bandeja, app.atualizar; print('IMPORTOU')")
         conferir("IMPORTOU" in saida, "Central, ícone e atualizador carregam", saida[-500:])
+
+    print("\n[Modelos offline: liga sem internet se já baixou antes]")
+    # roda no projeto DE VERDADE (nao na copia): precisa do cache do Whisper e de modelos/locutor_ecapa,
+    # que a copia dos testes nao traz (pasta "modelos" e ignorada de proposito, ela e grande)
+    saida = _rodar_offline_no_projeto_real()
+    for linha in saida.splitlines():
+        if linha.startswith("OK "):
+            conferir(True, linha[3:].strip())
+        elif linha.startswith("FALHOU "):
+            nome, _, detalhe = linha[7:].strip().partition("::")
+            conferir(False, nome, detalhe or saida[-1200:])
+        elif linha.startswith("PULOU "):
+            print("  PULADO  " + linha[6:].strip())
+    if not any(l.startswith(("OK ", "FALHOU ", "PULOU ")) for l in saida.splitlines()):
+        conferir(False, "Teste de modelos offline rodou até o fim", saida[-1200:])
 
     falhas = [r for r in resultados if not r[0]]
     print("\n" + "=" * 60)

@@ -169,8 +169,12 @@ def carregar_modelo():
 
     pasta = _baixar_modelo()
     torch.set_num_threads(max(1, min(4, torch.get_num_threads())))
+    # hyperparams.yaml (baixado do HuggingFace) traz "pretrained_path: speechbrain/spkrec-ecapa-voxceleb"
+    # escrito nele: sem o override abaixo, o SpeechBrain acha que os arquivos vem de la e confere a
+    # internet toda vez (mesmo com tudo em modelos/locutor_ecapa). Aponta pra pasta local de verdade.
     modelo = EncoderClassifier.from_hparams(source=str(pasta), savedir=str(pasta), run_opts={"device": "cpu"},
-                                            local_strategy=LocalStrategy.NO_LINK)
+                                            local_strategy=LocalStrategy.NO_LINK,
+                                            overrides={"pretrained_path": str(pasta)})
     modelo.eval()
 
     def extrair(a: np.ndarray) -> np.ndarray:

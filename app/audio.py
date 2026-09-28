@@ -141,7 +141,12 @@ class Transcritor:
 
         log.info("Carregando Whisper '%s' em %s (%s)...", self.nome_modelo, dispositivo, tipo)
         self.dispositivo = dispositivo
-        self.modelo = WhisperModel(self.nome_modelo, device=dispositivo, compute_type=tipo)
+        try:
+            # ja baixado antes? carrega so do cache local, sem checar a internet (liga mais rapido)
+            self.modelo = WhisperModel(self.nome_modelo, device=dispositivo, compute_type=tipo, local_files_only=True)
+        except Exception:
+            log.info("Whisper '%s' nao esta no cache local: baixando (precisa de internet)...", self.nome_modelo)
+            self.modelo = WhisperModel(self.nome_modelo, device=dispositivo, compute_type=tipo)
 
     @staticmethod
     def _escolher_dispositivo(dispositivo: str) -> tuple[str, str]:
