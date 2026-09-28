@@ -123,6 +123,15 @@ def main() -> None:
     ARQUIVO_PID.write_text(str(os.getpid()))
     estado.pausar(False)
 
+    try:   # avisos do PC (Telegram): "PC ligou"/"desligou sem avisar" + batimento + vigia de desligamento
+        from . import avisos_pc
+        avisos_pc.verificar_ao_iniciar(cfg)
+        avisos_pc.iniciar_batimento(lambda: executor.rodando)
+        avisos_pc.iniciar_vigia_desligamento(cfg)
+        avisos_pc.iniciar_pulso_healthchecks(cfg, lambda: executor.rodando)
+    except Exception:
+        log.exception("Avisos do PC nao ligaram (seguindo mesmo assim)")
+
     def vigiar_desligar():   # "desliga": o indicador fecha sozinho; se algo segurar (microfone, rede), sai assim mesmo
         while executor.rodando:
             time.sleep(0.2)

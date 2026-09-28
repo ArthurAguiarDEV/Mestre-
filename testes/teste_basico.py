@@ -1813,6 +1813,74 @@ pn._fechar()
 print("FIM_VALIDACAO")
 """
 
+AVISOS_PC = r"""
+# Avisos do PC (liga/desliga pelo Telegram): logica pura de decidir a mensagem, com arquivos falsos
+import os, tempfile
+os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
+from datetime import datetime, timedelta
+from app import avisos_pc as ap
+
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+
+agora = datetime(2026, 9, 28, 9, 0, 0)
+boot_a = datetime(2026, 9, 28, 7, 0, 0)
+boot_b = datetime(2026, 9, 28, 8, 30, 0)   # boot DIFERENTE (o PC religou entre os dois)
+
+ok(ap.mesmo_boot(boot_a, boot_a + timedelta(seconds=2)), "mesmo_boot: poucos segundos de diferenca ainda conta")
+ok(not ap.mesmo_boot(boot_a, boot_b), "mesmo_boot: boots bem diferentes nao contam")
+ok(not ap.mesmo_boot(None, boot_a) and not ap.mesmo_boot(boot_a, None), "mesmo_boot: sem hora nenhuma = nao e o mesmo boot")
+
+# 1) primeira vez (nunca gravou batimento): so comeca a registrar, sem avisar nada
+sit, txt = ap.decidir_aviso_ligou(boot_a, {"hora": None, "boot": None}, {"boot": None, "hora": None})
+ok(sit == "primeira_vez" and txt == "", f"decidir_aviso_ligou: primeira vez nao avisa nada ({sit!r})")
+
+# 2) mesmo boot (so o Assessor reiniciou sozinho): nao avisa nada
+sit, txt = ap.decidir_aviso_ligou(boot_a, {"hora": agora, "boot": boot_a}, {"boot": None, "hora": None})
+ok(sit == "mesmo_boot" and txt == "", f"decidir_aviso_ligou: Assessor reiniciou sozinho nao avisa ({sit!r})")
+
+# 3) boot novo, desligou limpo daquele boot anterior: "PC ligou"
+sit, txt = ap.decidir_aviso_ligou(boot_b, {"hora": agora, "boot": boot_a}, {"boot": boot_a, "hora": agora})
+ok(sit == "normal" and "PC ligou" in txt, f"decidir_aviso_ligou: desligou limpo -> PC ligou ({sit!r}, {txt!r})")
+
+# 4) boot novo, SEM marca de desligou limpo (ou de um boot antigo demais): desligou sem avisar
+sit, txt = ap.decidir_aviso_ligou(boot_b, {"hora": agora, "boot": boot_a}, {"boot": None, "hora": None})
+ok(sit == "inesperado" and "sem avisar" in txt and "09:00" in txt and "28/09" in txt,
+   f"decidir_aviso_ligou: sem marca -> desligou sem avisar, com o ultimo sinal ({sit!r}, {txt!r})")
+
+# 5) boot novo, marca de um boot ANTIGO (nao do anterior): tambem e inesperado
+sit, txt = ap.decidir_aviso_ligou(boot_b, {"hora": agora, "boot": boot_a},
+                                   {"boot": boot_a - timedelta(days=1), "hora": agora - timedelta(days=1)})
+ok(sit == "inesperado", f"decidir_aviso_ligou: marca de outro boot nao vale ({sit!r})")
+
+# 6) mesmo com a marca certa, o Log de Eventos mostrando queda tambem vira inesperado
+sit, txt = ap.decidir_aviso_ligou(boot_b, {"hora": agora, "boot": boot_a}, {"boot": boot_a, "hora": agora},
+                                   houve_queda=True)
+ok(sit == "inesperado", f"decidir_aviso_ligou: log com queda de energia vira inesperado mesmo com marca ({sit!r})")
+
+# batimento e "desligou limpo": grava e le de volta (arquivos de verdade, na pasta logs/ da copia do teste)
+ap.bater(boot_a)
+lido = ap.ler_batimento()
+ok(ap.mesmo_boot(lido["boot"], boot_a) and lido["hora"] is not None, f"bater/ler_batimento: ida e volta ({lido})")
+
+ap.marcar_desligou_limpo(boot_a)
+limpo = ap.ler_desligou_limpo()
+ok(ap.mesmo_boot(limpo["boot"], boot_a) and limpo["hora"] is not None, f"marcar/ler_desligou_limpo: ida e volta ({limpo})")
+
+# sem token/chat do Telegram: nao tenta mandar nada, nao trava, devolve False
+ok(ap.avisar_telegram("teste") is False, "avisar_telegram: sem chat configurado, so devolve False (nao trava)")
+
+# hora do boot: tem que ser no passado e perto de "agora - tempo ligado" (so confere que nao quebra)
+hb = ap.hora_boot()
+ok(hb < datetime.now(), f"hora_boot: devolve uma hora no passado ({hb})")
+
+# pulso do healthchecks: desligado por padrao, e sem URL nao tenta mandar nada
+ok(ap.pulso_healthchecks({}) is False, "pulso_healthchecks: desligado por padrao, nao manda nada")
+ok(ap.pulso_healthchecks({"avisos_pc": {"healthchecks_ligado": True, "healthchecks_url": ""}}) is False,
+   "pulso_healthchecks: ligado mas sem URL, nao manda nada")
+
+print("FIM_AVISOS_PC")
+"""
+
 SUGESTOES = r"""
 # Sugestoes de melhoria: analise com historico/ouvido sinteticos, agendamento e a pagina do painel
 import json, time, traceback, tkinter as tk
@@ -2347,6 +2415,14 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
         if "FIM_VALIDACAO" not in saida:
             conferir(False, "Validação: o teste rodou até o fim", saida[-1500:])
+
+        print("\n[Avisos do PC (liga/desliga pelo Telegram)]")
+        cod, saida = rodar(pasta, AVISOS_PC, espera=60)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_AVISOS_PC" not in saida:
+            conferir(False, "Avisos do PC: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Sugestões de melhoria]")
         cod, saida = rodar(pasta, SUGESTOES, espera=120)

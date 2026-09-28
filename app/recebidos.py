@@ -65,6 +65,19 @@ PADROES_ENERGIA = (
 )
 
 
+def enviar_texto(chat: int, texto: str, timeout: float = 15) -> None:
+    """Manda uma mensagem de texto pelo robo do Telegram (fora da classe Caixa: outros avisos do
+    Assessor, como avisos_pc.py, tambem usam - sem precisar de uma Caixa/Executor inteiro)."""
+    token = segredos.ler("telegram_token")
+    if not token or not chat:
+        raise RuntimeError("sem token ou chat do Telegram")
+    corpo = urllib.parse.urlencode({"chat_id": chat, "text": texto[:3500]}).encode()
+    with urllib.request.urlopen(f"https://api.telegram.org/bot{token}/sendMessage", data=corpo, timeout=timeout) as r:
+        resposta = json.loads(r.read())
+    if not resposta.get("ok"):
+        raise RuntimeError(resposta.get("description") or "Telegram recusou")
+
+
 def pasta_padrao() -> Path:
     documentos = Path.home() / "Documents"
     return (documentos if documentos.exists() else Path.home()) / "Assessor" / "audios"
@@ -187,7 +200,7 @@ class Caixa:
 
     def responder(self, chat: int, texto: str) -> None:
         try:
-            self._api("sendMessage", espera=15, chat_id=chat, text=texto[:3500])
+            enviar_texto(chat, texto, timeout=15)
         except Exception as erro:
             log.info("Telegram nao respondeu: %s", erro)
 

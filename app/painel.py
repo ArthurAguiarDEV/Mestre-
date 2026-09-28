@@ -2924,6 +2924,44 @@ class Painel(ctk.CTk):
         self.rot_telegram.pack(fill="x", padx=(32, 18))
         self._estado_telegram()
 
+        f = secao(pagina, "3. Avisos do PC",
+               "Manda uma mensagem no Telegram acima quando o PC desliga/reinicia e quando liga de novo "
+               "(e avisa se o desligamento anterior foi uma queda de energia ou travou). Guia, Etapa 35.")
+        ap = self._sec("avisos_pc")
+        self.var_avisos_pc = tk.BooleanVar(value=bool(ap.get("ligado", True)))
+        linha_campo(f, "Avisar “PC ligou” / “PC desligando”", lambda p: ctk.CTkSwitch(
+            p, text="ligado", variable=self.var_avisos_pc))
+        self.var_healthchecks = tk.BooleanVar(value=bool(ap.get("healthchecks_ligado", False)))
+        linha_campo(f, "Pulso pro healthchecks.io", lambda p: ctk.CTkSwitch(
+            p, text="ligado (avisa NA HORA se faltar energia)", variable=self.var_healthchecks))
+        self.ent_healthchecks = linha_campo(f, "URL do ping", lambda p: ctk.CTkEntry(p, height=36))
+        self.ent_healthchecks.insert(0, segredos.ler("healthchecks_url"))
+        self.ent_healthchecks.configure(placeholder_text="https://hc-ping.com/xxxxxxxx-xxxx-...")
+        linha_hc = ctk.CTkFrame(f, fg_color="transparent")
+        linha_hc.pack(fill="x", padx=(32, 18), pady=4)
+        ctk.CTkButton(linha_hc, text="Testar pulso", **SECUNDARIO, command=self._testar_healthchecks).pack(side="left")
+        self.rot_healthchecks = ctk.CTkLabel(linha_hc, text="", text_color=tema.TEXTO_FRACO)
+        self.rot_healthchecks.pack(side="left", padx=10)
+
+    def _testar_healthchecks(self):
+        from . import avisos_pc
+        url = self.ent_healthchecks.get().strip()
+        segredos.salvar(healthchecks_url=url)
+
+        def trabalho():
+            if not url:
+                texto, cor = "Cole a URL do ping primeiro.", tema.AVISO
+            else:
+                ok = avisos_pc.pulso_healthchecks({"avisos_pc": {"healthchecks_ligado": True,
+                                                                  "healthchecks_url": url}})
+                texto = "✓ Pulso enviado." if ok else "Não consegui mandar o pulso (confira a URL)."
+                cor = tema.SUCESSO if ok else tema.AVISO
+            try:
+                self.after(0, lambda: self.rot_healthchecks.configure(text=texto, text_color=cor))
+            except RuntimeError:
+                pass
+        threading.Thread(target=trabalho, daemon=True).start()
+
     def _estado_telegram(self, texto: str = ""):
         chat = segredos.ler("telegram_nome") or segredos.ler("telegram_chat")
         base = (f"Conectado com o chat de {chat}." if chat else
@@ -3859,6 +3897,10 @@ class Painel(ctk.CTk):
                                               "tela_e_voz"))
         rc["frase_telegram"] = configuracao.aspas(self.ent_frase_telegram.get().strip())
         rc["frase_pasta"] = configuracao.aspas(self.ent_frase_pasta.get().strip())
+        ap = configuracao.secao(c, "avisos_pc")
+        ap["ligado"] = bool(self.var_avisos_pc.get())
+        ap["healthchecks_ligado"] = bool(self.var_healthchecks.get())
+        segredos.salvar(healthchecks_url=self.ent_healthchecks.get().strip())
 
     def _salvar_historico(self, c):
         from . import memoria

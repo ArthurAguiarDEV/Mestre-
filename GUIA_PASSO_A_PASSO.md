@@ -1620,6 +1620,43 @@ respondendo por ela, sem travar. Reabra o Ollama: depois do tempo de castigo, el
 
 ---
 
+## Etapa 35: Aviso se o PC desligar (healthchecks.io)
+
+Duas coisas novas, para você saber se o PC desligou (ou se a energia faltou) mesmo estando longe
+de casa. As duas mandam mensagem pelo mesmo robô do Telegram da Etapa 31.
+
+### 35.1 O que já vem pronto (sem configurar nada)
+- Quando o Windows desliga ou reinicia (normalmente), o Assessor manda **"💤 PC
+  desligando/reiniciando"**.
+- Quando o PC liga de novo, ele manda **"✅ PC ligou"**. Se da última vez o PC tinha sumido sem
+  avisar (queda de energia, travou, ou alguém desligou na tomada), ele manda um aviso diferente:
+  **"⚠️ o PC tinha desligado sem avisar..."**, com a hora do último sinal dele.
+- Painel > **Celular**, seção **"3. Avisos do PC"**: dá para desligar esse aviso se não quiser.
+
+### 35.2 healthchecks.io (opcional, mas recomendado)
+O problema do aviso acima: numa queda de energia de verdade, o PC não tem tempo de mandar nada —
+ele simplesmente apaga. O **healthchecks.io** resolve isso: o Assessor manda um sinalzinho a cada 5
+minutos, e se esse sinal **parar de chegar**, o healthchecks avisa você na hora (por e-mail e, se
+quiser, pelo Telegram deles também) — mesmo com o PC desligado.
+
+1. Vá em **healthchecks.io** e crie uma **conta grátis**.
+2. Clique em **"Add Check"** (criar um check novo). Em **"Period"** (período), coloque **5 minutos**;
+   em **"Grace Time"** (tolerância), coloque **5 minutos** também.
+3. Nas integrações do check (**Integrations**), ligue o **e-mail** (já vem pronto, geralmente) e,
+   se quiser, o **Telegram** — o próprio site do healthchecks tem um robô deles que você liga em dois
+   cliques (não é o robô do Assessor, é outro, só para esse aviso).
+4. Copie a **URL do ping** (algo como `https://hc-ping.com/xxxxxxxx-xxxx-xxxx-...`).
+5. No Assessor: **Painel > Celular**, seção **"3. Avisos do PC"** — cole a URL no campo **"URL do
+   ping"**, ligue o interruptor **"Pulso pro healthchecks.io"** e clique em **"Testar pulso"** para
+   conferir que funcionou (o site mostra "Last Ping: agora mesmo").
+6. Salve e reinicie o Assessor.
+
+**Resumindo:** os avisos de "PC ligou/desligou" (35.1) vêm do próprio PC, então só funcionam se ele
+conseguir avisar. O healthchecks (35.2) é quem avisa **na hora**, de fora, quando o PC nem teve
+chance.
+
+---
+
 ## Personalizar
 
 Tudo fica no **`config.yaml`** (abra com o Bloco de Notas). Regras de ouro:
