@@ -87,6 +87,12 @@ class Segmentador:
         self._frase: list[bytes] = []
         self._fortes = 0
         self._silencio = 0
+        self.descartada = 0.0   # segundos do ultimo trecho jogado fora por ser curto demais (o Ouvido registra)
+
+    @property
+    def duracao_atual(self) -> float:
+        """Segundos ja gravados da frase em andamento (0 se ninguem esta falando)."""
+        return len(self._frase) * BLOCO / TAXA if self.falando else 0.0
 
     def reiniciar(self) -> None:
         self.falando = False
@@ -111,6 +117,7 @@ class Segmentador:
             self.reiniciar()
             if len(frase) >= self._min_blocos:
                 return b"".join(frase)
+            self.descartada = len(frase) * BLOCO / TAXA
         return None
 
 

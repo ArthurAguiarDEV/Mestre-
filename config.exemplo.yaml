@@ -57,6 +57,8 @@ ouvido:
   limiar_volume: 150
   ganho: 0.8
   silencio_fim: 0.7
+  # "Assessor" sozinho: espera ate estes segundos pelo resto da frase antes de responder (0 = responde na hora)
+  espera_apos_palavra: 2.5
   gravar_diagnostico: true
   dispositivo: "gpu"
   max_frase: 120

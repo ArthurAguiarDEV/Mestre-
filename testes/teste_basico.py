@@ -911,6 +911,113 @@ print("FIM_VOZ_DONO")
 """
 
 
+CAPTACAO = r"""
+# Captacao da voz: blocos sinteticos (tom = fala, zeros = silencio) no laco do Ouvido, sem microfone
+import os, sys, tempfile, time
+os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
+import numpy as np
+from app import estado, locutor, memoria
+from app.audio import TAXA, BLOCO, Segmentador
+from app.ouvido import Ouvido, so_a_palavra, espera_apos_palavra, ESPERA_APOS_PALAVRA
+
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+
+def tom(seg, freq=150):
+    t = np.arange(int(seg * TAXA)) / TAXA
+    return (np.sin(2 * np.pi * freq * t) * 8000).astype(np.int16).tobytes()
+
+def silencio(seg):
+    return bytes(2 * int(seg * TAXA))
+
+class Falso:   # "Whisper": devolve as frases do roteiro, na ordem
+    def __init__(self, frases): self.frases = list(frases)
+    def transcrever(self, audio, **k): return self.frases.pop(0) if self.frases else ""
+
+def novo(frases, espera=ESPERA_APOS_PALAVRA, verificador=None, min_fala=0.35):
+    o = object.__new__(Ouvido)
+    o.ganho, o.acordar_tela, o._vigia, o.diagnostico = 1.0, False, None, False
+    o.variacoes, o.espera_palavra = ["assessor"], espera
+    o.verificador = verificador or locutor.Verificador(False)
+    o.transcritor = Falso(frases)
+    o._preparar_laco()
+    chamadas = []
+    def executar(comando, frase, seguimento=False):
+        chamadas.append((comando, frase, seguimento)); return 8
+    seg = Segmentador(500, 0.7, min_fala=min_fala)
+    def tocar(audio, eco=False):
+        for i in range(0, len(audio), BLOCO * 2):
+            o._bloco(audio[i:i + BLOCO * 2], eco, seg, executar)
+    estado.atualizar(conversa_ate=0.0, ditado_desde=0.0, descanso=False)
+    return o, tocar, chamadas
+
+def ouvidas(desde):
+    return [x for x in memoria.ouvidas(300) if x.get("ts", 0) >= desde - 0.01]
+
+ok(so_a_palavra("") and so_a_palavra("e ai") and not so_a_palavra("abre o youtube"),
+   "Captação: 'Assessor' sozinho (ou só enchimento) é reconhecido")
+ok(espera_apos_palavra({}) == ESPERA_APOS_PALAVRA and espera_apos_palavra({"ouvido": {"espera_apos_palavra": None}}) == ESPERA_APOS_PALAVRA,
+   "Captação: config antigo usa a espera padrão")
+
+# 1) "Assessor" + pausa de 2 s + "abre o YouTube" = uma frase so
+inicio = time.time()
+o, tocar, ch = novo(["Assessor.", "Abre o YouTube."])
+tocar(tom(0.6)); tocar(silencio(2.0)); tocar(tom(1.2)); tocar(silencio(1.5))
+ok(ch == [("abre o youtube", "Assessor. Abre o YouTube.", False)], f"Captação: palavra + pausa de 2 s + comando = uma frase só {ch}")
+reg = ouvidas(inicio)
+ok(any(str(r.get("motivo", "")).startswith("só a palavra") for r in reg) and any(r.get("junto_da_palavra") for r in reg),
+   "Captação: ouvido.jsonl mostra a espera e a frase juntada")
+
+# 2) "Assessor" sozinho: nao some, responde e abre a janela; o resto vem como seguimento
+o, tocar, ch = novo(["Assessor.", "Abre o YouTube."])
+tocar(tom(0.6)); tocar(silencio(2.0))
+ok(ch == [], "Captação: durante a espera ainda não respondeu")
+tocar(silencio(2.0))
+ok(ch == [("", "Assessor.", False)], f"Captação: 'Assessor' sozinho não é descartado (abre a conversa) {ch}")
+tocar(tom(1.2)); tocar(silencio(1.0))
+ok(len(ch) == 2 and ch[1] == ("abre o youtube", "Abre o YouTube.", True), f"Captação: depois de só chamar, o resto vale sem a palavra {ch}")
+
+# 3) espera 0 = responde na hora (jeito antigo)
+o, tocar, ch = novo(["Assessor."], espera=0)
+tocar(tom(0.6)); tocar(silencio(1.0))
+ok(ch == [("", "Assessor.", False)], "Captação: espera 0 responde na hora")
+
+# 4) Descartes registrados com motivo
+inicio = time.time()
+o, tocar, ch = novo(["", "Bom dia pessoal."])
+tocar(tom(0.8)); tocar(silencio(1.0)); tocar(tom(1.0)); tocar(silencio(1.0))
+reg = ouvidas(inicio)
+ok(ch == [] and any(str(r.get("motivo", "")).startswith("transcrição vazia") for r in reg), "Captação: transcrição vazia fica registrada")
+ok(any(r.get("motivo") == "sem a palavra de ativação" and r.get("texto") == "Bom dia pessoal." for r in reg),
+   "Captação: frase sem a palavra fica registrada com o motivo")
+o, tocar, ch = novo(["x"], min_fala=1.5)
+tocar(tom(0.3)); tocar(silencio(1.0))
+ok(any(r.get("motivo") == "curta demais" for r in ouvidas(inicio)), "Captação: trecho curto demais fica registrado")
+o, tocar, ch = novo(["x"])
+tocar(tom(1.2)); tocar(tom(0.3), eco=True); tocar(silencio(1.0))
+ok(ch == [] and any(str(r.get("motivo", "")).startswith("cortada") for r in ouvidas(inicio)),
+   "Captação: fala cortada pela voz do assistente fica registrada")
+
+# 5) Voz do dono: "Assessor" curto + comando sao conferidos JUNTOS (mais voz para comparar)
+rng = np.random.default_rng(3)
+VA, VB = rng.normal(size=192), rng.normal(size=192)
+def falso(a):
+    freq = np.argmax(np.abs(np.fft.rfft(a))) * TAXA / len(a)
+    return VA if freq < 250 else VB
+locutor.salvar_impressao([falso(locutor.bytes_para_float(tom(2))) for _ in range(5)])
+v = locutor.Verificador(True, 0.4, extrair=falso)
+o, tocar, ch = novo(["Assessor.", "Abre o YouTube."], verificador=v)
+tocar(tom(0.6)); tocar(silencio(2.0)); tocar(tom(1.2)); tocar(silencio(1.5))
+ok(len(ch) == 1 and ch[0][0] == "abre o youtube", "Captação: com 'só minha voz' ligado, o dono passa")
+inicio = time.time()
+o, tocar, ch = novo(["Assessor, abre o YouTube."], verificador=v)
+tocar(tom(1.5, freq=400)); tocar(silencio(1.0))
+ok(ch == [] and any(r.get("motivo") == "voz não reconhecida" for r in ouvidas(inicio)),
+   "Captação: outra voz é recusada e registrada com o motivo")
+locutor.apagar_impressao()
+print("FIM_CAPTACAO")
+"""
+
+
 APARENCIA = r"""
 import yaml
 import app.painel as p
@@ -1228,6 +1335,14 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
         if "FIM_VOZ_DONO" not in saida:
             conferir(False, "Voz do dono: o teste rodou até o fim", saida[-1500:])
+
+        print("\n[Captação da voz]")
+        cod, saida = rodar(pasta, CAPTACAO, espera=120)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_CAPTACAO" not in saida:
+            conferir(False, "Captação: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Validar atualização]")
         cod, saida = rodar(pasta, VALIDACAO, espera=120)

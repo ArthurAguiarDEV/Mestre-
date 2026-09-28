@@ -8,7 +8,7 @@ fale com ele em português simples, explique o que mudou e o que ele precisa tes
 | Arquivo | O que faz |
 |---|---|
 | `app/main.py` | Início. `--texto` (digitar em vez de falar), `--mudo`, `--microfones` |
-| `app/ouvido.py` | Laço do microfone: corta frases, checa "mestre", janela de conversa, atualiza o estado |
+| `app/ouvido.py` | Laço do microfone (`_laco`/`_bloco`/`_frase`, testável com blocos sintéticos): corta frases, checa "mestre", "mestre" sozinho espera o resto (`espera_apos_palavra`), janela de conversa, descartes vão ao ouvido.jsonl com `motivo` |
 | `app/audio.py` | Segmentador (limite de volume), ganho, normalização, Transcritor (faster-whisper), diagnóstico |
 | `app/locutor.py` | "Responder só à minha voz": SpeechBrain ECAPA (`modelos/locutor_ecapa`, carrega em segundo plano), impressão em `%APPDATA%\Mestre\voz_dono.json`; `Ouvido._voz_do_dono` confere antes de executar (celular/Telegram não passa por ela) |
 | `app/validacao.py` | "Validar atualização" (painel > Sistema): lê `ROTEIRO_VALIDACAO.md`, casa OUVI/ENTENDI/FIZ pelo `ts` do histórico, gera relatório em `exportacoes/validacao_*.md` e FEEDBACK no MELHORIAS.md; `ultimo_relatorio()` |

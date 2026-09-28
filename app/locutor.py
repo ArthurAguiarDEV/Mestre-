@@ -7,7 +7,7 @@ voz" do dono (média dos embeddings de ~10 frases gravadas no painel > Áudio > 
 - Modelo: SpeechBrain ECAPA (speechbrain/spkrec-ecapa-voxceleb), grátis e local, em modelos/locutor_ecapa.
 - A impressão fica FORA do projeto: %APPDATA%\\Mestre\\voz_dono.json (junto do segredos.json).
 - Nunca trava a escuta: o modelo carrega em segundo plano; enquanto não carregou, deixa passar.
-- Frase muito curta (< 1 s) quase não tem voz para comparar: dentro da janela de conversa passa,
+- Frase muito curta (< 1,3 s de áudio) quase não tem voz para comparar: dentro da janela de conversa passa,
   fora dela a exigência fica um pouco menor (TOLERANCIA_CURTA).
 """
 import json
@@ -26,7 +26,7 @@ TAXA = 16000
 MODELO_HF = "speechbrain/spkrec-ecapa-voxceleb"
 PASTA_MODELO = PASTA_MODELOS / "locutor_ecapa"
 EXIGENCIA_PADRAO = 0.40        # cosseno mínimo (mesma pessoa no mesmo mic: ~0,55 a 0,8; outra: ~0 a 0,4)
-FRASE_CURTA = 1.0              # segundos
+FRASE_CURTA = 1.3              # segundos de áudio ("Assessor." sozinho dá ~1,0 s: 0,4 s de folga antes + a palavra)
 TOLERANCIA_CURTA = 0.10        # frase curta fora da conversa: exige um pouco menos
 MAXIMO_SEGUNDOS = 10.0         # frase longa (ditado): compara só os primeiros 10 s (mais rápido)
 MINIMO_CADASTRO = 5            # frases mínimas para gerar a impressão

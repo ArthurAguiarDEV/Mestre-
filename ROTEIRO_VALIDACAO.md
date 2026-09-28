@@ -14,6 +14,16 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Captação da voz (não cortar depois de "Assessor")
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre…` (pausa de 2 s) `abre o YouTube` | Não responde na pausa; junta as duas partes e abre o YouTube | `_cmd_youtube` |
+| `Mestre` (sozinho, e fica quieto) | Uns 3 s depois responde curto ("Às ordens", "Ouvindo") e fica na conversa | (só chamou) |
+| `que horas são` (logo depois da resposta acima, sem a palavra) | Responde a hora sem precisar chamar de novo | `_cmd_hora_data` |
+| `E aí Mestre…` (pausa) `bora trabalhar` | Roda a rotina de trabalho numa frase só | `_cmd_rotinas` |
+| Painel > Áudio > "Espera depois de só …" em 0 e salvar | "Mestre" sozinho volta a responder na hora | (painel) |
+
 ### Fila do "pensando" (várias perguntas seguidas sem travar)
 
 | Frase | O que deve acontecer | Comando esperado |

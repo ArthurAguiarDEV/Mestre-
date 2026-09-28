@@ -754,6 +754,10 @@ class Painel(ctk.CTk):
         linha_campo(f, "Ganho (aumenta o volume do mic)", lambda p: ctk.CTkSlider(p, from_=0.5, to=4, variable=self.var_ganho))
         self.var_silencio = tk.DoubleVar(value=float(o.get("silencio_fim") or 0.8))
         linha_campo(f, "Pausa que encerra a frase (s)", lambda p: ctk.CTkSlider(p, from_=0.4, to=2.0, variable=self.var_silencio))
+        from .ouvido import espera_apos_palavra
+        self.var_espera_palavra = tk.DoubleVar(value=espera_apos_palavra(self.cfg))
+        linha_campo(f, f"Espera depois de só “{self.palavra}” (s)", lambda p: ctk.CTkSlider(
+            p, from_=0, to=5, number_of_steps=20, variable=self.var_espera_palavra))
         self.var_max = tk.IntVar(value=int(o.get("max_frase") or 60))
         linha_campo(f, "Tamanho máximo de uma frase (s)", lambda p: ctk.CTkSlider(p, from_=15, to=180, number_of_steps=33,
                                                                                 variable=self.var_max))
@@ -2689,6 +2693,7 @@ class Painel(ctk.CTk):
             o["limiar_volume"] = 0 if self.var_auto.get() else int(self.var_limiar.get())
             o["ganho"] = round(self.var_ganho.get(), 1)
             o["silencio_fim"] = round(self.var_silencio.get(), 1)
+            o["espera_apos_palavra"] = round(float(self.var_espera_palavra.get()), 1)
             o["gravar_diagnostico"] = bool(self.var_diag.get())
             o["so_minha_voz"] = bool(self.var_so_minha_voz.get())
             o["exigencia_voz"] = round(float(self.var_exig_voz.get()), 2)
