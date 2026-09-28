@@ -2016,6 +2016,7 @@ CEREBRO_FALLBACK = r"""
 import os, tempfile, time
 os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
 from app.cerebro import Cerebro
+from app import cerebro as cerebro_modulo
 from app import segredos
 
 def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
@@ -2069,6 +2070,82 @@ resposta3 = cerebro2.perguntar("oi")
 ok("ollama" not in chamadas2, "1ª opção de castigo: nem é chamada")
 ok(chamadas2 == ["ollama_menor", "claude"], "De castigo a 1ª: tenta a 2ª antes da 3ª, nunca pula a ordem")
 ok("resposta do claude" in resposta3, "2ª também falhou: cai pra 3ª (Claude) da lista")
+
+# Botão "Baixar modelo menor" (painel > Conversa): baixar_modelo_ollama le o progresso linha a linha
+# da API do Ollama, modelos_do_ollama diz o que ja esta baixado e testar_modelo_ollama confirma que
+# o modelo responde. Tudo sem precisar do Ollama de verdade instalado (requests trocado por um falso).
+import json as _json
+import requests as _requests
+
+
+class _RespostaFalsaPull:
+    def __init__(self, linhas):
+        self._linhas = linhas
+    def raise_for_status(self):
+        pass
+    def iter_lines(self):
+        for l in self._linhas:
+            yield l.encode("utf-8")
+
+
+linhas_progresso = [
+    _json.dumps({"status": "pulling manifest"}),
+    _json.dumps({"status": "downloading", "total": 1000, "completed": 250}),
+    _json.dumps({"status": "downloading", "total": 1000, "completed": 1000}),
+    _json.dumps({"status": "success"}),
+]
+progresso_capturado = []
+_requests.post = lambda url, json=None, stream=False, timeout=None: _RespostaFalsaPull(linhas_progresso)
+erro_pull = cerebro_modulo.baixar_modelo_ollama("qwen3:4b", progresso=progresso_capturado.append)
+ok(erro_pull == "", "Baixar modelo menor: termina sem erro quando o Ollama manda \"success\"")
+ok("(25%)" in progresso_capturado[1], "Parser do progresso: 250/1000 vira 25%")
+ok("(100%)" in progresso_capturado[2], "Parser do progresso: 1000/1000 vira 100%")
+
+_requests.post = lambda url, json=None, stream=False, timeout=None: _RespostaFalsaPull(
+    [_json.dumps({"error": "modelo nao existe"})])
+erro_pull2 = cerebro_modulo.baixar_modelo_ollama("modelo-que-nao-existe")
+ok(erro_pull2 == "modelo nao existe", "Baixar modelo menor: erro da API do Ollama aparece pro usuário")
+
+
+def _post_sem_conexao(url, json=None, stream=False, timeout=None):
+    raise _requests.exceptions.ConnectionError("[WinError 10061]")
+_requests.post = _post_sem_conexao
+erro_pull3 = cerebro_modulo.baixar_modelo_ollama("qwen3:4b")
+ok("Ollama não respondeu" in erro_pull3, "Baixar modelo menor: Ollama fechado/não instalado dá erro claro (não o erro técnico)")
+
+
+class _RespostaFalsaTags:
+    def __init__(self, nomes):
+        self._nomes = nomes
+    def json(self):
+        return {"models": [{"name": n} for n in self._nomes]}
+_requests.get = lambda url, timeout=None: _RespostaFalsaTags(["qwen3:8b", "llama3.2:3b"])
+instalados = cerebro_modulo.modelos_do_ollama()
+ok(instalados == ["llama3.2:3b", "qwen3:8b"], "modelos_do_ollama: lista o que já está baixado (ordenado)")
+ok("qwen3:8b" in instalados and "qwen3:4b" not in instalados,
+   "Estado \"já baixado\": modelo baixado aparece na lista, o que falta baixar não")
+
+
+def _get_sem_conexao(url, timeout=None):
+    raise _requests.exceptions.ConnectionError("[WinError 10061]")
+_requests.get = _get_sem_conexao
+ok(cerebro_modulo.modelos_do_ollama() == [], "modelos_do_ollama: Ollama fechado devolve lista vazia (sem travar)")
+
+
+class _RespostaFalsaChat:
+    def __init__(self, texto):
+        self._texto = texto
+    def raise_for_status(self):
+        pass
+    def json(self):
+        return {"message": {"content": self._texto}}
+_requests.post = lambda url, json=None, timeout=None: _RespostaFalsaChat("oi! tudo bem?")
+erro_testar = cerebro_modulo.testar_modelo_ollama("qwen3:4b")
+ok(erro_testar == "", "Botão Testar: modelo respondendo de verdade não dá erro")
+
+_requests.post = lambda url, json=None, timeout=None: _RespostaFalsaChat("")
+erro_testar2 = cerebro_modulo.testar_modelo_ollama("qwen3:4b")
+ok(erro_testar2 != "", "Botão Testar: resposta vazia do modelo é tratada como erro")
 
 print("FIM_CEREBRO_FALLBACK")
 """

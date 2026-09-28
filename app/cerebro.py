@@ -450,13 +450,26 @@ class Cerebro:
 
 
 # --- Baixar um modelo menor do Ollama (painel > Conversa > "Baixar modelo menor") -------------
-MODELOS_MENORES = {"qwen3:8b": "~5 GB, bom equilíbrio", "phi4-mini": "~2,5 GB, mais leve"}
+MODELOS_MENORES = {
+    "qwen3:8b": "~5 GB, bom equilíbrio",
+    "qwen3:4b": "~2,6 GB, mais leve",
+    "phi4-mini": "~2,5 GB, mais leve",
+}
 
 
 def ollama_instalado() -> bool:
     """O programa `ollama` esta no PATH do Windows (independente do servidor estar rodando)."""
     import shutil
     return shutil.which("ollama") is not None
+
+
+def _erro_amigavel_ollama(erro: Exception) -> str:
+    """Troca o erro tecnico de conexao por uma frase que o usuario entende."""
+    import requests
+
+    if isinstance(erro, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+        return "O Ollama não respondeu. Confira se ele está aberto (ícone perto do relógio) e tente de novo."
+    return str(erro)
 
 
 def baixar_modelo_ollama(modelo: str, url: str = "http://localhost:11434", progresso=None) -> str:
@@ -485,7 +498,7 @@ def baixar_modelo_ollama(modelo: str, url: str = "http://localhost:11434", progr
                     progresso(str(d.get("status", "")))
         return ""
     except Exception as erro:
-        return str(erro)
+        return _erro_amigavel_ollama(erro)
 
 
 def modelos_do_ollama(url: str = "http://localhost:11434") -> list[str]:
@@ -497,3 +510,21 @@ def modelos_do_ollama(url: str = "http://localhost:11434") -> list[str]:
         return sorted(m["name"] for m in r.json().get("models", []))
     except Exception:
         return []
+
+
+def testar_modelo_ollama(modelo: str, url: str = "http://localhost:11434", timeout: float = 30) -> str:
+    """Manda uma pergunta curta pro modelo pra confirmar que ele responde de verdade. Chame numa
+    THREAD. Devolve "" se deu certo, ou uma mensagem de erro."""
+    import requests
+
+    try:
+        r = requests.post(f"{url}/api/chat", json={
+            "model": modelo,
+            "messages": [{"role": "user", "content": "Responda em uma palavra: oi"}],
+            "stream": False,
+        }, timeout=timeout)
+        r.raise_for_status()
+        conteudo = (r.json().get("message") or {}).get("content", "").strip()
+        return "" if conteudo else "O modelo respondeu vazio."
+    except Exception as erro:
+        return _erro_amigavel_ollama(erro)

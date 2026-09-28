@@ -2136,14 +2136,22 @@ class Painel(ctk.CTk):
         self.after(500, self._procurar_modelos_ollama)
 
         from .cerebro import MODELOS_MENORES
+        self._modelos_instalados_ollama: list[str] = []
         linha_menor = ctk.CTkFrame(f, fg_color="transparent")
         linha_menor.pack(fill="x", padx=(32, 18), pady=(8, 4))
         self.var_menor_escolha = tk.StringVar(value="qwen3:8b")
+
+        def escolher_menor(v):
+            self.var_menor_escolha.set(v.split(" (")[0])
+            self._atualizar_status_menor()
         ctk.CTkOptionMenu(linha_menor, values=[f"{m} ({d})" for m, d in MODELOS_MENORES.items()],
-                          command=lambda v: self.var_menor_escolha.set(v.split(" (")[0]), width=260).pack(side="left")
+                          command=escolher_menor, width=260).pack(side="left")
         self.btn_baixar_menor = ctk.CTkButton(linha_menor, text="Baixar modelo menor", width=180,
                                               command=self._baixar_modelo_menor)
         self.btn_baixar_menor.pack(side="left", padx=8)
+        self.btn_testar_menor = ctk.CTkButton(linha_menor, text="Testar", width=90, state="disabled",
+                                              **SECUNDARIO, command=self._testar_modelo_menor)
+        self.btn_testar_menor.pack(side="left")
         self.rot_menor = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=820, text_color=tema.TEXTO_FRACO)
         self.rot_menor.pack(fill="x", padx=(32, 18))
 
@@ -2248,6 +2256,16 @@ class Painel(ctk.CTk):
                 pass
         threading.Thread(target=trabalho, daemon=True).start()
 
+    def _atualizar_status_menor(self):
+        """Mostra se o modelo escolhido na lista de sugeridos ja esta baixado e liga/desliga o botao Testar."""
+        modelo = self.var_menor_escolha.get()
+        ja_baixado = modelo in self._modelos_instalados_ollama
+        self.btn_testar_menor.configure(state="normal" if ja_baixado else "disabled")
+        if ja_baixado:
+            self.rot_menor.configure(text=f"✓ {modelo} já está baixado neste PC.", text_color=tema.SUCESSO)
+        else:
+            self.rot_menor.configure(text=f"{modelo} ainda não foi baixado.", text_color=tema.TEXTO_FRACO)
+
     def _baixar_modelo_menor(self):
         from .cerebro import baixar_modelo_ollama, ollama_instalado
         if not ollama_instalado():
@@ -2256,6 +2274,7 @@ class Painel(ctk.CTk):
             return
         modelo = self.var_menor_escolha.get()
         self.btn_baixar_menor.configure(state="disabled")
+        self.btn_testar_menor.configure(state="disabled")
         self.rot_menor.configure(text=f"Baixando {modelo}... isso pode demorar vários minutos.", text_color=tema.TEXTO_FRACO)
 
         def progresso(texto):
@@ -2273,12 +2292,37 @@ class Painel(ctk.CTk):
                 if erro:
                     self.rot_menor.configure(text=f"Não consegui baixar {modelo}: {erro}", text_color=tema.AVISO)
                     return
-                self.rot_menor.configure(text=f"✓ {modelo} baixado! Já ficou marcado como “Modelo do Ollama menor” "
-                                              "acima. Clique em Salvar para usar na troca de IA sozinho.",
-                                         text_color=tema.SUCESSO)
                 self.var_modelo_menor.set(modelo)
                 valores = list(dict.fromkeys([modelo] + list(self.ent_modelo_menor.cget("values") or [])))
                 self.ent_modelo_menor.configure(values=valores)
+                if modelo not in self._modelos_instalados_ollama:
+                    self._modelos_instalados_ollama.append(modelo)
+                self.salvar()   # ja preenche e grava "ollama_modelo_menor" sozinho, sem precisar clicar em Salvar
+                self.rot_menor.configure(text=f"✓ {modelo} baixado e salvo como “Modelo do Ollama menor”! "
+                                              "Já pode usar na troca de IA sozinho.", text_color=tema.SUCESSO)
+                self._atualizar_status_menor()
+            try:
+                self.after(0, terminou)
+            except RuntimeError:
+                pass
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def _testar_modelo_menor(self):
+        from .cerebro import testar_modelo_ollama
+        modelo = self.var_menor_escolha.get()
+        self.btn_testar_menor.configure(state="disabled")
+        self.rot_menor.configure(text=f"Testando {modelo}...", text_color=tema.TEXTO_FRACO)
+
+        def trabalho():
+            url = str(self._sec("cerebro").get("ollama_url", "http://localhost:11434"))
+            erro = testar_modelo_ollama(modelo, url)
+
+            def terminou():
+                self.btn_testar_menor.configure(state="normal")
+                if erro:
+                    self.rot_menor.configure(text=f"{modelo} não respondeu: {erro}", text_color=tema.AVISO)
+                else:
+                    self.rot_menor.configure(text=f"✓ {modelo} respondeu certinho.", text_color=tema.SUCESSO)
             try:
                 self.after(0, terminou)
             except RuntimeError:
@@ -2292,11 +2336,16 @@ class Painel(ctk.CTk):
             modelos = modelos_do_ollama(url)
             texto = (f"{len(modelos)} modelo(s) instalado(s) no Ollama: escolha na lista. Mais leves respondem mais rápido."
                      if modelos else "O Ollama não respondeu (está fechado ou não instalado). Abra o Ollama e reabra esta página.")
+
+            def terminou():
+                self._modelos_instalados_ollama = modelos
+                self.ent_modelo_ia.configure(values=modelos or [self.var_modelo_ia.get()])
+                self.ent_modelo_menor.configure(
+                    values=[""] + modelos if modelos else [self.var_modelo_menor.get() or "(nenhum)"])
+                self.rot_ollama.configure(text=texto)
+                self._atualizar_status_menor()
             try:
-                self.after(0, lambda: (self.ent_modelo_ia.configure(values=modelos or [self.var_modelo_ia.get()]),
-                                       self.ent_modelo_menor.configure(
-                                           values=[""] + modelos if modelos else [self.var_modelo_menor.get() or "(nenhum)"]),
-                                       self.rot_ollama.configure(text=texto)))
+                self.after(0, terminou)
             except RuntimeError:
                 pass
         threading.Thread(target=trabalho, daemon=True).start()

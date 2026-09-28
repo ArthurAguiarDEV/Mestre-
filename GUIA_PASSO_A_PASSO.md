@@ -1605,6 +1605,13 @@ próxima sozinho, na hora, sem travar a escuta. Quem falhou fica **"de castigo"*
   - **1ª, 2ª e 3ª opção:** escolha a ordem que preferir.
   - **Modelo do Ollama menor (opcional):** um modelo mais leve para servir de 2ª tentativa
     (ex.: `llama3.2:3b`). Deixe em branco para não usar.
+  - **Baixar modelo menor:** não precisa digitar nada no terminal. Escolha um modelo pequeno
+    sugerido na lista (com o tamanho aproximado do download) e clique em **"Baixar modelo menor"**.
+    O download roda em segundo plano (dá pra continuar usando o painel) e mostra o progresso em %.
+    Ao terminar, ele já preenche e **salva sozinho** o campo "Modelo do Ollama menor" acima. Se o
+    modelo escolhido já estiver baixado, aparece "✓ já está baixado" e o botão **"Testar"** liga,
+    pra confirmar que ele responde. Se o Ollama não estiver instalado ou aberto, aparece uma
+    mensagem clara explicando o que fazer.
   - **Tempo por tentativa (s):** quanto tempo espera cada IA antes de desistir e ir pra próxima.
   - **Tempo de castigo (min):** quanto tempo uma IA que falhou fica de fora antes de ser tentada
     de novo.
