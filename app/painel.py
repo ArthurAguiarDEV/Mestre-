@@ -2019,6 +2019,58 @@ class Painel(ctk.CTk):
                 self.after(0, lambda e=erro: self.rot_voz.configure(text=f"Não consegui carregar: {e}"))
         threading.Thread(target=trabalho, daemon=True).start()
 
+    def _linha_ia_nuvem(self, f, id_: str, nome: str, cb: dict, modelo_padrao: str, site_chave: str):
+        """Um cartao de IA na nuvem (Groq/Cerebras/OpenRouter/Gemini): ligar, chave, modelo, testar."""
+        cartao = ctk.CTkFrame(f, fg_color=tema.CAMPO, corner_radius=10)
+        cartao.pack(fill="x", padx=(32, 18), pady=6)
+        topo = ctk.CTkFrame(cartao, fg_color="transparent")
+        topo.pack(fill="x", padx=12, pady=(10, 4))
+        var_ligado = tk.BooleanVar(value=bool(cb.get(f"{id_}_ligado", False)))
+        ctk.CTkSwitch(topo, text=nome, variable=var_ligado, font=tema.fonte(14, "bold")).pack(side="left")
+        ctk.CTkButton(topo, text="Criar chave grátis", **SECUNDARIO, width=160,
+                      command=lambda: webbrowser.open(site_chave)).pack(side="right")
+        corpo = ctk.CTkFrame(cartao, fg_color="transparent")
+        corpo.pack(fill="x", padx=12, pady=(0, 10))
+        ent_chave = linha_campo(corpo, "Chave da API", lambda p: ctk.CTkEntry(p, height=36, show="•"), largura_rotulo=140)
+        ent_chave.insert(0, segredos.ler(f"{id_}_chave"))
+        ent_modelo = linha_campo(corpo, "Modelo", lambda p: ctk.CTkEntry(p, height=36), largura_rotulo=140)
+        ent_modelo.insert(0, str(cb.get(f"{id_}_modelo", modelo_padrao)))
+        linha_botao = ctk.CTkFrame(corpo, fg_color="transparent")
+        linha_botao.pack(fill="x", pady=4)
+        rot = ctk.CTkLabel(corpo, text="", anchor="w", justify="left", wraplength=740, text_color=tema.TEXTO_FRACO)
+        ctk.CTkButton(linha_botao, text="Testar", width=120,
+                      command=lambda: self._testar_ia_nuvem(id_, ent_chave, ent_modelo, rot)).pack(side="left")
+        rot.pack(fill="x", pady=(2, 0))
+        self._nuvem_ia[id_] = {"ligado": var_ligado, "chave": ent_chave, "modelo": ent_modelo}
+
+    def _testar_ia_nuvem(self, id_: str, ent_chave, ent_modelo, rot):
+        from . import cerebro
+        chave, modelo = ent_chave.get().strip(), (ent_modelo.get().strip() or None)
+        if not chave:
+            rot.configure(text="Cole a chave da API antes de testar.", text_color=tema.AVISO)
+            return
+        segredos.salvar(**{f"{id_}_chave": chave})
+        rot.configure(text="Testando...", text_color=tema.TEXTO_FRACO)
+
+        def trabalho():
+            inicio = time.time()
+            try:
+                c = cerebro.Cerebro({"cerebro": {"tipo": "ollama"}})
+                if id_ == "gemini":
+                    resposta = c._gemini("Responda so 'ok'.", [{"role": "user", "content": "oi"}], modelo=modelo, timeout=30)
+                else:
+                    resposta = c._nuvem_openai(id_, "Responda so 'ok'.", [{"role": "user", "content": "oi"}],
+                                               modelo=modelo, timeout=30)
+                demora = time.time() - inicio
+                texto, cor = f"✓ Respondeu em {demora:.1f} s: “{resposta[:60]}”", tema.SUCESSO
+            except Exception as erro:
+                texto, cor = f"Não funcionou: {erro}", tema.AVISO
+            try:
+                self.after(0, lambda: rot.configure(text=texto, text_color=cor))
+            except RuntimeError:
+                pass
+        threading.Thread(target=trabalho, daemon=True).start()
+
     # -----------------------------------------------------------------
     def _aba_conversa(self, pagina):
         from . import memoria
@@ -2083,6 +2135,18 @@ class Painel(ctk.CTk):
                       command=lambda: webbrowser.open("https://ollama.com/download")).pack(side="left")
         self.after(500, self._procurar_modelos_ollama)
 
+        from .cerebro import MODELOS_MENORES
+        linha_menor = ctk.CTkFrame(f, fg_color="transparent")
+        linha_menor.pack(fill="x", padx=(32, 18), pady=(8, 4))
+        self.var_menor_escolha = tk.StringVar(value="qwen3:8b")
+        ctk.CTkOptionMenu(linha_menor, values=[f"{m} ({d})" for m, d in MODELOS_MENORES.items()],
+                          command=lambda v: self.var_menor_escolha.set(v.split(" (")[0]), width=260).pack(side="left")
+        self.btn_baixar_menor = ctk.CTkButton(linha_menor, text="Baixar modelo menor", width=180,
+                                              command=self._baixar_modelo_menor)
+        self.btn_baixar_menor.pack(side="left", padx=8)
+        self.rot_menor = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=820, text_color=tema.TEXTO_FRACO)
+        self.rot_menor.pack(fill="x", padx=(32, 18))
+
         self.ROTULOS_IA = dict(ROTULOS_OPCOES_IA)
         f = secao(pagina, "Troca de IA sozinho (se uma demorar ou falhar)",
                "Se a 1ª opção passar do “tempo por tentativa” ou der erro, ele tenta a próxima da lista sozinho, "
@@ -2117,6 +2181,27 @@ class Painel(ctk.CTk):
         self.ent_claude_chave = linha_campo(f, "Chave da API do Claude (opcional)",
                                             lambda p: ctk.CTkEntry(p, height=36, show="*"))
         self.ent_claude_chave.insert(0, segredos.ler("claude_chave"))
+
+        from .cerebro import GEMINI_TEXTOS_LONGOS_PADRAO, NUVEM_MODELO_PADRAO, NUVEM_SITE_CHAVE
+        f = secao(pagina, "IAs grátis na nuvem (opcionais)",
+               "Mais opções pra “Troca de IA sozinho” acima: crie uma chave grátis (link abaixo de cada uma) "
+               "e ligue a que quiser. Todas DESLIGADAS por padrão. Aviso: na nuvem, suas frases saem do seu PC "
+               "e vão pro servidor da empresa escolhida (ao contrário do Ollama, que fica só no seu PC).",
+               recolhida=True)
+        self._nuvem_ia = {}
+        cb = self._sec("cerebro")
+        for id_, nome in (("groq", "Groq"), ("cerebras", "Cerebras"), ("openrouter", "OpenRouter"),
+                          ("gemini", "Google Gemini")):
+            self._linha_ia_nuvem(f, id_, nome, cb, NUVEM_MODELO_PADRAO[id_], NUVEM_SITE_CHAVE[id_])
+        self.var_gemini_longos = tk.IntVar(value=int(cb.get("gemini_textos_longos_chars", GEMINI_TEXTOS_LONGOS_PADRAO)))
+        rot_longos = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        linha_campo(f, "Preferir Gemini em textos longos (acima de)", lambda p: ctk.CTkSlider(
+            p, from_=0, to=2000, number_of_steps=40, variable=self.var_gemini_longos,
+            command=lambda v: rot_longos.configure(
+                text="Desligado (nunca prefere)" if int(v) == 0 else f"{int(v)} caracteres no pedido (só se o Gemini estiver ligado)")))
+        rot_longos.pack(fill="x", padx=(32, 18))
+        rot_longos.configure(text="Desligado (nunca prefere)" if self.var_gemini_longos.get() == 0 else
+                             f"{self.var_gemini_longos.get()} caracteres no pedido (só se o Gemini estiver ligado)")
 
         f = secao(pagina, "Sua cidade", "Usada no clima (“vai chover?”).")
         self.ent_cidade = ctk.CTkEntry(f, height=36)
@@ -2159,6 +2244,43 @@ class Painel(ctk.CTk):
             try:
                 self.after(0, lambda: (self.rot_envio.configure(text=texto, text_color=tema.SUCESSO if ok else tema.AVISO),
                                        self.lift()))
+            except RuntimeError:
+                pass
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def _baixar_modelo_menor(self):
+        from .cerebro import baixar_modelo_ollama, ollama_instalado
+        if not ollama_instalado():
+            self.rot_menor.configure(text="O Ollama não está instalado neste PC. Baixe em ollama.com/download e "
+                                          "tente de novo.", text_color=tema.AVISO)
+            return
+        modelo = self.var_menor_escolha.get()
+        self.btn_baixar_menor.configure(state="disabled")
+        self.rot_menor.configure(text=f"Baixando {modelo}... isso pode demorar vários minutos.", text_color=tema.TEXTO_FRACO)
+
+        def progresso(texto):
+            try:
+                self.after(0, lambda: self.rot_menor.configure(text=f"Baixando {modelo}: {texto}"))
+            except RuntimeError:
+                pass
+
+        def trabalho():
+            url = str(self._sec("cerebro").get("ollama_url", "http://localhost:11434"))
+            erro = baixar_modelo_ollama(modelo, url, progresso)
+
+            def terminou():
+                self.btn_baixar_menor.configure(state="normal")
+                if erro:
+                    self.rot_menor.configure(text=f"Não consegui baixar {modelo}: {erro}", text_color=tema.AVISO)
+                    return
+                self.rot_menor.configure(text=f"✓ {modelo} baixado! Já ficou marcado como “Modelo do Ollama menor” "
+                                              "acima. Clique em Salvar para usar na troca de IA sozinho.",
+                                         text_color=tema.SUCESSO)
+                self.var_modelo_menor.set(modelo)
+                valores = list(dict.fromkeys([modelo] + list(self.ent_modelo_menor.cget("values") or [])))
+                self.ent_modelo_menor.configure(values=valores)
+            try:
+                self.after(0, terminou)
             except RuntimeError:
                 pass
         threading.Thread(target=trabalho, daemon=True).start()
@@ -3694,6 +3816,12 @@ class Painel(ctk.CTk):
         cb["penalidade_min"] = int(self.var_penalidade.get())
         if self.ent_claude_chave.get().strip():
             segredos.salvar(claude_chave=self.ent_claude_chave.get().strip())
+        for id_, campos in self._nuvem_ia.items():
+            cb[f"{id_}_ligado"] = bool(campos["ligado"].get())
+            cb[f"{id_}_modelo"] = configuracao.aspas(campos["modelo"].get().strip())
+            if campos["chave"].get().strip():
+                segredos.salvar(**{f"{id_}_chave": campos["chave"].get().strip()})
+        cb["gemini_textos_longos_chars"] = int(self.var_gemini_longos.get())
         configuracao.secao(c, "assistente")["cidade"] = configuracao.aspas(self.ent_cidade.get().strip() or "São Paulo")
 
     def _salvar_ipm(self, c):

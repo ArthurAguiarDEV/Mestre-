@@ -23,10 +23,36 @@ ROTULOS_OPCOES_IA = {
     "ollama": "Ollama (modelo principal)",
     "ollama_menor": "Ollama (modelo menor)",
     "claude": "Claude API",
+    "groq": "Groq (nuvem, grátis)",
+    "cerebras": "Cerebras (nuvem, grátis)",
+    "openrouter": "OpenRouter (nuvem, grátis)",
+    "gemini": "Google Gemini (nuvem, grátis)",
 }
 ORDEM_IA_PADRAO = ["ollama", "ollama_menor", "claude"]
 TIMEOUT_TENTATIVA_PADRAO = 30
 PENALIDADE_MIN_PADRAO = 30
+
+# --- IAs gratis na nuvem (opcionais, DESLIGADAS por padrao; chave em app/segredos.py) -----
+# Todas em formato de API compativel com a OpenAI (menos o Gemini, que usa a API REST propria
+# do Google AI Studio). O usuario cria a chave gratis no site de cada uma (painel > Conversa).
+NUVEM_URL_BASE = {
+    "groq": "https://api.groq.com/openai/v1",
+    "cerebras": "https://api.cerebras.ai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
+NUVEM_MODELO_PADRAO = {
+    "groq": "llama-3.3-70b-versatile",
+    "cerebras": "llama-3.3-70b",
+    "openrouter": "meta-llama/llama-3.3-70b-instruct:free",
+    "gemini": "gemini-2.5-flash",
+}
+NUVEM_SITE_CHAVE = {
+    "groq": "https://console.groq.com/keys",
+    "cerebras": "https://cloud.cerebras.ai/",
+    "openrouter": "https://openrouter.ai/keys",
+    "gemini": "https://aistudio.google.com/apikey",
+}
+GEMINI_TEXTOS_LONGOS_PADRAO = 400   # painel > Conversa: acima disso (chars), prefere o Gemini se estiver ligado
 
 ORIENTACAO_VOZ = (
     "\n\n# Forma de responder\n"
@@ -142,7 +168,8 @@ class Cerebro:
     # --- Troca de IA sozinho: lista ordenada + castigo ---------------------------------
     def _opcoes_ia(self) -> list[dict]:
         """Lista ordenada (painel > Conversa > ordem_ia) das opcoes de IA REALMENTE configuradas:
-        Ollama menor so entra se tiver um modelo escolhido; Claude so entra se tiver chave."""
+        Ollama menor so entra se tiver um modelo escolhido; Claude so entra se tiver chave; as IAs
+        na nuvem (Groq/Cerebras/OpenRouter/Gemini) so entram se estiverem LIGADAS e com chave."""
         from . import segredos
 
         modelo_menor = str(self.cfg.get("ollama_modelo_menor", "")).strip()
@@ -155,6 +182,17 @@ class Cerebro:
             "claude": ({"id": "claude", "rotulo": ROTULOS_OPCOES_IA["claude"], "chamar": self._claude_api,
                        "modelo": None} if tem_claude else None),
         }
+        for id_ in ("groq", "cerebras", "openrouter", "gemini"):
+            ligado = bool(self.cfg.get(f"{id_}_ligado", False))
+            chave = segredos.ler(f"{id_}_chave")
+            chamar = ((lambda s, h, formato=None, modelo=None, timeout=None, _id=id_:
+                       self._gemini(s, h, formato=formato, modelo=modelo, timeout=timeout, provedor=_id))
+                      if id_ == "gemini" else
+                      (lambda s, h, formato=None, modelo=None, timeout=None, _id=id_:
+                       self._nuvem_openai(_id, s, h, formato=formato, modelo=modelo, timeout=timeout)))
+            disponiveis[id_] = ({"id": id_, "rotulo": ROTULOS_OPCOES_IA[id_], "chamar": chamar,
+                                 "modelo": self.cfg.get(f"{id_}_modelo", NUVEM_MODELO_PADRAO[id_])}
+                                if (ligado and chave) else None)
         vistos: set[str] = set()
         opcoes = []
         for id_ in (self.cfg.get("ordem_ia") or ORDEM_IA_PADRAO):
@@ -164,15 +202,24 @@ class Cerebro:
             op = disponiveis.get(id_)
             if op:
                 opcoes.append(op)
+        # IAs na nuvem ligadas mas que nao estao na ordem configurada (config antiga): vao no fim.
+        for id_, op in disponiveis.items():
+            if op and id_ not in vistos:
+                vistos.add(id_)
+                opcoes.append(op)
         return opcoes
 
-    def _tentar_opcoes(self, sistema: str, historico: list, formato: dict | None = None) -> str:
+    def _tentar_opcoes(self, sistema: str, historico: list, formato: dict | None = None,
+                       preferir: str | None = None) -> str:
         """Tenta cada IA da lista na ordem configurada: pula quem esta de castigo, chama com o
         tempo limite por tentativa e poe de castigo quem falhar ou estourar o tempo. Registra no
-        log qual respondeu de fato."""
+        log qual respondeu de fato. `preferir` (ex.: "gemini" em textos longos) tenta antes das outras,
+        se estiver disponivel."""
         opcoes = self._opcoes_ia()
         if not opcoes:
             raise RuntimeError("Nenhuma IA configurada")
+        if preferir:
+            opcoes = sorted(opcoes, key=lambda o: o["id"] != preferir)
         timeout = float(self.cfg.get("timeout_tentativa_seg", TIMEOUT_TENTATIVA_PADRAO))
         penalidade_min = float(self.cfg.get("penalidade_min", PENALIDADE_MIN_PADRAO))
         agora = time.time()
@@ -197,6 +244,13 @@ class Cerebro:
                 log.warning("IA falhou (de castigo por %d min): %s (%s)", penalidade_min, op["rotulo"], erro)
         raise erro_final or RuntimeError("Nenhuma IA respondeu")
 
+    def _preferir_para(self, texto: str) -> str | None:
+        """Textos longos: prefere o Gemini (se estiver ligado) antes das outras opcoes da lista."""
+        limite = int(self.cfg.get("gemini_textos_longos_chars", GEMINI_TEXTOS_LONGOS_PADRAO))
+        if self.cfg.get("gemini_ligado") and limite > 0 and len(texto or "") > limite:
+            return "gemini"
+        return None
+
     def perguntar(self, pergunta: str, perfil: str = "geral") -> str:
         sistema = carregar_perfil(perfil)
         if perfil == "geral":
@@ -206,7 +260,7 @@ class Cerebro:
         historico.append({"role": "user", "content": pergunta})
         try:
             if self.ligado:
-                resposta = self._tentar_opcoes(sistema, historico)
+                resposta = self._tentar_opcoes(sistema, historico, preferir=self._preferir_para(pergunta))
             else:
                 resposta = "Meu cerebro esta desligado. Ative no arquivo de configuracao."
         except Exception as erro:
@@ -343,6 +397,95 @@ class Cerebro:
         if resposta.stop_reason == "refusal":
             return "O Claude preferiu nao responder a essa pergunta."
         return "".join(b.text for b in resposta.content if b.type == "text").strip()
+
+    # --- IAs gratis na nuvem (opcionais) -----------------------------------
+    def _nuvem_openai(self, provedor: str, sistema: str, historico: list, formato: dict | None = None,
+                      modelo: str | None = None, timeout: float | None = None) -> str:
+        """Groq, Cerebras e OpenRouter: mesmo formato de API da OpenAI (/chat/completions)."""
+        import requests
+
+        from . import segredos
+
+        chave = segredos.ler(f"{provedor}_chave")
+        if not chave:
+            raise RuntimeError(f"Sem chave configurada para {provedor}")
+        url = self.cfg.get(f"{provedor}_url", NUVEM_URL_BASE[provedor])
+        corpo = {
+            "model": modelo or self.cfg.get(f"{provedor}_modelo", NUVEM_MODELO_PADRAO[provedor]),
+            "messages": [{"role": "system", "content": sistema}] + historico,
+        }
+        if formato:
+            corpo["response_format"] = {"type": "json_object"}
+        r = requests.post(f"{url}/chat/completions", headers={"Authorization": f"Bearer {chave}"}, json=corpo,
+                          timeout=float(timeout) if timeout is not None else self.cfg.get("tempo_maximo", 120))
+        r.raise_for_status()   # 429 (limite gratis estourado) ou outro erro: vai pra proxima opcao da lista
+        return r.json()["choices"][0]["message"]["content"].strip()
+
+    def _gemini(self, sistema: str, historico: list, formato: dict | None = None, modelo: str | None = None,
+               timeout: float | None = None, provedor: str = "gemini") -> str:
+        """Google Gemini (AI Studio, gratis): API REST propria (generateContent), nao e formato OpenAI."""
+        import requests
+
+        from . import segredos
+
+        chave = segredos.ler("gemini_chave")
+        if not chave:
+            raise RuntimeError("Sem chave configurada para o Gemini")
+        modelo = modelo or self.cfg.get("gemini_modelo", NUVEM_MODELO_PADRAO["gemini"])
+        contents = [{"role": "model" if h.get("role") == "assistant" else "user",
+                    "parts": [{"text": h.get("content", "")}]} for h in historico]
+        corpo = {"system_instruction": {"parts": [{"text": sistema}]}, "contents": contents}
+        if formato:
+            corpo["generationConfig"] = {"responseMimeType": "application/json"}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
+        r = requests.post(url, params={"key": chave}, json=corpo,
+                          timeout=float(timeout) if timeout is not None else self.cfg.get("tempo_maximo", 120))
+        r.raise_for_status()
+        dados = r.json()
+        candidatos = dados.get("candidates") or []
+        if not candidatos:
+            raise RuntimeError(f"Gemini nao respondeu: {dados.get('promptFeedback') or dados}")
+        partes = candidatos[0].get("content", {}).get("parts") or []
+        return "".join(p.get("text", "") for p in partes).strip()
+
+
+# --- Baixar um modelo menor do Ollama (painel > Conversa > "Baixar modelo menor") -------------
+MODELOS_MENORES = {"qwen3:8b": "~5 GB, bom equilíbrio", "phi4-mini": "~2,5 GB, mais leve"}
+
+
+def ollama_instalado() -> bool:
+    """O programa `ollama` esta no PATH do Windows (independente do servidor estar rodando)."""
+    import shutil
+    return shutil.which("ollama") is not None
+
+
+def baixar_modelo_ollama(modelo: str, url: str = "http://localhost:11434", progresso=None) -> str:
+    """Baixa um modelo do Ollama (equivalente a `ollama pull <modelo>`) usando a API HTTP dele, que
+    manda o progresso linha a linha. Chame numa THREAD (pode demorar minutos). `progresso(texto)` e
+    chamado a cada atualizacao. Devolve "" se deu certo, ou uma mensagem de erro."""
+    import requests
+
+    try:
+        r = requests.post(f"{url}/api/pull", json={"model": modelo}, stream=True, timeout=(10, 1800))
+        r.raise_for_status()
+        for linha in r.iter_lines():
+            if not linha:
+                continue
+            try:
+                d = json.loads(linha)
+            except ValueError:
+                continue
+            if d.get("error"):
+                return str(d["error"])
+            if progresso:
+                total, completo = d.get("total"), d.get("completed")
+                if total and completo:
+                    progresso(f"{d.get('status', 'baixando')} ({completo / total * 100:.0f}%)")
+                else:
+                    progresso(str(d.get("status", "")))
+        return ""
+    except Exception as erro:
+        return str(erro)
 
 
 def modelos_do_ollama(url: str = "http://localhost:11434") -> list[str]:

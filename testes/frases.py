@@ -81,6 +81,16 @@ FRASES = [
     ("Mestre, tira o som do Spotify", "_cmd_volume"),
     ("Mestre, volta o som do Spotify", "_cmd_volume"),
     ("Mestre, Spotify mais alto", "_cmd_volume"),
+    ("Mestre, abaixa o áudio do navegador em 30%", "_cmd_volume"),
+    ("Mestre, aumenta o Spotify pra 50", "_cmd_volume"),
+    ("Mestre, muta o Brave", "_cmd_volume"),
+    ("Mestre, volume do Chrome no 20", "_cmd_volume"),
+    ("Mestre, abaixa o volume do navegador", "_cmd_volume"),
+    ("Mestre, aumenta o volume do Edge", "_cmd_volume"),
+    ("Mestre, coloca o navegador no máximo", "_cmd_volume"),
+    ("Mestre, desmuta o Chrome", "_cmd_volume"),
+    # armadilha: sem programa nenhum, continua sendo o volume geral
+    ("Mestre, abaixa o volume", "_cmd_volume"),
     # --- spotify (abrir) ---
     ("Mestre, toca a playlist Foco no Spotify", "_cmd_spotify"),
     ("Mestre, toca Legião Urbana no Spotify", "_cmd_spotify"),

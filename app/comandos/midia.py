@@ -48,23 +48,40 @@ class MidiaMixin:
     # =================================================================
     #  Volume e midia
     # =================================================================
+    # nome falado -> (rotulo pra falar, lista de .exe pra tentar, na ordem)
+    PROCESSOS_POR_NOME = {
+        "brave": ("Brave", ["brave.exe"]),
+        "chrome": ("Chrome", ["chrome.exe"]),
+        "edge": ("Edge", ["msedge.exe"]),
+        "msedge": ("Edge", ["msedge.exe"]),
+        "microsoft edge": ("Edge", ["msedge.exe"]),
+        "navegador": ("navegador", ["brave.exe", "chrome.exe", "msedge.exe"]),
+    }
+
+    def _programa_da_frase(self, texto: str) -> tuple[str, list[str]] | None:
+        """"do navegador", "do Brave", "do Chrome"... -> (rotulo, [exe, ...]). Nao pega so "volume"/"som" soltos."""
+        m = re.search(r"\b(navegador|brave|chrome|microsoft edge|edge|msedge)\b", texto)
+        return self.PROCESSOS_POR_NOME.get(m.group(1)) if m else None
+
     def _cmd_volume(self, t: str) -> bool:
         puro = self._pedido_puro()
         texto = t + " | " + puro
         # (o Whisper as vezes escreve "Spotfy", "espotifai"... e "multa" no lugar de "muta")
         do_spotify = bool(re.search(r"\b(e?spot\w*|spotify)\b", texto))
-        if do_spotify or re.search(r"\bmulta (o )?(som|audio|video|youtube|pc|computador)\b", texto):
+        programa = None if do_spotify else self._programa_da_frase(texto)
+        do_programa = do_spotify or programa is not None
+        if do_spotify or re.search(r"\bmulta (o )?(som|audio|video|youtube|pc|computador|navegador|brave|chrome|edge)\b", texto):
             texto = re.sub(r"\bmulta\b", "muta", texto)
             puro = re.sub(r"\bmulta\b", "muta", puro)
         falou_de_volume = re.search(r"\b(volume|som|mais alto|mais baixo|muta|mudo|silencia|desmuta)\b", texto)
-        # "coloca o Spotify no maximo", "abaixa o Spotify", "Spotify no 50" (sem a palavra "volume")
-        if not falou_de_volume and not (do_spotify and re.search(
+        # "coloca o Spotify no maximo", "abaixa o Spotify"/"abaixa o navegador", "Spotify no 50" (sem a palavra "volume")
+        if not falou_de_volume and not (do_programa and re.search(
                 r"\b(aumenta|abaixa|diminui|sobe|baixa|maximo|minimo|mais alto|mais baixo|no \d+|em \d+)\b", texto)):
             return False
         volta_som = re.search(r"\b(desmuta|tira do mudo|tirar do mudo|do mudo|som de volta|volta o som|liga o som)\b", texto)
         tira_som = re.search(r"\b(muta|mudo|silencia|tira o som|desliga o som|sem som)\b", texto)
         # "tira o vídeo do mudo", "aumenta o volume do YouTube": so o video (nao o PC inteiro)
-        if not do_spotify and re.search(r"\b(video|youtube)\b", texto):
+        if not do_programa and re.search(r"\b(video|youtube)\b", texto):
             yt = self._yt()
             if yt and hasattr(yt, "volume_video"):
                 n = re.search(r"\b(\d{1,3})\s*(%|por ?cento)?", puro)
@@ -78,18 +95,19 @@ class MidiaMixin:
         # "diminui o Spotify em 20", "aumenta mais 10": muda DE 20 em 20, nao PARA 20
         relativo = re.search(r"\b(?:em|mais|menos)\s+(\d{1,3})\b", puro) if re.search(
             r"\b(aumenta|aumentar|sobe|abaixa|diminui|diminuiu|diminuir|baixa|reduz|reduzir|menos|mais)\b", texto) else None
-        if do_spotify and (volta_som or tira_som):
-            self._volume_spotify("som" if volta_som else "mudo", 0)
+        rotulo, exes = ("Spotify", ["Spotify.exe"]) if do_spotify else (programa or (None, None))
+        if do_programa and (volta_som or tira_som):
+            self._volume_programa(exes, rotulo, "som" if volta_som else "mudo", 0)
             return True
         if volta_som or tira_som:
             sistema.volume("mudo")
             return True
         numero = None if relativo else re.search(r"\b(?:no|em|para|pra|a|volume)\s+(?:volume\s+)?(\d{1,3})\s*(%|por ?cento)?", puro)
-        if do_spotify and re.search(r"\b(maximo|no talo|tudo)\b", texto):
-            self._volume_spotify("definir", 1.0)
+        if do_programa and re.search(r"\b(maximo|no talo|tudo)\b", texto):
+            self._volume_programa(exes, rotulo, "definir", 1.0)
             return True
-        if do_spotify and re.search(r"\bminimo\b", texto):
-            self._volume_spotify("definir", 0.1)
+        if do_programa and re.search(r"\bminimo\b", texto):
+            self._volume_programa(exes, rotulo, "definir", 0.1)
             return True
         acao = ("definir" if numero else
                 "aumentar" if re.search(r"\b(aumenta|aumentar|sobe|subir|mais alto|aumente|maximo|tudo)\b", texto) else
@@ -102,8 +120,8 @@ class MidiaMixin:
             passo = min(100, int(relativo.group(1))) / 100
             if re.search(r"\bmenos\s+\d", puro):
                 acao = "diminuir"
-        if do_spotify:
-            self._volume_spotify(acao, int(numero.group(1)) / 100 if numero else passo)
+        if do_programa:
+            self._volume_programa(exes, rotulo, acao, int(numero.group(1)) / 100 if numero else passo)
             return True
         if acao == "definir":
             sistema.volume_do_pc(int(numero.group(1)))
@@ -114,23 +132,34 @@ class MidiaMixin:
         return True
 
     def _volume_spotify(self, acao: str, quanto: float) -> None:
-        """Mexe SO no Spotify (o volume do Windows fica como esta)."""
+        """Mexe SO no Spotify (o volume do Windows fica como esta). Mantido pelo nome antigo (Spotify chama
+        direto ao tocar uma playlist); usa o mesmo caminho generico de _volume_programa."""
+        self._volume_programa(["Spotify.exe"], "Spotify", acao, quanto)
+
+    def _volume_programa(self, exes: list[str], rotulo: str, acao: str, quanto: float) -> None:
+        """Mexe SO no volume de um programa (Spotify, Brave, Chrome, Edge...) no mixer do Windows: o
+        volume geral do PC fica como esta. `exes` pode ter mais de um nome (ex.: "navegador" tenta Brave,
+        Chrome e Edge, o que estiver com uma sessao de audio ativa)."""
         sistema.ULTIMO_NIVEL = None
-        motivo = sistema.volume_do_programa("Spotify.exe", acao, quanto)
+        motivo = "nao_tocando"
+        for exe in exes:
+            motivo = sistema.volume_do_programa(exe, acao, quanto)
+            if motivo != "nao_tocando":
+                break
         if not motivo:
             if acao == "mudo":
-                self.voz.falar("Spotify mudo.")
+                self.voz.falar(f"{rotulo} mudo.")
             elif acao == "som":
-                self.voz.falar("Som do Spotify de volta.")
+                self.voz.falar(f"Som do {rotulo} de volta.")
             elif sistema.ULTIMO_NIVEL is not None:
-                self.voz.falar(f"Spotify em {round(sistema.ULTIMO_NIVEL * 100)} por cento.")
+                self.voz.falar(f"{rotulo} em {round(sistema.ULTIMO_NIVEL * 100)} por cento.")
         elif motivo == "nao_tocando":
-            self.voz.falar("Não achei o Spotify tocando agora.")
+            self.voz.falar(f"Não achei o {rotulo} tocando agora.")
         elif motivo == "sem_biblioteca":
-            self.voz.falar("Pra mexer só no Spotify falta uma biblioteca. Use Atualizar o Mestre na Central. "
+            self.voz.falar(f"Pra mexer só no {rotulo} falta uma biblioteca. Use Atualizar o Mestre na Central. "
                            "Não mexi no volume do computador.")
         elif motivo:
-            self.voz.falar("Não consegui mexer no volume do Spotify. O erro ficou no diário.")
+            self.voz.falar(f"Não consegui mexer no volume do {rotulo}. O erro ficou no diário.")
 
     def _cmd_midia(self, t: str) -> bool:
         """Pausar, continuar, proxima e anterior: vale para Spotify, YouTube e qualquer player."""
