@@ -1229,6 +1229,51 @@ class Painel(ctk.CTk):
         linha_campo(f, "Guardar áudios ouvidos", lambda p: ctk.CTkSwitch(
             p, text="salva as últimas 30 frases em logs/audios (para ouvir o que chegou)", variable=self.var_diag))
 
+        f = secao(pagina, "Saída de som",
+                  f"Por onde o som sai (a caixinha de som, o fone...). Dê um apelido pra cada dispositivo "
+                  f"(a palavra que você fala, tipo “caixinha” ou “fone”) e Salve, pra falar “{self.palavra}, "
+                  "coloca na caixinha” ou “troca pra fone”. “Usar agora” troca na hora, sem precisar salvar.")
+        from . import sistema as _sistema
+        from .comandos.midia import SAIDAS_SOM_PADRAO
+        from .texto import normalizar as _normalizar
+        apelidos_cfg = dict(SAIDAS_SOM_PADRAO)
+        apelidos_cfg.update(configuracao.secao(self.cfg, "som").get("saidas") or {})
+
+        def _apelido_do_dispositivo(nome: str) -> str:
+            n = _normalizar(nome).replace(" ", "").replace("-", "")
+            for apelido, pedaco in apelidos_cfg.items():
+                p = _normalizar(pedaco).replace(" ", "").replace("-", "")
+                if p and p in n:
+                    return apelido
+            return ""
+
+        dispositivos = _sistema.listar_saidas_som()
+        self._saida_som_linhas: list[tuple[str, str, ctk.CTkEntry]] = []   # (nome, apelido ao abrir, campo)
+        if not dispositivos:
+            ctk.CTkLabel(f, text=f"Não consegui ver os dispositivos de som agora (abra o painel de novo se acabou "
+                                 f"de ligar o Bluetooth, ou reinicie o {self.nome}).",
+                        anchor="w", text_color=tema.TEXTO_FRACO).pack(fill="x", padx=(32, 18))
+        for d in dispositivos[:15]:
+            linha = ctk.CTkFrame(f, fg_color="transparent")
+            linha.pack(fill="x", padx=(28, 18), pady=3)
+            texto_nome = d["nome"] + ("  (em uso agora)" if d["padrao"] else "")
+            ctk.CTkLabel(linha, text=texto_nome, anchor="w", width=360, wraplength=360).pack(side="left", padx=(0, 8))
+            apelido_atual = _apelido_do_dispositivo(d["nome"])
+            ent = ctk.CTkEntry(linha, placeholder_text="apelido (ex.: caixinha)", width=160)
+            ent.insert(0, apelido_atual)
+            ent.pack(side="left", padx=4)
+            ctk.CTkButton(linha, text="Usar agora", **SECUNDARIO,
+                         command=lambda dev=d: self._usar_saida_som_agora(dev)).pack(side="left", padx=8)
+            self._saida_som_linhas.append((d["nome"], apelido_atual, ent))
+
+    def _usar_saida_som_agora(self, dispositivo: dict):
+        from . import sistema as _sistema
+        motivo = _sistema.definir_saida_som(dispositivo["id"])
+        if motivo:
+            messagebox.showerror(self.nome, f"Não consegui trocar pra {dispositivo['nome']}:\n{motivo}")
+        else:
+            messagebox.showinfo(self.nome, f"Som na {dispositivo['nome']}.")
+
     def _dispositivo(self) -> str:
         return {"Processador": "cpu", "Placa de vídeo": "gpu"}.get(self.var_disp.get(), "auto")
 
@@ -3945,6 +3990,15 @@ class Painel(ctk.CTk):
         v["fala_em_segundo_plano"] = bool(self.var_fala_fundo.get())
         v["interromper_com_palavra"] = bool(self.var_interromper.get())
         v["frase_a_frase"] = bool(self.var_frase_a_frase.get())
+        saidas = dict(configuracao.secao(c, "som").get("saidas") or {})   # preserva quem nao esta na tela agora
+        for nome, apelido_ao_abrir, ent in getattr(self, "_saida_som_linhas", []):
+            novo = ent.get().strip().lower()
+            if apelido_ao_abrir and apelido_ao_abrir != novo:
+                saidas.pop(apelido_ao_abrir, None)
+            if novo:
+                saidas[novo] = configuracao.aspas(nome)
+        if saidas:
+            configuracao.secao(c, "som")["saidas"] = configuracao.aspas(saidas)
 
     def _salvar_voz(self, c):
         v = configuracao.secao(c, "voz")

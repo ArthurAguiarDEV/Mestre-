@@ -410,6 +410,46 @@ for falado, esperado in casos:
     diga(normalizar(falado), falado)
     ok(feitos[:1] == [esperado], f"“{falado}” → {esperado[0]} {esperado[1]}")
 
+# --- saida de som (troca o dispositivo de reproducao padrao) ------------------------------
+DISPOSITIVOS_TESTE = [{"id": "id-falantes", "nome": "Alto-falantes (Realtek(R) Audio)", "padrao": True},
+                      {"id": "id-gtx990", "nome": "Fones de ouvido (GT-X990)", "padrao": False}]
+sistema.listar_saidas_som = lambda: [dict(d) for d in DISPOSITIVOS_TESTE]
+sistema.saida_som_atual = lambda: next((d["nome"] for d in DISPOSITIVOS_TESTE if d["padrao"]), None)
+
+
+def _definir_saida_teste(nome_ou_id):
+    pedaco = sistema._so_letras_e_numeros(nome_ou_id)
+    alvo = next((d for d in DISPOSITIVOS_TESTE
+                 if d["id"] == nome_ou_id or pedaco in sistema._so_letras_e_numeros(d["nome"])), None)
+    if alvo is None:
+        return "nao_encontrado"
+    for d in DISPOSITIVOS_TESTE:
+        d["padrao"] = d is alvo
+    return ""
+
+
+sistema.definir_saida_som = _definir_saida_teste
+_, falas = diga("coloca na caixinha de som", "Coloca na caixinha de som")
+ok(sistema.saida_som_atual() == "Fones de ouvido (GT-X990)" and any("caixinha" in f for f in falas),
+   "“coloca na caixinha de som” troca pra GT-X990 (a caixinha Bluetooth)")
+_, falas = diga("volta pro fone", "Volta pro fone")
+ok(sistema.saida_som_atual() == "Alto-falantes (Realtek(R) Audio)" and any("fone" in f for f in falas),
+   "“volta pro fone” troca de volta pros Alto-falantes")
+_, falas = diga("qual saida de som ta ativa", "Qual saída de som tá ativa")
+ok(any("fone" in f for f in falas), "“qual saída de som tá ativa” fala o apelido certo")
+_, falas = diga("troca a saida de som", "Troca a saída de som")
+ok(sistema.saida_som_atual() == "Fones de ouvido (GT-X990)" and any("caixinha" in f for f in falas),
+   "“troca a saída de som” (sem dizer qual) alterna pra outra")
+sistema.definir_saida_som = lambda nome_ou_id: "nao_encontrado"   # caixinha "desligada" (Bluetooth fora)
+_, falas = diga("ativa a caixinha", "Ativa a caixinha")
+ok(any("não está conectada" in f and "Bluetooth" in f for f in falas),
+   "Caixinha desconectada: avisa pra ligar o Bluetooth (não troca de verdade)")
+feitos.clear()
+_, falas = diga("aumenta o volume do fone", "Aumenta o volume do fone")
+ok(not any("caixinha" in f or "conectada" in f for f in falas) and feitos[:1] == [("volume", "aumentar")],
+   "“aumenta o volume do fone” continua sendo volume, não troca de saída (armadilha)")
+sistema.definir_saida_som = _definir_saida_teste
+
 class YTFalso:
     def __init__(self): self.feito = []
     def na_pagina_do_youtube(self): return True

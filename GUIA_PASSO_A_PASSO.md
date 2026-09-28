@@ -1665,6 +1665,28 @@ chance.
 
 ---
 
+## Etapa 36: Trocar a saída de som falando (caixinha/fone)
+
+Se você tem a **caixinha de som Bluetooth** e o **fone de ouvido**, agora dá para trocar qual um
+está tocando o som sem mexer no Windows.
+
+- **"Mestre, coloca na caixinha de som"** (ou "ativa a caixinha", "joga o som pra caixinha", "troca
+  pra caixinha") — muda o som pra caixinha Bluetooth.
+- **"Mestre, volta pro fone"** (ou "coloca no fone", "agora tô usando o fone", "som no fone") — muda
+  de volta pro fone.
+- **"Mestre, troca a saída de som"** — sem dizer qual: alterna entre os dois.
+- **"Mestre, qual saída de som tá ativa?"** — ele fala qual está tocando agora.
+
+Se a caixinha estiver com o Bluetooth desligado, ele avisa: *"A caixinha de som não está conectada.
+Liga o Bluetooth dela e tenta de novo."*
+
+**Painel > Áudio**, seção **"Saída de som"**: mostra os dispositivos de som que o Windows enxerga
+agora, com um campo pra você escrever o apelido de cada um (o padrão já vem com "caixinha" e "fone")
+e um botão **"Usar agora"** pra trocar na hora, sem precisar salvar. Se você usa outros nomes (por
+exemplo "home office" e "caixa da sala"), é só trocar os apelidos ali e salvar.
+
+---
+
 ## Personalizar
 
 Tudo fica no **`config.yaml`** (abra com o Bloco de Notas). Regras de ouro:
@@ -1737,6 +1759,7 @@ Os exemplos abaixo são só um ponto de partida: fale do seu jeito ("pô, bota a
 | **Programas e sites** | "abre a calculadora" · "abre o Gmail" · "abre o WhatsApp" · "abre o Excel" |
 | **Hora e data** | "que horas são?" · "que dia é hoje?" |
 | **Volume** | "aumenta o volume" · "abaixa o volume" · "volume no máximo" · "muta" |
+| **Saída de som** | "coloca na caixinha de som" · "volta pro fone" · "troca a saída de som" · "qual saída de som tá ativa?" |
 | **Tela e PC** | "desliga a tela" · "liga a tela" · "bloqueia o computador" · "desliga o computador" · "cancela o desligamento" · "reinicia o computador" |
 | **Lembretes** | "me lembra de beber água em 20 minutos" · "lembrete em 1 hora reunião" |
 | **Anotações** | "anota comprar pão" · "lê minhas notas" · "abre minhas notas" |

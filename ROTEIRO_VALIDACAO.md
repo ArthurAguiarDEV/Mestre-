@@ -14,6 +14,20 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Saída de som: trocar a caixinha de som pelo fone (e vice-versa)
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, coloca na caixinha de som` | Fala uma confirmação curta ("Pronto, som na caixinha." ou parecido) e o som do PC passa a sair pela caixinha Bluetooth | `_cmd_saida_som` |
+| `Mestre, ativa a caixinha` | Mesma troca (é outro jeito de pedir) | `_cmd_saida_som` |
+| `Mestre, volta pro fone` (ou `coloca no fone`, `agora tô usando o fone`) | O som volta a sair pelo fone de ouvido | `_cmd_saida_som` |
+| `Mestre, troca a saída de som` (sem dizer qual) | Alterna: se está na caixinha vai pro fone, se está no fone vai pra caixinha | `_cmd_saida_som` |
+| `Mestre, qual saída de som tá ativa?` | Fala qual das duas está tocando agora | `_cmd_saida_som` |
+| Desligue o Bluetooth da caixinha e fale `Mestre, coloca na caixinha` | Avisa que a caixinha não está conectada e pra ligar o Bluetooth (não troca de verdade) | `_cmd_saida_som` |
+| `Mestre, abaixa o som` / `Mestre, aumenta o volume do fone` | Continua sendo volume normal, não troca de dispositivo | `_cmd_volume` |
+| (painel) **Áudio > Saída de som** | Mostra os dispositivos de som ativos, um campo de apelido pra cada um e o botão "Usar agora" | (painel) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Itens novos de saída de som (troca por apelido, alterna, não encontrado, armadilha do volume) OK | (automático) |
+
 ### Telegram: print, "o que tá tocando", vídeo curto e ligar/desligar à distância
 
 | Frase | O que deve acontecer | Comando esperado |

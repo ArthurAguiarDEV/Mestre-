@@ -78,7 +78,7 @@ class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixi
         "_cmd_pensamento", "_cmd_descanso", "_cmd_versao", "_cmd_conversinha", "_cmd_exportar", "_cmd_historico", "_cmd_memoria", "_cmd_ensinar_rotina", "_cmd_rotinas", "_cmd_encerrar", "_cmd_reiniciar",
         "_cmd_painel", "_cmd_ajuda", "_cmd_ditado", "_cmd_projeto", "_cmd_feedback", "_cmd_obrigado",
         "_cmd_aprender", "_cmd_atalhos", "_cmd_melhorias", "_cmd_voz",
-        "_cmd_agente_ipm", "_cmd_area_transferencia", "_cmd_juntar", "_cmd_mover", "_cmd_volume", "_cmd_midia", "_cmd_janela",
+        "_cmd_agente_ipm", "_cmd_area_transferencia", "_cmd_juntar", "_cmd_mover", "_cmd_saida_som", "_cmd_volume", "_cmd_midia", "_cmd_janela",
         "_cmd_youtube_controle", "_cmd_spotify", "_cmd_youtube", "_cmd_streaming", "_cmd_clicar",
         "_cmd_clima", "_cmd_noticias", "_cmd_hora_data", "_cmd_tela", "_cmd_desligar_pc",
         "_cmd_lembrete", "_cmd_notas", "_cmd_tocar", "_cmd_pesquisa", "_cmd_print_telegram", "_cmd_tocando",

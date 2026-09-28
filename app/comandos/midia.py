@@ -8,9 +8,12 @@ import re
 import threading
 from urllib.parse import quote
 from .. import sistema
-from ..texto import melhor_correspondencia
+from ..texto import melhor_correspondencia, normalizar
 
 from .base import link_spotify
+
+# apelido falado -> pedaco do nome do dispositivo (sem acento/maiuscula); painel > Audio deixa mudar
+SAIDAS_SOM_PADRAO = {"caixinha": "GTX990", "fone": "Alto-falantes"}
 
 
 class MidiaMixin:
@@ -44,6 +47,76 @@ class MidiaMixin:
         self.voz.falar(f"Procurando {termo} no Spotify.")
         sistema.abrir_site("spotify:search:" + quote(termo))
         return True
+
+    # =================================================================
+    #  Saida de som (troca o dispositivo de reproducao padrao do Windows)
+    # =================================================================
+    def _saidas_som_cfg(self) -> dict:
+        cfg = (self.cfg.get("som") or {}).get("saidas") or {}
+        saidas = dict(SAIDAS_SOM_PADRAO)
+        saidas.update(cfg)
+        return saidas
+
+    def _apelido_da_saida(self, nome_dispositivo: str, apelidos: dict) -> str | None:
+        n = normalizar(nome_dispositivo).replace(" ", "").replace("-", "")
+        for apelido, pedaco in apelidos.items():
+            p = normalizar(pedaco).replace(" ", "").replace("-", "")
+            if p and p in n:
+                return apelido
+        return None
+
+    def _trocar_saida_som(self, apelido: str, apelidos: dict) -> bool:
+        motivo = sistema.definir_saida_som(apelidos.get(apelido, apelido))
+        if not motivo:
+            self.voz.falar(random.choice([f"Pronto, som na {apelido}.", f"Som na {apelido} agora."]))
+        elif motivo == "nao_encontrado":
+            if apelido == "caixinha":
+                self.voz.falar("A caixinha de som não está conectada. Liga o Bluetooth dela e tenta de novo.")
+            else:
+                self.voz.falar(f"Não achei a saída de som {apelido} ligada agora.")
+        elif motivo == "sem_biblioteca":
+            self.voz.falar("Pra trocar a saída de som falta uma biblioteca. Use Atualizar o Mestre na Central.")
+        else:
+            self.voz.falar("Não consegui trocar a saída de som. O erro ficou no diário.")
+        return True
+
+    def _cmd_saida_som(self, t: str) -> bool:
+        puro = self._pedido_puro()
+        apelidos = self._saidas_som_cfg()
+
+        def achar_apelido(texto: str) -> str | None:
+            candidatos = [a for a in apelidos if re.search(rf"\b{re.escape(a)}\b", texto)]
+            return max(candidatos, key=len) if candidatos else None
+
+        for texto in (t, puro):
+            if re.fullmatch(r"qual( e| eh)? a saida( de som)?", texto) or re.search(
+                    r"\bqual\b.*\bsaida( de som)?\b.*\b(ta|esta)\b.*\bativa\b", texto):
+                atual = sistema.saida_som_atual()
+                if not atual:
+                    self.voz.falar("Não consegui ver qual é a saída de som agora.")
+                else:
+                    apelido_atual = self._apelido_da_saida(atual, apelidos)
+                    self.voz.falar(f"Tá na {apelido_atual} agora." if apelido_atual else f"Tá em {atual} agora.")
+                return True
+
+        verbo_troca = r"\b(coloca|colocar|ativa|ativar|joga|jogar|bota|botar|poe|troca|trocar|volta|voltar|usa|usar|usando)\b"
+        for texto in (t, puro):
+            alvo = achar_apelido(texto)
+            if not alvo:
+                continue
+            if re.search(verbo_troca, texto) or re.search(rf"\bsom (na|no|pra|para) {re.escape(alvo)}\b", texto):
+                return self._trocar_saida_som(alvo, apelidos)
+
+        if re.fullmatch(r"(muda|troca|trocar) a saida( de som)?", t) or re.fullmatch(
+                r"(muda|troca|trocar) a saida( de som)?", puro):
+            chaves = list(apelidos.keys())
+            if len(chaves) >= 2:
+                atual_norm = normalizar(sistema.saida_som_atual() or "").replace(" ", "").replace("-", "")
+                alvo = next((a for a in chaves
+                             if normalizar(apelidos[a]).replace(" ", "").replace("-", "") not in atual_norm),
+                            chaves[0])
+                return self._trocar_saida_som(alvo, apelidos)
+        return False
 
     # =================================================================
     #  Volume e midia

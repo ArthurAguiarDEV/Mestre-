@@ -130,6 +130,118 @@ def volume_do_pc(porcento: int) -> None:
     _tecla(VK_VOLUME_UP, max(0, min(100, porcento)) // 2)
 
 
+# --- Saida de som (dispositivo de reproducao padrao) --------------------------------------
+# GUID fixo do Windows (COM nao documentado, usado por varios programas de troca de saida de som
+# como o AudioSwitcher; funciona do Windows 7 ao 11). Sem instalar nada de terceiros.
+_CLSID_POLICY_CONFIG = "{870af99c-171d-4f9e-af0d-e63df40c2bc9}"
+_IID_POLICY_CONFIG = "{f8679f50-850a-41cf-9c72-430f290290c8}"
+# 0 = eConsole (jogos/apps em geral), 1 = eMultimedia (musica/video), 2 = eCommunications (chamadas)
+_PAPEIS_SAIDA_SOM = (0, 1, 2)
+
+
+def _interface_policy_config():
+    import ctypes
+    from ctypes import HRESULT, c_int, c_wchar_p
+    import comtypes
+    from comtypes import COMMETHOD, GUID, IUnknown
+
+    class IPolicyConfig(IUnknown):
+        _iid_ = GUID(_IID_POLICY_CONFIG)
+        _methods_ = [
+            COMMETHOD([], HRESULT, "GetMixFormat"),
+            COMMETHOD([], HRESULT, "GetDeviceFormat"),
+            COMMETHOD([], HRESULT, "ResetDeviceFormat"),
+            COMMETHOD([], HRESULT, "SetDeviceFormat"),
+            COMMETHOD([], HRESULT, "GetProcessingPeriod"),
+            COMMETHOD([], HRESULT, "SetProcessingPeriod"),
+            COMMETHOD([], HRESULT, "GetShareMode"),
+            COMMETHOD([], HRESULT, "SetShareMode"),
+            COMMETHOD([], HRESULT, "GetPropertyValue"),
+            COMMETHOD([], HRESULT, "SetPropertyValue"),
+            COMMETHOD([], HRESULT, "SetDefaultEndpoint",
+                      (["in"], c_wchar_p, "wszDeviceId"), (["in"], c_int, "eRole")),
+            COMMETHOD([], HRESULT, "SetEndpointVisibility"),
+        ]
+    return comtypes.CoCreateInstance(GUID(_CLSID_POLICY_CONFIG), IPolicyConfig, comtypes.CLSCTX_ALL)
+
+
+def _sem_acento(texto: str) -> str:
+    import unicodedata
+    texto = unicodedata.normalize("NFD", texto.lower())
+    return "".join(c for c in texto if unicodedata.category(c) != "Mn")
+
+
+def _so_letras_e_numeros(texto: str) -> str:
+    """Pra casar "GTX990" com "GT-X990": tira acento, espaco, hifen e afins, so letras/numeros."""
+    return "".join(c for c in _sem_acento(texto) if c.isalnum())
+
+
+def listar_saidas_som() -> list[dict]:
+    """Dispositivos de reproducao (saida de som) ativos: [{"id", "nome", "padrao"}]. So os conectados agora."""
+    if SIMULADO:
+        return []
+    au = _pycaw()
+    if au is None:
+        return []
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+        from pycaw.pycaw import DEVICE_STATE, EDataFlow
+        atual = saida_som_atual()
+        return [{"id": d.id, "nome": d.FriendlyName, "padrao": d.FriendlyName == atual}
+                for d in au.GetAllDevices(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)]
+    except Exception as erro:
+        log.info("Nao consegui listar saidas de som: %s", erro)
+        return []
+
+
+def saida_som_atual() -> str | None:
+    """Nome do dispositivo de reproducao padrao (papel multimedia). None se nao der pra descobrir."""
+    if SIMULADO:
+        return None
+    au = _pycaw()
+    if au is None:
+        return None
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+        return au.GetSpeakers().FriendlyName
+    except Exception as erro:
+        log.info("Nao consegui ver a saida de som atual: %s", erro)
+        return None
+
+
+def definir_saida_som(nome_ou_id: str) -> str:
+    """Troca o dispositivo de reproducao padrao (console + multimidia + comunicacoes) casando por
+    pedaco do nome (sem acento/maiuscula) ou pelo id exato. Devolve "" se deu certo, ou o motivo:
+    "sem_biblioteca", "nao_encontrado", "erro: <detalhe>"."""
+    if SIMULADO:
+        log.info("[simulado] saida de som -> %s", nome_ou_id)
+        return ""
+    au = _pycaw()
+    if au is None:
+        return "sem_biblioteca"
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+        from pycaw.pycaw import DEVICE_STATE, EDataFlow
+        alvo = None
+        pedaco = _so_letras_e_numeros(nome_ou_id)
+        for d in au.GetAllDevices(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value):
+            if d.id == nome_ou_id or pedaco in _so_letras_e_numeros(d.FriendlyName):
+                alvo = d
+                break
+        if alvo is None:
+            return "nao_encontrado"
+        pc = _interface_policy_config()
+        for papel in _PAPEIS_SAIDA_SOM:
+            pc.SetDefaultEndpoint(alvo.id, papel)
+        return ""
+    except Exception as erro:
+        log.exception("Troca de saida de som falhou")
+        return f"erro: {erro}"
+
+
 # --- Monitores ---------------------------------------------------------------------------
 ULTIMO_NIVEL: float | None = None    # volume_do_programa guarda aqui o nivel novo (0..1), para ele falar
 MONITOR_ALVO: int | None = None     # o Executor define por comando ("... no monitor 2"); None = padrao
