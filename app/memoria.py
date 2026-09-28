@@ -1,10 +1,12 @@
 """Memoria do Mestre: historico de pedidos/respostas e fatos que voce pede para lembrar.
 
 Fica na pasta memoria/ (a atualizacao pelo painel nunca mexe nela):
-  memoria/historico.jsonl  -> uma linha por pedido: data, o que voce disse, o que ele respondeu
-  memoria/fatos.md         -> "lembra que ..." (uma linha por fato; a IA usa nas respostas)
-  memoria/conversa.json    -> ultimas trocas com a IA (a conversa continua depois de reiniciar)
-  memoria/ouvido.jsonl     -> tudo que o microfone transcreveu (para achar erros de reconhecimento)
+  memoria/historico.jsonl        -> uma linha por pedido: data, o que voce disse, o que ele respondeu
+  memoria/fatos/                 -> "lembra que ..." separado por assunto (um .md por assunto, ASSUNTOS)
+  memoria/fatos/INDICE.md        -> resumo de cada arquivo de assunto (o que a IA le primeiro)
+  memoria/fatos.md.antes_da_migracao -> backup do fatos.md antigo (uma versao anterior guardava tudo junto)
+  memoria/conversa.json          -> ultimas trocas com a IA (a conversa continua depois de reiniciar)
+  memoria/ouvido.jsonl           -> tudo que o microfone transcreveu (para achar erros de reconhecimento)
 """
 import json
 import logging
@@ -18,12 +20,42 @@ from .texto import normalizar
 log = logging.getLogger(__name__)
 PASTA_MEMORIA = PASTA_PROJETO / "memoria"
 ARQUIVO_HISTORICO = PASTA_MEMORIA / "historico.jsonl"
-ARQUIVO_FATOS = PASTA_MEMORIA / "fatos.md"
+ARQUIVO_FATOS = PASTA_MEMORIA / "fatos.md"                          # versao antiga (um arquivo so): so existe ate migrar
+BACKUP_FATOS_ANTIGO = PASTA_MEMORIA / "fatos.md.antes_da_migracao"
+PASTA_FATOS = PASTA_MEMORIA / "fatos"
+ARQUIVO_INDICE = PASTA_FATOS / "INDICE.md"
 ARQUIVO_CONVERSA = PASTA_MEMORIA / "conversa.json"
 ARQUIVO_OUVIDO = PASTA_MEMORIA / "ouvido.jsonl"
 MAXIMO_HISTORICO = 2000
 MAXIMO_OUVIDO = 3000
 _trava = threading.Lock()
+
+# --- Fatos por assunto ("lembra que ...") --------------------------------------------------
+ASSUNTOS = ["pessoas", "projetos", "preferencias", "casa", "trabalho", "geral"]
+ASSUNTO_PADRAO = "geral"
+DESCRICAO_ASSUNTO = {
+    "pessoas": "nomes, aniversarios e preferencias de pessoas proximas (familia, amigos, colegas)",
+    "projetos": "projetos pessoais ou de trabalho, ideias e planos",
+    "preferencias": "gostos, preferencias e coisas que ele evita",
+    "casa": "endereco, rede de internet de casa, animais de estimacao e coisas do dia a dia em casa",
+    "trabalho": "emprego, horarios, empresa e assuntos de trabalho",
+    "geral": "fatos que nao se encaixam nos outros assuntos",
+}
+# Palavras (ja sem acento) que classificam um fato por assunto. Ordem de checagem: PRIORIDADE_ASSUNTO.
+PALAVRAS_ASSUNTO = {
+    "pessoas": ["aniversario", "esposa", "marido", "namorada", "namorado", "filho", "filha", "amigo", "amiga",
+                "mae", "pai", "irmao", "irma", "familia", "avo", "colega", "sobrinho", "sobrinha", "prima", "primo",
+                "noiva", "noivo"],
+    "trabalho": ["trabalho", "trabalha", "empresa", "escritorio", "chefe", "reuniao", "expediente", "emprego",
+                 "ipm", "cliente", "horario de trabalho", "colega de trabalho"],
+    "casa": ["casa", "endereco", "wifi", "roteador", "cachorro", "gato", "pet", "condominio", "aluguel", "vizinho",
+             "cep", "apartamento"],
+    "preferencias": ["gosto de", "gosta de", "prefiro", "prefere", "odeio", "nao gosto", "favorito", "favorita",
+                     "detesto", "adoro"],
+    "projetos": ["projeto", "codigo", "aplicativo", "programando", "programa que"],
+}
+PRIORIDADE_ASSUNTO = ["pessoas", "trabalho", "casa", "preferencias", "projetos"]
+LIMITE_CONTEXTO_PADRAO_KB = 6.0   # tamanho maximo (fatos + indice) mandado a IA de uma vez
 
 
 # --- Historico ------------------------------------------------------------------------
@@ -161,38 +193,167 @@ def procurar(assunto: str) -> dict | None:
 
 
 # --- Fatos ("lembra que ...") ------------------------------------------------------------
-def fatos() -> list[str]:
-    if not ARQUIVO_FATOS.exists():
+def classificar_assunto(fato: str) -> str:
+    """So por palavras-chave, funciona 100% sem IA (a IA pode sugerir depois, em segundo plano)."""
+    alvo = normalizar(fato)
+    for assunto in PRIORIDADE_ASSUNTO:
+        if any(normalizar(p) in alvo for p in PALAVRAS_ASSUNTO.get(assunto, [])):
+            return assunto
+    return ASSUNTO_PADRAO
+
+
+def _arquivo_assunto(assunto: str):
+    return PASTA_FATOS / f"{assunto}.md"
+
+
+def fatos_assunto(assunto: str) -> list[str]:
+    arquivo = _arquivo_assunto(assunto)
+    if not arquivo.exists():
         return []
-    return [l[2:].strip() for l in ARQUIVO_FATOS.read_text(encoding="utf-8").splitlines() if l.startswith("- ")]
+    return [l[2:].strip() for l in arquivo.read_text(encoding="utf-8").splitlines() if l.startswith("- ")]
 
 
-def salvar_fatos(lista: list[str]) -> None:
-    PASTA_MEMORIA.mkdir(exist_ok=True)
+def salvar_fatos_assunto(assunto: str, lista: list[str]) -> None:
+    if assunto not in ASSUNTOS:
+        assunto = ASSUNTO_PADRAO
+    PASTA_FATOS.mkdir(parents=True, exist_ok=True)
     corpo = "".join(f"- {f.strip()}\n" for f in lista if f.strip())
-    ARQUIVO_FATOS.write_text("# O que o Mestre sabe sobre voce (edite a vontade: um fato por linha)\n\n" + corpo,
-                             encoding="utf-8")
+    cabecalho = f"# {assunto.capitalize()} ({DESCRICAO_ASSUNTO.get(assunto, '')})\nEdite a vontade: um fato por linha.\n\n"
+    _arquivo_assunto(assunto).write_text(cabecalho + corpo, encoding="utf-8")
+    _atualizar_indice()
 
 
-def lembrar(fato: str) -> None:
-    atual = fatos()
-    if normalizar(fato) not in {normalizar(f) for f in atual}:
-        salvar_fatos(atual + [fato])
+def _atualizar_indice() -> None:
+    """Uma linha por arquivo de assunto, com resumo curto do TIPO de conteudo (nunca os fatos em si: o
+    indice vai inteiro pra IA junto com qualquer pergunta, entao nao pode vazar assunto que nao veio ao caso).
+    E o que a IA le primeiro (texto_para_ia)."""
+    linhas = ["# Indice dos assuntos (memoria de longo prazo)", ""]
+    for assunto in ASSUNTOS:
+        n = len(fatos_assunto(assunto))
+        resumo = DESCRICAO_ASSUNTO.get(assunto, "")
+        linhas.append(f"- {assunto}.md — {resumo} ({n} fato(s))" if n else f"- {assunto}.md — {resumo} (vazio)")
+    PASTA_FATOS.mkdir(parents=True, exist_ok=True)
+    ARQUIVO_INDICE.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+
+
+def _migrar_se_preciso() -> None:
+    """1a vez com esta versao: se memoria/fatos.md (tudo junto) ainda existir, separa por assunto,
+    gera o INDICE.md e guarda o original em fatos.md.antes_da_migracao (nunca apaga). So roda uma vez:
+    depois da migracao o fatos.md antigo nao existe mais, entao a proxima chamada nem entra aqui."""
+    if not ARQUIVO_FATOS.exists():
+        return
+    with _trava:
+        if not ARQUIVO_FATOS.exists():
+            return   # outra thread migrou enquanto esperava a trava
+        ja_tem_fatos_por_assunto = PASTA_FATOS.exists() and any(fatos_assunto(a) for a in ASSUNTOS)
+        if not ja_tem_fatos_por_assunto:
+            try:
+                antigos = [l[2:].strip() for l in ARQUIVO_FATOS.read_text(encoding="utf-8").splitlines()
+                          if l.startswith("- ")]
+            except OSError as erro:
+                log.warning("Nao consegui ler o fatos.md antigo para migrar: %s", erro)
+                return
+            PASTA_FATOS.mkdir(parents=True, exist_ok=True)
+            for fato in antigos:
+                assunto = classificar_assunto(fato)
+                salvar_fatos_assunto(assunto, fatos_assunto(assunto) + [fato])
+            _atualizar_indice()
+            log.info("Memoria migrada: %d fato(s) de fatos.md para memoria/fatos/", len(antigos))
+        try:
+            ARQUIVO_FATOS.replace(BACKUP_FATOS_ANTIGO)
+        except OSError as erro:
+            log.warning("Nao consegui guardar o backup do fatos.md antigo: %s", erro)
+
+
+def fatos() -> list[str]:
+    """Todos os fatos, de todos os assuntos (compatibilidade: quem so quer a lista toda)."""
+    _migrar_se_preciso()
+    return [f for assunto in ASSUNTOS for f in fatos_assunto(assunto)]
+
+
+def lembrar(fato: str, assunto: str | None = None) -> str:
+    """Classifica por palavra-chave (a menos que `assunto` ja venha decidido) e grava no arquivo certo.
+    Devolve o assunto usado (`_cmd_memoria` usa para, se a IA estiver ligada, pedir uma 2a opiniao em
+    segundo plano e mover com `mover_assunto` se ela discordar - sem travar a escuta)."""
+    _migrar_se_preciso()
+    if normalizar(fato) in {normalizar(f) for f in fatos()}:
+        return assunto if assunto in ASSUNTOS else classificar_assunto(fato)
+    alvo = assunto if assunto in ASSUNTOS else classificar_assunto(fato)
+    salvar_fatos_assunto(alvo, fatos_assunto(alvo) + [fato])
+    return alvo
+
+
+def mover_assunto(fato: str, novo_assunto: str) -> bool:
+    """Move um fato ja gravado para outro arquivo de assunto (sugestao da IA em segundo plano)."""
+    if novo_assunto not in ASSUNTOS:
+        return False
+    alvo = normalizar(fato)
+    with _trava:
+        for assunto in ASSUNTOS:
+            if assunto == novo_assunto:
+                continue
+            atual = fatos_assunto(assunto)
+            achado = next((f for f in atual if normalizar(f) == alvo), None)
+            if achado:
+                salvar_fatos_assunto(assunto, [f for f in atual if f != achado])
+                salvar_fatos_assunto(novo_assunto, fatos_assunto(novo_assunto) + [achado])
+                return True
+    return False
 
 
 def esquecer(trecho: str) -> list[str]:
-    """Apaga os fatos que contem o trecho. Devolve os apagados."""
+    """Apaga (em todos os assuntos) os fatos que contem o trecho. Devolve os apagados."""
+    _migrar_se_preciso()
     alvo = normalizar(trecho)
-    atual = fatos()
-    apagados = [f for f in atual if alvo and alvo in normalizar(f)]
-    if apagados:
-        salvar_fatos([f for f in atual if f not in apagados])
+    apagados: list[str] = []
+    if not alvo:
+        return apagados
+    for assunto in ASSUNTOS:
+        atual = fatos_assunto(assunto)
+        achados = [f for f in atual if alvo in normalizar(f)]
+        if achados:
+            salvar_fatos_assunto(assunto, [f for f in atual if f not in achados])
+            apagados.extend(achados)
     return apagados
 
 
-def texto_para_ia() -> str:
-    lista = fatos()
-    return ("\nCoisas que o usuario pediu para voce lembrar:\n" + "\n".join(f"- {f}" for f in lista)) if lista else ""
+def _assuntos_relevantes(pergunta: str) -> list[str]:
+    """Assuntos ligados as palavras da pergunta (mesma logica da classificacao). Sem pista nenhuma: todos
+    (o limite de tamanho em texto_para_ia corta se precisar)."""
+    alvo = normalizar(pergunta)
+    achados = [a for a in PRIORIDADE_ASSUNTO
+              if a in alvo or any(normalizar(p) in alvo for p in PALAVRAS_ASSUNTO.get(a, []))]
+    if ASSUNTO_PADRAO in alvo and ASSUNTO_PADRAO not in achados:
+        achados.append(ASSUNTO_PADRAO)
+    if not achados:
+        return list(ASSUNTOS)
+    if ASSUNTO_PADRAO not in achados:
+        achados.append(ASSUNTO_PADRAO)   # o fallback sempre entra: pode ter algo que nao bateu palavra-chave
+    return achados
+
+
+def texto_para_ia(pergunta: str = "", limite_kb: float = LIMITE_CONTEXTO_PADRAO_KB) -> str:
+    """O que mandar para a IA: o INDICE.md inteiro + so os arquivos de assunto relevantes a pergunta (ou
+    todos, sem pergunta), ate o limite de tamanho (nao estoura o prompt). `pergunta` = a frase do usuario
+    (ou o pedido) que vai motivar a resposta."""
+    _migrar_se_preciso()
+    if not any(fatos_assunto(a) for a in ASSUNTOS):
+        return ""
+    indice = ARQUIVO_INDICE.read_text(encoding="utf-8") if ARQUIVO_INDICE.exists() else ""
+    partes = [f"\nMemoria de longo prazo (fatos que o usuario pediu para voce lembrar, por assunto). "
+              f"Indice dos assuntos:\n{indice}"]
+    limite_bytes = max(1024, int(float(limite_kb) * 1024))
+    usado = len(partes[0].encode("utf-8"))
+    for assunto in _assuntos_relevantes(pergunta):
+        lista = fatos_assunto(assunto)
+        if not lista:
+            continue
+        bloco = f"\n## {assunto}.md\n" + "\n".join(f"- {f}" for f in lista)
+        if usado + len(bloco.encode("utf-8")) > limite_bytes:
+            break
+        partes.append(bloco)
+        usado += len(bloco.encode("utf-8"))
+    return "".join(partes)
 
 
 # --- Conversa com a IA (continua depois de reiniciar) -------------------------------------

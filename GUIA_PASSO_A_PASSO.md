@@ -1023,7 +1023,12 @@ O texto chega com o aviso para eu corrigir a transcrição e refinar.
 - **Memória:** *"lembra que eu trabalho na IPM de manhã"* fica guardado, e a IA usa isso nas respostas.
   - *"o que você lembra de mim?"* lê a lista;
   - *"esquece que…"* apaga.
-- **Central > Histórico:** tudo que você pediu e ouviu, com busca, e a lista da memória, que dá para editar.
+  - **Por assunto:** os fatos ficam separados em `memoria/fatos/` (pessoas, projetos, preferências, casa,
+    trabalho, geral) e não num arquivo só; ele decide o assunto pela frase (e, com a IA ligada, ela pode
+    confirmar o assunto em segundo plano, sem travar a escuta). Nas respostas, ele manda pra IA só o índice
+    e os assuntos ligados à sua pergunta — não a memória toda.
+- **Central > Histórico:** tudo que você pediu e ouviu, com busca, e a lista da memória (agora em uma caixa
+  por assunto), que dá para editar.
 - **Corrigido:** *"pode falar"* virava *"falar"* e a resposta guardada sumia. Agora, depois de *"Terminei de pensar"*, você pode dizer *"Mestre"* e depois *"pode falar"*.
 - **Mais rápido:** ele libera você em **3 segundos** (antes eram 10).
 
@@ -1556,6 +1561,34 @@ rede, dá pra ligar sem tomada inteligente. O roteador da Vivo Fibra (`192.168.1
 **não** tem essa opção no menu dele, mas o PC (ligado por cabo) tem placa de rede Realtek, que
 **suporta** Wake-on-LAN — então se um dia você trocar de roteador por um que tenha essa função, o
 PC já está pronto para usar.
+
+---
+
+## Etapa 34: Troca de IA sozinho (se uma demorar ou falhar)
+
+Antes, se o Ollama estivesse fechado ou travado, o Mestre simplesmente não conseguia responder.
+Agora ele tem uma **lista ordenada de IAs**: se a primeira demorar demais ou der erro, ele tenta a
+próxima sozinho, na hora, sem travar a escuta. Quem falhou fica **"de castigo"** por um tempo
+(não é tentada de novo até passar) e volta a entrar na roda depois.
+
+- **Ordem padrão:** Ollama (modelo principal) → Ollama (modelo menor, se você escolher um) → Claude
+  API (se tiver uma chave salva).
+- **Painel > Conversa**, seção **"Troca de IA sozinho (se uma demorar ou falhar)"**:
+  - **1ª, 2ª e 3ª opção:** escolha a ordem que preferir.
+  - **Modelo do Ollama menor (opcional):** um modelo mais leve para servir de 2ª tentativa
+    (ex.: `llama3.2:3b`). Deixe em branco para não usar.
+  - **Tempo por tentativa (s):** quanto tempo espera cada IA antes de desistir e ir pra próxima.
+  - **Tempo de castigo (min):** quanto tempo uma IA que falhou fica de fora antes de ser tentada
+    de novo.
+  - **Chave da API do Claude (opcional):** cole aqui para o Claude entrar na lista como opção
+    (fica salva fora do projeto, em `segredos.json`, nunca no `config.yaml`).
+- **Log:** cada resposta registra qual IA respondeu de fato (`logs\mestre.log`), útil para conferir
+  se ele está usando a que você espera.
+
+**Para testar:** feche o Ollama (ou desligue a rede dele) e faça uma pergunta de conversa livre —
+se você configurou uma 2ª opção (outro modelo do Ollama ou o Claude com chave), o Mestre continua
+respondendo por ela, sem travar. Reabra o Ollama: depois do tempo de castigo, ele volta a ser a
+1ª tentativa.
 
 ---
 

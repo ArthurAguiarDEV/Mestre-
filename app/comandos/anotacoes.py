@@ -70,8 +70,10 @@ class AnotacoesMixin:
             fato = (partes[1] if len(partes) > 1 else "").strip(" .,!")
             if len(fato) < 3:
                 return False
-            memoria.lembrar(fato[0].upper() + fato[1:])
+            fato = fato[0].upper() + fato[1:]
+            memoria.lembrar(fato)
             self.voz.falar(random.choice(["Guardado na memória.", "Pode deixar, vou lembrar.", "Anotado. Não esqueço."]))
+            self._sugerir_assunto_com_ia(fato)
             return True
         if re.search(r"o que (voce|vc) (sabe|lembra) (de|sobre) mim|o que (voce|vc) lembra|minha memoria", puro):
             fatos = memoria.fatos()
@@ -85,6 +87,20 @@ class AnotacoesMixin:
                            f"Apaguei {len(apagados)} lembranças." if apagados else "Não achei isso na memória.")
             return True
         return False
+
+    def _sugerir_assunto_com_ia(self, fato: str) -> None:
+        """O assunto por palavra-chave ja funciona sozinho: isto so pede uma 2a opiniao da IA, em
+        SEGUNDO PLANO (nunca trava a escuta) - se ela discordar, move o fato pro assunto certo."""
+        if not self.cerebro.ligado or not hasattr(self.cerebro, "sugerir_assunto"):
+            return
+        def _pensar_assunto():
+            try:
+                return self.cerebro.sugerir_assunto(fato, memoria.ASSUNTOS)
+            except Exception:
+                return ""
+        self._pensar(f"assunto do fato: {fato}", _pensar_assunto,
+                     lambda assunto: memoria.mover_assunto(fato, assunto) if assunto in memoria.ASSUNTOS else None,
+                     imediato=True)
 
     # =================================================================
     #  Projetos guiados: "quero começar um novo projeto"

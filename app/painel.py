@@ -2008,6 +2008,8 @@ class Painel(ctk.CTk):
 
     # -----------------------------------------------------------------
     def _aba_conversa(self, pagina):
+        from . import memoria
+        from .cerebro import ORDEM_IA_PADRAO, PENALIDADE_MIN_PADRAO, ROTULOS_OPCOES_IA, TIMEOUT_TENTATIVA_PADRAO
         f = pagina   # (cada secao abaixo troca f pelo cartao dela)
         f = secao(pagina, "Modo conversa", "Depois de responder, ele fica ouvindo sem precisar da palavra de ativação por este "
                                    "tempo. 0 desliga. Se a TV atrapalhar, diminua.")
@@ -2045,6 +2047,13 @@ class Painel(ctk.CTk):
         self.var_bipe = tk.StringVar(value=self.SONS_AVISO.get(str(cb.get("aviso_som", "nenhum")), self.SONS_AVISO["nenhum"]))
         linha_campo(f, "Aviso do pensando", lambda p: ctk.CTkSegmentedButton(
             p, values=list(self.SONS_AVISO.values()), variable=self.var_bipe))
+        self.var_contexto_kb = tk.IntVar(value=int(cb.get("memoria_contexto_kb", memoria.LIMITE_CONTEXTO_PADRAO_KB)))
+        rot_ctx = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        linha_campo(f, "Memória mandada pra IA (KB)", lambda p: ctk.CTkSlider(
+            p, from_=2, to=20, number_of_steps=18, variable=self.var_contexto_kb,
+            command=lambda v: rot_ctx.configure(text=f"{int(v)} KB de fatos por pergunta (o índice sempre vai inteiro)")))
+        rot_ctx.pack(fill="x", padx=(32, 18))
+        rot_ctx.configure(text=f"{self.var_contexto_kb.get()} KB de fatos por pergunta (o índice sempre vai inteiro)")
         self.var_modelo_ia = tk.StringVar(value=str(cb.get("ollama_modelo", "qwen2.5:7b")))
         self.ent_modelo_ia = linha_campo(f, "Modelo do Ollama", lambda p: ctk.CTkComboBox(
             p, variable=self.var_modelo_ia, values=[self.var_modelo_ia.get()]))
@@ -2060,6 +2069,41 @@ class Painel(ctk.CTk):
         ctk.CTkButton(linha, text="Atualizar o Ollama (site)", **SECUNDARIO,
                       command=lambda: webbrowser.open("https://ollama.com/download")).pack(side="left")
         self.after(500, self._procurar_modelos_ollama)
+
+        self.ROTULOS_IA = dict(ROTULOS_OPCOES_IA)
+        f = secao(pagina, "Troca de IA sozinho (se uma demorar ou falhar)",
+               "Se a 1ª opção passar do “tempo por tentativa” ou der erro, ele tenta a próxima da lista sozinho, "
+               "na hora, sem travar a escuta. Quem falhar fica “de castigo” (não é tentada de novo por um "
+               "tempo). Deixe o modelo do Ollama menor em branco para não usar uma 2ª opção do Ollama.")
+        ordem_cfg = [i for i in (cb.get("ordem_ia") or ORDEM_IA_PADRAO) if i in self.ROTULOS_IA]
+        ordem_cfg += [i for i in ORDEM_IA_PADRAO if i not in ordem_cfg]
+        valores_ordem = list(self.ROTULOS_IA.values())
+        self.var_ordem1 = tk.StringVar(value=self.ROTULOS_IA[ordem_cfg[0]])
+        self.var_ordem2 = tk.StringVar(value=self.ROTULOS_IA[ordem_cfg[1]])
+        self.var_ordem3 = tk.StringVar(value=self.ROTULOS_IA[ordem_cfg[2]])
+        linha_campo(f, "1ª opção", lambda p: ctk.CTkOptionMenu(p, values=valores_ordem, variable=self.var_ordem1))
+        linha_campo(f, "2ª opção", lambda p: ctk.CTkOptionMenu(p, values=valores_ordem, variable=self.var_ordem2))
+        linha_campo(f, "3ª opção", lambda p: ctk.CTkOptionMenu(p, values=valores_ordem, variable=self.var_ordem3))
+        self.var_modelo_menor = tk.StringVar(value=str(cb.get("ollama_modelo_menor", "")))
+        self.ent_modelo_menor = linha_campo(f, "Modelo do Ollama menor (opcional)", lambda p: ctk.CTkComboBox(
+            p, variable=self.var_modelo_menor, values=[self.var_modelo_menor.get() or "(nenhum)"]))
+        self.var_timeout_tentativa = tk.IntVar(value=int(cb.get("timeout_tentativa_seg", TIMEOUT_TENTATIVA_PADRAO)))
+        rot_tent = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        linha_campo(f, "Tempo por tentativa (s)", lambda p: ctk.CTkSlider(
+            p, from_=5, to=90, number_of_steps=17, variable=self.var_timeout_tentativa,
+            command=lambda v: rot_tent.configure(text=f"{int(v)} segundos e passa pra próxima opção")))
+        rot_tent.pack(fill="x", padx=(32, 18))
+        rot_tent.configure(text=f"{self.var_timeout_tentativa.get()} segundos e passa pra próxima opção")
+        self.var_penalidade = tk.IntVar(value=int(cb.get("penalidade_min", PENALIDADE_MIN_PADRAO)))
+        rot_pen = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        linha_campo(f, "Tempo de castigo (min)", lambda p: ctk.CTkSlider(
+            p, from_=5, to=120, number_of_steps=23, variable=self.var_penalidade,
+            command=lambda v: rot_pen.configure(text=f"{int(v)} minutos sem tentar de novo depois de falhar")))
+        rot_pen.pack(fill="x", padx=(32, 18))
+        rot_pen.configure(text=f"{self.var_penalidade.get()} minutos sem tentar de novo depois de falhar")
+        self.ent_claude_chave = linha_campo(f, "Chave da API do Claude (opcional)",
+                                            lambda p: ctk.CTkEntry(p, height=36, show="*"))
+        self.ent_claude_chave.insert(0, segredos.ler("claude_chave"))
 
         f = secao(pagina, "Sua cidade", "Usada no clima (“vai chover?”).")
         self.ent_cidade = ctk.CTkEntry(f, height=36)
@@ -2115,6 +2159,8 @@ class Painel(ctk.CTk):
                      if modelos else "O Ollama não respondeu (está fechado ou não instalado). Abra o Ollama e reabra esta página.")
             try:
                 self.after(0, lambda: (self.ent_modelo_ia.configure(values=modelos or [self.var_modelo_ia.get()]),
+                                       self.ent_modelo_menor.configure(
+                                           values=[""] + modelos if modelos else [self.var_modelo_menor.get() or "(nenhum)"]),
                                        self.rot_ollama.configure(text=texto)))
             except RuntimeError:
                 pass
@@ -2794,12 +2840,19 @@ class Painel(ctk.CTk):
         ctk.CTkButton(linha, text="⇪  Exportar para o Claude", width=210, command=self._exportar_historico).pack(side="left", padx=10)
         self.rot_exportar = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=820, text_color=tema.TEXTO_FRACO)
         self.rot_exportar.pack(fill="x", padx=(32, 18))
-        f = secao(pagina, "Memória", f"Fatos que ele guarda para a IA usar (“{self.palavra}, lembra que …”). "
-                             "Um por linha: edite ou apague e clique em Salvar.")
-        self.txt_fatos = ctk.CTkTextbox(f, height=150, wrap="word")
-        self._fatos_iniciais = memoria.fatos()
-        self.txt_fatos.insert("1.0", "\n".join(self._fatos_iniciais))
-        self.txt_fatos.pack(fill="x", padx=(32, 18), pady=6)
+        f = secao(pagina, "Memória", f"Fatos que ele guarda para a IA usar (“{self.palavra}, lembra que …”), "
+                             "organizados por assunto. Um por linha em cada caixa: edite ou apague e clique em Salvar.")
+        self.txt_fatos_assunto = {}
+        self._fatos_iniciais_assunto = {}
+        for assunto in memoria.ASSUNTOS:
+            ctk.CTkLabel(f, text=f"{assunto.capitalize()} — {memoria.DESCRICAO_ASSUNTO.get(assunto, '')}",
+                        anchor="w", text_color=tema.TEXTO_FRACO).pack(fill="x", padx=(32, 18), pady=(8, 0))
+            caixa = ctk.CTkTextbox(f, height=70, wrap="word")
+            iniciais = memoria.fatos_assunto(assunto)
+            caixa.insert("1.0", "\n".join(iniciais))
+            caixa.pack(fill="x", padx=(32, 18), pady=(2, 4))
+            self.txt_fatos_assunto[assunto] = caixa
+            self._fatos_iniciais_assunto[assunto] = iniciais
 
     def _exportar_historico(self):
         from . import exportar
@@ -3614,6 +3667,18 @@ class Painel(ctk.CTk):
         cb["aviso_ao_terminar"] = configuracao.aspas(
             next(k for k, v in self.AVISOS.items() if v == self.var_aviso.get()))
         cb["ollama_modelo"] = configuracao.aspas(self.var_modelo_ia.get().strip() or "qwen2.5:7b")
+        cb["memoria_contexto_kb"] = int(self.var_contexto_kb.get())
+        ids_ordem = []
+        for var in (self.var_ordem1, self.var_ordem2, self.var_ordem3):
+            id_ = next((k for k, v in self.ROTULOS_IA.items() if v == var.get()), None)
+            if id_ and id_ not in ids_ordem:
+                ids_ordem.append(id_)
+        cb["ordem_ia"] = configuracao.lista_em_linha(ids_ordem)
+        cb["ollama_modelo_menor"] = configuracao.aspas(self.var_modelo_menor.get().strip())
+        cb["timeout_tentativa_seg"] = int(self.var_timeout_tentativa.get())
+        cb["penalidade_min"] = int(self.var_penalidade.get())
+        if self.ent_claude_chave.get().strip():
+            segredos.salvar(claude_chave=self.ent_claude_chave.get().strip())
         configuracao.secao(c, "assistente")["cidade"] = configuracao.aspas(self.ent_cidade.get().strip() or "São Paulo")
 
     def _salvar_ipm(self, c):
@@ -3654,11 +3719,11 @@ class Painel(ctk.CTk):
 
     def _salvar_historico(self, c):
         from . import memoria
-        novos_fatos = [x.strip() for x in self.txt_fatos.get("1.0", "end").splitlines()
-                       if x.strip() and not x.startswith("#")]
-        if novos_fatos != self._fatos_iniciais:   # so grava se voce mexeu (o Mestre tambem grava)
-            memoria.salvar_fatos(novos_fatos)
-            self._fatos_iniciais = novos_fatos
+        for assunto, caixa in self.txt_fatos_assunto.items():
+            novos = [x.strip() for x in caixa.get("1.0", "end").splitlines() if x.strip() and not x.startswith("#")]
+            if novos != self._fatos_iniciais_assunto.get(assunto):   # so grava se voce mexeu (o Mestre tambem grava)
+                memoria.salvar_fatos_assunto(assunto, novos)
+                self._fatos_iniciais_assunto[assunto] = novos
 
     def _salvar_aparencia(self, c):
         ap = configuracao.secao(c, "aparencia")

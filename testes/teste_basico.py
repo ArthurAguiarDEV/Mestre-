@@ -287,6 +287,35 @@ def diga(frase, completa=None):
     ditos.clear(); t0 = time.time(); ex.executar(frase, completa or frase); return time.time() - t0, list(ditos)
 def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
 
+# --- Memoria de longo prazo em arquivos por assunto (memoria/fatos/) -----------------------------------
+memoria.PASTA_MEMORIA.mkdir(exist_ok=True)
+memoria.ARQUIVO_FATOS.write_text(
+    "# fatos antigos (uma versao anterior guardava tudo num arquivo so)\n\n"
+    "- Minha esposa se chama Ana e o aniversário dela é em março\n"
+    "- Trabalho na IPM todo dia de manhã\n"
+    "- Prefiro café sem açúcar\n"
+    "- A senha do wifi de casa é segredo123\n",
+    encoding="utf-8")
+tinha_pasta_fatos_antes = memoria.PASTA_FATOS.exists()
+fatos_migrados = memoria.fatos()   # 1a chamada: dispara a migracao
+ok(not tinha_pasta_fatos_antes and not memoria.ARQUIVO_FATOS.exists() and memoria.BACKUP_FATOS_ANTIGO.exists(),
+   "Migração do fatos.md antigo: gera backup (fatos.md.antes_da_migracao) e o arquivo antigo some")
+ok(len(fatos_migrados) == 4, f"Migração: os 4 fatos antigos foram para memoria/fatos/ ({len(fatos_migrados)})")
+ok(any("Ana" in f for f in memoria.fatos_assunto("pessoas")), "Classificação por palavra-chave: fato de pessoa foi pra pessoas.md")
+ok(any("ipm" in normalizar(f) for f in memoria.fatos_assunto("trabalho")), "Classificação por palavra-chave: fato de trabalho foi pra trabalho.md")
+ok(any("acucar" in normalizar(f) for f in memoria.fatos_assunto("preferencias")),
+   "Classificação por palavra-chave: fato de preferência foi pra preferencias.md")
+ok(any("wifi" in normalizar(f) for f in memoria.fatos_assunto("casa")), "Classificação por palavra-chave: fato de casa foi pra casa.md")
+ok(memoria.ARQUIVO_INDICE.exists() and "pessoas.md" in memoria.ARQUIVO_INDICE.read_text(encoding="utf-8"),
+   "INDICE.md criado com um resumo por arquivo de assunto")
+memoria.fatos()   # chamar de novo nao pode migrar (nem apagar) de novo: e idempotente
+ok(memoria.BACKUP_FATOS_ANTIGO.exists() and not memoria.ARQUIVO_FATOS.exists() and len(memoria.fatos()) == 4,
+   "Migração roda só uma vez (idempotente): rodar de novo não duplica nem apaga nada")
+contexto_trabalho = memoria.texto_para_ia("me fala sobre o meu trabalho")
+ok("ipm" in normalizar(contexto_trabalho) and "ana" not in normalizar(contexto_trabalho)
+   and "wifi" not in normalizar(contexto_trabalho),
+   "Contexto pra IA: pergunta sobre trabalho manda só trabalho.md (+ índice), sem pessoas nem casa")
+
 tempo, _ = diga("me explica a teoria da relatividade")
 ok(tempo < 2 and estado.ler()["pensamento"] == "pensando", "IA demorou: vai para segundo plano (bolinha roxa)")
 tempo, falas = diga("que horas sao")
@@ -304,6 +333,12 @@ ok(any("Resposta pensada sobre me explica" in f for f in falas), "“o que você
 diga("me lembra que eu trabalho na ipm de manha", "Lembra que eu trabalho na IPM de manhã")
 ok(any("IPM de manhã" in f for f in memoria.fatos()) and "IPM de manhã" in memoria.texto_para_ia(),
    "“lembra que …” guarda na memória (e a IA usa)")
+ok(any("ipm" in normalizar(f) for f in memoria.fatos_assunto("trabalho")),
+   "“lembra que …” classifica por palavra-chave e grava no arquivo de assunto certo (trabalho.md)")
+diga("esquece que prefiro cafe sem acucar", "Esquece que prefiro café sem açúcar")
+ok(not any("acucar" in normalizar(f) for f in memoria.fatos_assunto("preferencias"))
+   and any("ipm" in normalizar(f) for f in memoria.fatos_assunto("trabalho")),
+   "“esquece que …” remove só o fato certo do arquivo de assunto certo, sem mexer nos outros")
 abertos.clear()
 diga("toca a playlist foco total no spotify", "Toca a playlist foco total no Spotify")
 ok(abertos and abertos[-1] == "spotify:playlist:37i9dQZF1DX8NTLI2TtZa6", "Spotify: playlist cadastrada abre no app")
@@ -1845,6 +1880,70 @@ print("FIM_SUGESTOES")
 """
 
 
+CEREBRO_FALLBACK = r"""
+# Troca de IA sozinho (app/cerebro.py): 1a opcao lenta/com erro cai pra proxima, quem falha fica
+# "de castigo" por um tempo (nao e tentada de novo ate expirar) e a ordem configurada e respeitada.
+import os, tempfile, time
+os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
+from app.cerebro import Cerebro
+from app import segredos
+
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+
+segredos.salvar(claude_chave="chave-de-teste-fake")
+cfg = {"cerebro": {"tipo": "ollama", "ordem_ia": ["ollama", "ollama_menor", "claude"],
+                   "ollama_modelo_menor": "modelo-menor", "timeout_tentativa_seg": 0.2, "penalidade_min": 0.002}}
+cerebro = Cerebro(cfg)   # 0.002 min = 0.12s de castigo: da pra esperar expirar no teste
+
+chamadas = []
+def _ollama_roteado(sistema, historico, formato=None, modelo=None, timeout=None):
+    if modelo == "modelo-menor":
+        chamadas.append(("ollama_menor", modelo))
+        return "resposta do ollama menor"
+    chamadas.append(("ollama", modelo))
+    time.sleep((timeout or 0) + 0.05)   # "lenta": sempre estoura o tempo por tentativa
+    raise TimeoutError("Tempo esgotado (simulado)")
+def _claude_ok(sistema, historico, formato=None, modelo=None, timeout=None):
+    chamadas.append(("claude", modelo)); return "resposta do claude"
+cerebro._ollama = _ollama_roteado
+cerebro._claude_api = _claude_ok
+
+resposta = cerebro.perguntar("oi")
+ok("resposta do ollama menor" in resposta, "1ª IA lenta (estoura o tempo por tentativa): cai pra 2ª sozinho")
+ok(cerebro.ultima_ia_respondeu == "Ollama (modelo menor)", "Loga qual IA respondeu de fato")
+ok(chamadas == [("ollama", "qwen2.5:7b"), ("ollama_menor", "modelo-menor")], "Tenta a 1ª antes da 2ª (ordem respeitada)")
+
+chamadas.clear()
+cerebro.perguntar("oi de novo")
+ok(("ollama", "qwen2.5:7b") not in chamadas, "Quem falhou fica de castigo: não é tentada de novo enquanto não expira")
+ok(("ollama_menor", "modelo-menor") in chamadas, "A próxima da lista continua respondendo normalmente")
+
+time.sleep(0.15)   # o castigo configurado (0.12s) ja expirou
+chamadas.clear()
+cerebro.perguntar("oi de novo")
+ok(("ollama", "qwen2.5:7b") in chamadas, "Castigo expirou: a 1ª opção volta a ser tentada")
+
+cfg2 = {"cerebro": {"tipo": "ollama", "ordem_ia": ["ollama", "ollama_menor", "claude"],
+                    "ollama_modelo_menor": "modelo-menor", "timeout_tentativa_seg": 0.2, "penalidade_min": 30}}
+cerebro2 = Cerebro(cfg2)
+chamadas2 = []
+def _ollama_falha2(sistema, historico, formato=None, modelo=None, timeout=None):
+    chamadas2.append("ollama_menor" if modelo == "modelo-menor" else "ollama")
+    raise RuntimeError("erro simulado")
+def _claude_ok2(sistema, historico, formato=None, modelo=None, timeout=None):
+    chamadas2.append("claude"); return "resposta do claude"
+cerebro2._ollama = _ollama_falha2
+cerebro2._claude_api = _claude_ok2
+cerebro2._castigo["ollama"] = time.time() + 999   # a 1ª ja comeca de castigo
+resposta3 = cerebro2.perguntar("oi")
+ok("ollama" not in chamadas2, "1ª opção de castigo: nem é chamada")
+ok(chamadas2 == ["ollama_menor", "claude"], "De castigo a 1ª: tenta a 2ª antes da 3ª, nunca pula a ordem")
+ok("resposta do claude" in resposta3, "2ª também falhou: cai pra 3ª (Claude) da lista")
+
+print("FIM_CEREBRO_FALLBACK")
+"""
+
+
 AVATAR = r"""
 # Avatar robo (processo separado, PySide6) + logo "Onda"
 import os, sys, json, math, time, wave, struct, tempfile, subprocess, threading, traceback, tkinter as tk
@@ -2194,6 +2293,14 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
         if "FIM_SUGESTOES" not in saida:
             conferir(False, "Sugestões: o teste rodou até o fim", saida[-1500:])
+
+        print("\n[Troca de IA sozinho (quando uma demora ou falha)]")
+        cod, saida = rodar(pasta, CEREBRO_FALLBACK, espera=60)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_CEREBRO_FALLBACK" not in saida:
+            conferir(False, "Troca de IA sozinho: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Painel 2.5: menu de ícones e Início em cartões]")
         cod, saida = rodar(pasta, PAINEL_25, espera=120)

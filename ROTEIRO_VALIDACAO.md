@@ -165,6 +165,34 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | (painel) Sistema > Validar atualização → "Só novidades" → Começar; fale a frase que aparece; marque ✅/❌ (no ❌ diga "o certo era") → Parar | Mostra OUVI / ENTENDI (com o comando) / FIZ de cada frase e sugere ✅/❌; no fim cria `exportacoes/validacao_AAAA-MM-DD_HHMM.md` e cada ❌ vira FEEDBACK no MELHORIAS.md | (painel) |
 | (painel) depois de um relatório com falha, clique "🛠 Mandar para o Claude corrigir" | Salva o pedido em `exportacoes/pedido_correcao_*.md` e abre um terminal (Windows Terminal ou cmd) com o Claude Code interativo já com o pedido; sem falha nenhuma o botão fica desativado | (painel) |
 
+### Memória por assunto (memoria/fatos/ em vez de um arquivo só)
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, lembra que minha esposa se chama Ana` | Guarda o fato normal ("Guardado na memória") | `_cmd_memoria` |
+| `Mestre, lembra que eu trabalho na IPM de manhã` | Guarda o fato normal | `_cmd_memoria` |
+| `Mestre, lembra que eu prefiro café sem açúcar` | Guarda o fato normal | `_cmd_memoria` |
+| (painel) Central > Histórico > seção Memória | Em vez de uma caixa só, aparecem várias caixas menores, uma por assunto (Pessoas, Projetos, Preferências, Casa, Trabalho, Geral), cada uma com uma descrição em cima; o fato da Ana está em Pessoas, o do trabalho está em Trabalho e o do café está em Preferências | (painel) |
+| (visual) confira a pasta `memoria/fatos/` do projeto | Tem um arquivo por assunto (`pessoas.md`, `projetos.md`, `preferencias.md`, `casa.md`, `trabalho.md`, `geral.md`) e um `INDICE.md` com um resumo de cada um | (visual) |
+| `Mestre, o que você sabe sobre mim?` | Lê os fatos guardados, misturando os assuntos, igual antes | `_cmd_memoria` |
+| `Mestre, esquece que eu prefiro café sem açúcar` | Apaga só esse fato (o da Ana e o do trabalho continuam) | `_cmd_memoria` |
+| (se você já tinha uma memória antiga, de antes desta versão) reinicie o Assessor uma vez | Os fatos antigos (que estavam todos juntos em `memoria/fatos.md`) aparecem separados por assunto em `memoria/fatos/`, e o `memoria/fatos.md` antigo vira `memoria/fatos.md.antes_da_migracao` (nada se perde) | (automático, ao religar) |
+| (com a IA ligada — Ollama ou Claude) `Mestre, lembra que meu cachorro se chama Bidu` e, alguns segundos depois, confira `memoria/fatos/casa.md` | O fato aparece lá (a IA pode ter ajudado a confirmar o assunto em segundo plano, sem travar a escuta) | `_cmd_memoria` |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Itens de "memória por assunto" (migração, classificação, contexto pra IA, esquecer) OK | (automático) |
+
+### Troca de IA sozinho (se uma demorar ou falhar)
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Conversa > seção "Troca de IA sozinho (se uma demorar ou falhar)" | Aparecem os campos 1ª/2ª/3ª opção, "Modelo do Ollama menor", "Tempo por tentativa (s)", "Tempo de castigo (min)" e "Chave da API do Claude" | (painel) |
+| (painel) Escolha uma ordem diferente (ex.: 1ª Claude, 2ª Ollama), salve e reabra o painel | A ordem escolhida continua marcada | (painel) |
+| Feche o Ollama (ou desligue a rede dele) e, com uma 2ª opção configurada (outro modelo do Ollama ou Claude com chave salva), pergunte algo de conversa livre: `Mestre, me conta uma curiosidade` | Ele continua respondendo (pela 2ª opção), sem travar a escuta nem ficar mudo | `_cmd_pensamento` (IA) |
+| Religue o Ollama e pergunte de novo antes do "tempo de castigo" passar | Continua respondendo pela 2ª opção (a 1ª ainda está de castigo) | (IA) |
+| Espere passar o "tempo de castigo" configurado e pergunte de novo | Volta a tentar a 1ª opção primeiro | (IA) |
+| (visual) confira `logs\mestre.log` depois de uma pergunta de conversa livre | Tem uma linha dizendo qual IA respondeu de fato | (visual) |
+| (com um config.yaml antigo, de antes desta versão, sem as chaves novas) reinicie o Assessor | A IA continua respondendo normalmente pelo Ollama, do jeito de sempre (os padrões do código cobrem a falta das chaves novas) | (automático, ao religar) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Itens de "Troca de IA sozinho" (1ª lenta cai pra 2ª, castigo, castigo expira, ordem respeitada) OK | (automático) |
+
 ## 2. Sempre testar (regressão fixa — todo dia a dia)
 
 | Frase | O que deve acontecer | Comando esperado |
