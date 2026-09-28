@@ -267,6 +267,11 @@ FRASES = [
     ("Mestre, pausa o vídeo do monitor 2", "_cmd_youtube_controle"),
     ("Mestre, abre o vídeo com o nome Como seria o GTA 6 no monitor 2", "_cmd_youtube_controle"),
     ("Mestre, clica em continuar assistindo do monitor 3", "_cmd_clicar"),
+    # --- v25: novidades do Telegram (print, o que tá tocando) pedidas falando no PC ---
+    ("Mestre, manda um print no Telegram", "_cmd_print_telegram"),
+    ("Mestre, manda um print da tela pro Telegram", "_cmd_print_telegram"),
+    ("Mestre, o que tá tocando", "_cmd_tocando"),
+    ("Mestre, o que está tocando agora", "_cmd_tocando"),
 ]
 
 

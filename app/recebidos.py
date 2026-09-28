@@ -9,9 +9,15 @@ O que ele faz com o texto:
   - comeca com a palavra de ativacao ("Assessor, abre o YouTube")  -> executa como comando;
   - senao -> o destino escolhido no painel: "projeto" (app do Claude, padrao), "nota" ou "ipm".
 Tudo fica guardado em recebidos/ (texto) e o audio vai para a subpasta "lidos".
+
+So do Telegram (Caixa._comando_especial), sem precisar da palavra de ativacao: "print"/"print do
+monitor N" (fotos, uma por monitor), "o que ta tocando" (Spotify, YouTube, janela de cada tela),
+"grava N segundos do monitor N" (video curto) e "desligar"/"dormir"/"suspender"/"reiniciar" (sempre
+com confirmacao "sim" e aviso de 30s cancelavel com "cancela").
 """
 import json
 import logging
+import re
 import threading
 import time
 import urllib.parse
@@ -19,14 +25,28 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from . import estado, memoria, segredos
+import requests
+
+from . import estado, informacoes, memoria, segredos, sistema
 from .config import PASTA_PROJETO, palavras_ativacao
-from .texto import extrair_comando
+from .texto import extrair_comando, normalizar
 
 log = logging.getLogger(__name__)
 PASTA_TEXTOS = PASTA_PROJETO / "recebidos"
 EXTENSOES = {".ogg", ".opus", ".oga", ".m4a", ".mp3", ".wav", ".aac", ".amr", ".3gp", ".webm", ".mp4", ".flac"}
 CABECALHO = "[Áudio do celular transcrito pelo {nome}: corrija a transcrição e refine antes de implementar.]\n\n"
+
+# --- comandos novos so do Telegram: print, "o que ta tocando", video curto e energia -------------------
+PADRAO_PRINT = re.compile(r"^(tira|tirar|manda|mandar)?\s*(um\s+)?print(\s+da\s+tela)?"
+                          r"(\s+do\s+monitor\s+(?P<monitor>\d+))?\s*$")
+PADRAO_TOCANDO = re.compile(r"\bo que (ta|esta) (tocando|passando)\b")
+NOMES_ACAO_ENERGIA = {"desligar": "desligar o computador", "suspender": "colocar o computador para dormir",
+                      "reiniciar": "reiniciar o computador"}
+PADROES_ENERGIA = (
+    ("desligar", re.compile(r"^desliga(r)?( o (pc|computador))?$")),
+    ("suspender", re.compile(r"^(vai )?(dormir|dorme|suspende(r)?)( o (pc|computador))?$")),
+    ("reiniciar", re.compile(r"^reinicia(r)?( o (pc|computador))?$")),
+)
 
 
 def pasta_padrao() -> Path:
@@ -55,6 +75,7 @@ class Caixa:
         self.frases = {"telegram": str(c.get("frase_telegram") or "Mensagem do Telegram."),
                        "pasta": str(c.get("frase_pasta") or "Áudio do celular.")}
         self._vistos: dict[str, float] = {}
+        self._energia: dict[int, dict] = {}   # chat -> {"estado": "confirmando"|"contando", "acao": ...}
 
     def iniciar(self) -> None:
         if self.usar_pasta:
@@ -154,6 +175,56 @@ class Caixa:
         except Exception as erro:
             log.info("Telegram nao respondeu: %s", erro)
 
+    def _url_arquivo(self, metodo: str) -> str:
+        return f"https://api.telegram.org/bot{segredos.ler('telegram_token')}/{metodo}"
+
+    def enviar_foto(self, chat: int, caminho, legenda: str = "") -> None:
+        caminho = Path(caminho)
+        if not caminho.exists():
+            log.info("Print nao foi gerado, nao tem o que mandar: %s", caminho)
+            return
+        try:
+            with open(caminho, "rb") as f:
+                requests.post(self._url_arquivo("sendPhoto"), data={"chat_id": chat, "caption": legenda[:1000]},
+                              files={"photo": (caminho.name, f, "image/jpeg")}, timeout=30)
+        except Exception as erro:
+            log.info("Telegram nao mandou a foto: %s", erro)
+
+    def enviar_fotos(self, chat: int, itens: list[tuple]) -> None:
+        """Uma foto (sendPhoto) ou varias juntas, ate 10 (sendMediaGroup): [(caminho, legenda), ...]."""
+        itens = [(Path(p), l) for p, l in itens if Path(p).exists()]
+        if not itens:
+            log.info("Nenhum print foi gerado, nao mandei nada pro Telegram")
+            return
+        if len(itens) == 1:
+            self.enviar_foto(chat, itens[0][0], itens[0][1])
+            return
+        media, arquivos = [], {}
+        try:
+            for i, (caminho, legenda) in enumerate(itens[:10]):
+                chave = f"foto{i}"
+                media.append({"type": "photo", "media": f"attach://{chave}", "caption": legenda[:200]})
+                arquivos[chave] = (caminho.name, open(caminho, "rb"), "image/jpeg")
+            requests.post(self._url_arquivo("sendMediaGroup"), data={"chat_id": chat, "media": json.dumps(media)},
+                          files=arquivos, timeout=45)
+        except Exception as erro:
+            log.info("Telegram nao mandou as fotos: %s", erro)
+        finally:
+            for _, f, _ in arquivos.values():
+                f.close()
+
+    def enviar_video(self, chat: int, caminho, legenda: str = "") -> None:
+        caminho = Path(caminho)
+        if not caminho.exists():
+            log.info("Video nao foi gerado, nao tem o que mandar: %s", caminho)
+            return
+        try:
+            with open(caminho, "rb") as f:
+                requests.post(self._url_arquivo("sendVideo"), data={"chat_id": chat, "caption": legenda[:1000]},
+                              files={"video": (caminho.name, f, "video/mp4")}, timeout=90)
+        except Exception as erro:
+            log.info("Telegram nao mandou o video: %s", erro)
+
     def _vigiar_telegram(self) -> None:
         log.info("Telegram ligado: esperando mensagens do seu robo")
         proximo = 0
@@ -192,12 +263,82 @@ class Caixa:
                 log.exception("Telegram: erro no audio")
                 self.responder(chat, f"Não consegui transcrever: {erro}")
                 return
+            if self._comando_especial(chat, texto):
+                return
             feito = self.entregar(texto, "áudio do Telegram")
             self.responder(chat, f"📝 {texto}\n\n→ {feito}")
             return
         texto = (msg.get("text") or "").strip()
         if texto and not texto.startswith("/"):
+            if self._comando_especial(chat, texto):
+                return
             self.responder(chat, "→ " + self.entregar(texto, "texto do Telegram"))
+
+    # --- comandos novos so do Telegram: print, "o que ta tocando", video curto e energia -----------------
+    def _comando_especial(self, chat: int, texto: str) -> bool:
+        """ "print", "print do monitor 2", "o que ta tocando", "grava 15 segundos do monitor 1",
+        "desligar"/"dormir"/"suspender"/"reiniciar" (com confirmacao) e "cancela". Devolve True se tratou."""
+        puro = normalizar(texto)
+        pendente = self._energia.get(chat)
+        if pendente and puro in ("cancela", "cancelar"):
+            sistema.cancelar_desligamento()
+            sistema.cancelar_suspensao()
+            self._energia.pop(chat, None)
+            self.responder(chat, "Cancelado. Nada vai acontecer.")
+            return True
+        if pendente and pendente["estado"] == "confirmando" and puro in ("sim", "sim confirmo", "confirmo", "isso"):
+            self._energia[chat] = {"estado": "contando", "acao": pendente["acao"]}
+            self._executar_energia(chat, pendente["acao"])
+            return True
+        achado = PADRAO_PRINT.match(puro)
+        if achado:
+            numero = int(achado.group("monitor")) if achado.group("monitor") else None
+            self._telegram_print(chat, numero)
+            return True
+        if PADRAO_TOCANDO.search(puro):
+            self.responder(chat, informacoes.o_que_esta_tocando(self.executor))
+            return True
+        video = self._pedido_de_video(puro)
+        if video:
+            monitor, segundos = video
+            threading.Thread(target=self._telegram_video, args=(chat, monitor, segundos), daemon=True).start()
+            return True
+        for acao, padrao in PADROES_ENERGIA:
+            if padrao.match(puro):
+                self._energia[chat] = {"estado": "confirmando", "acao": acao}
+                self.responder(chat, f"Tem certeza que quer {NOMES_ACAO_ENERGIA[acao]}? Responda: sim.")
+                return True
+        return False
+
+    @staticmethod
+    def _pedido_de_video(puro: str) -> tuple[int, int] | None:
+        """ "grava 15 segundos do monitor 1" -> (monitor, segundos). Sem numero de segundos: 15 (padrao)."""
+        if "grava" not in puro or "monitor" not in puro:
+            return None
+        m_monitor = re.search(r"monitor\s+(\d+)", puro)
+        if not m_monitor:
+            return None
+        m_segundos = re.search(r"(\d+)\s*segundos?", puro)
+        return int(m_monitor.group(1)), int(m_segundos.group(1)) if m_segundos else 15
+
+    def _telegram_print(self, chat: int, apenas: int | None) -> None:
+        prints = sistema.tirar_prints_por_monitor(apenas)
+        self.enviar_fotos(chat, [(p["arquivo"], p["descricao"]) for p in prints])
+
+    def _telegram_video(self, chat: int, monitor: int, segundos: int) -> None:
+        segundos = max(1, min(60, segundos))
+        self.responder(chat, f"Gravando {segundos} segundos do monitor {monitor}...")
+        arquivo = sistema.gravar_video_monitor(monitor, segundos)
+        self.enviar_video(chat, arquivo, f"Monitor {monitor}, {segundos} segundos")
+
+    def _executar_energia(self, chat: int, acao: str) -> None:
+        if acao == "desligar":
+            sistema.desligar_pc(30)
+        elif acao == "suspender":
+            sistema.suspender_pc(30)
+        else:
+            sistema.reiniciar_pc(30)
+        self.responder(chat, f"Ok, vou {NOMES_ACAO_ENERGIA[acao]} em 30 segundos. Pra cancelar, responda: cancela.")
 
     def _baixar_do_telegram(self, file_id: str) -> Path:
         info = self._api("getFile", espera=20, file_id=file_id)

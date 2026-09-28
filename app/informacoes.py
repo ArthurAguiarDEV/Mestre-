@@ -48,6 +48,40 @@ def noticias(quantidade: int = 3, assunto: str = "") -> list[str]:
         return []
 
 
+def o_que_esta_tocando(executor) -> str:
+    """Spotify (pelo título da janela), abas do YouTube (título, tocando/pausado, monitor) e a
+    janela ativa de cada monitor. Usado pelo comando de voz "o que tá tocando" e pelo Telegram."""
+    from . import sistema
+
+    partes = []
+    spotify = next((j for j in sistema.janelas_abertas()
+                    if j["exe"] == "spotify.exe" and j["titulo"].strip().lower() != "spotify"), None)
+    partes.append(f"No Spotify: {spotify['titulo']}." if spotify else "O Spotify não está tocando nada agora.")
+
+    try:
+        abas = executor._abas_abertas()
+    except Exception:
+        abas = []
+    youtube = [a for a in abas if "youtube.com/watch" in (a.get("url") or "")]
+    if youtube:
+        descricoes = []
+        for a in youtube:
+            situacao = "tocando" if a.get("audivel") else ("pausado" if a.get("video_pausado") else "parado")
+            monitor = None
+            try:
+                monitor = executor._monitor_da_aba(a, abas)
+            except Exception:
+                pass
+            onde = f", monitor {monitor}" if monitor else ""
+            descricoes.append(f"{a.get('titulo') or 'um vídeo'} ({situacao}{onde})")
+        partes.append("No YouTube: " + "; ".join(descricoes) + ".")
+
+    ativas = sistema.janela_ativa_por_monitor()
+    if ativas:
+        partes.append("Nas telas: " + "; ".join(f"monitor {n}: {t}" for n, t in sorted(ativas.items())) + ".")
+    return " ".join(partes)
+
+
 def pesquisar_web(termo: str, quantidade: int = 5) -> list[dict]:
     """Artigos na internet sobre o termo (busca do Google Noticias em RSS, gratis e sem cadastro):
     [{"titulo", "link", "resumo"}]. (Buscas "normais" gratis bloqueiam robos ou trazem resultados errados.)"""

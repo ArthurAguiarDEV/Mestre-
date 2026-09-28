@@ -24,3 +24,5 @@ torchaudio
 huggingface_hub   # baixa o modelo de voz do speechbrain
 speechbrain      # "responder so a minha voz": compara a voz com o cadastro (modelo de 85 MB, gratis, local)
 PySide6-Essentials  # avatar robo animado perto do relogio (gratis, LGPL; sem ele aparece a bolinha)
+imageio           # grava o video curto pedido pelo Telegram ("grava 15 segundos do monitor 1")
+imageio-ffmpeg    # ffmpeg embutido pro imageio gravar em .mp4 (nao precisa instalar nada a parte)

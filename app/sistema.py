@@ -321,6 +321,75 @@ def tirar_print() -> Path:
     return arquivo
 
 
+def tirar_prints_por_monitor(apenas: int | None = None) -> list[dict]:
+    """Um print por monitor (JPEG, pra caber no Telegram): [{"numero", "descricao", "arquivo"}].
+    apenas=2 -> so o print do monitor 2. Sem monitores detectados: um print da tela inteira."""
+    from datetime import datetime
+
+    pasta = Path.home() / "Pictures" / "Mestre"
+    pasta.mkdir(parents=True, exist_ok=True)
+    lista = monitores() or [{"numero": 1, "x": 0, "y": 0, "largura": 0, "altura": 0}]
+    if apenas:
+        lista = [m for m in lista if m["numero"] == apenas] or lista[:1]
+    agora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    saida = []
+    for m in lista:
+        arquivo = pasta / f"print_{agora}_monitor{m['numero']}.jpg"
+        if SIMULADO:
+            log.info("[simulado] print do monitor %s em %s", m["numero"], arquivo)
+        else:
+            from PIL import ImageGrab
+
+            bbox = (m["x"], m["y"], m["x"] + m["largura"], m["y"] + m["altura"]) if m.get("largura") else None
+            ImageGrab.grab(bbox=bbox, all_screens=True).convert("RGB").save(arquivo, "JPEG", quality=80)
+        saida.append({"numero": m["numero"], "descricao": f"Monitor {m['numero']}", "arquivo": arquivo})
+    return saida
+
+
+def janela_ativa_por_monitor() -> dict[int, str]:
+    """O titulo da janela mais na frente de cada monitor (para "o que tá tocando")."""
+    ativa: dict[int, str] = {}
+    for j in janelas_abertas():
+        if j.get("monitor") and j["monitor"] not in ativa:
+            ativa[j["monitor"]] = j["titulo"]
+    return ativa
+
+
+def gravar_video_monitor(numero: int | None, segundos: int = 15, fps: int = 8) -> Path:
+    """Grava a tela de um monitor por alguns segundos (padrao 15, max 60) e devolve o .mp4."""
+    from datetime import datetime
+
+    segundos = max(1, min(60, int(segundos or 15)))
+    pasta = Path.home() / "Pictures" / "Mestre"
+    pasta.mkdir(parents=True, exist_ok=True)
+    arquivo = pasta / f"video_{datetime.now():%Y-%m-%d_%H-%M-%S}_monitor{numero or 1}.mp4"
+    if SIMULADO:
+        log.info("[simulado] grava %ss do monitor %s em %s", segundos, numero, arquivo)
+        return arquivo
+    import numpy as np
+    import imageio.v2 as imageio
+    from PIL import ImageGrab
+
+    LARGURA_MAX = 960
+    m = monitor(numero)
+    bbox = (m["x"], m["y"], m["x"] + m["largura"], m["y"] + m["altura"]) if m else None
+    escritor = imageio.get_writer(str(arquivo), fps=fps, codec="libx264", quality=6, macro_block_size=None)
+    try:
+        intervalo = 1.0 / fps
+        fim = time.time() + segundos
+        while time.time() < fim:
+            inicio = time.time()
+            img = ImageGrab.grab(bbox=bbox, all_screens=True)
+            if img.width > LARGURA_MAX:
+                proporcao = LARGURA_MAX / img.width
+                img = img.resize((LARGURA_MAX, max(2, int(img.height * proporcao))))
+            escritor.append_data(np.array(img.convert("RGB")))
+            time.sleep(max(0, intervalo - (time.time() - inicio)))
+    finally:
+        escritor.close()
+    return arquivo
+
+
 def acordar_tela() -> None:
     """Mexe o mouse 1 pixel e aperta Shift: o monitor liga."""
     if SIMULADO:
@@ -357,6 +426,33 @@ def reiniciar_pc(segundos: int = 60) -> None:
 
 def cancelar_desligamento() -> None:
     _executar(["shutdown", "/a"])
+
+
+_temporizador_suspensao = None   # threading.Timer pendente (suspender_pc), pra poder cancelar
+
+
+def suspender_pc(segundos: int = 30) -> None:
+    """Suspende (dorme) o PC depois de alguns segundos. Cancelavel com cancelar_suspensao()."""
+    global _temporizador_suspensao
+    cancelar_suspensao()
+    if SIMULADO:
+        log.info("[simulado] suspender o pc em %s s", segundos)
+        return
+    import threading
+
+    def _agora() -> None:
+        ctypes.windll.powrprof.SetSuspendState(False, True, False)
+
+    _temporizador_suspensao = threading.Timer(segundos, _agora)
+    _temporizador_suspensao.daemon = True
+    _temporizador_suspensao.start()
+
+
+def cancelar_suspensao() -> None:
+    global _temporizador_suspensao
+    if _temporizador_suspensao:
+        _temporizador_suspensao.cancel()
+        _temporizador_suspensao = None
 
 
 def abrir_site(url: str) -> None:

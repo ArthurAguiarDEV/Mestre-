@@ -245,6 +245,7 @@ print("NOMES", [r["nome"] for r in c.get("rotinas") or []])
 FLUXOS = r"""
 import json, os, time, logging
 logging.basicConfig(level=logging.WARNING)
+from pathlib import Path
 from app.config import carregar_config
 from app.comandos import Executor, ARQUIVO_MELHORIAS, ARQUIVO_REVISAO
 from app.voz import Voz
@@ -737,6 +738,76 @@ ok("Mensagem do Telegram." in ditos and "Telegram" in estado.ler()["aviso"] and 
 caixa._mensagem_telegram({"chat": {"id": 999}, "text": "Mestre, abre o primeiro vídeo"})
 ok(segredos.ler("telegram_chat") == "111" and ("abrir", "https://youtube.com/watch?v=3") in yt.feito
    and not any(c == 999 for c, _ in respostas_tg), "Telegram: o 1º chat vira o seu, executa comando e ignora estranhos")
+
+# --- v25: novidades do Telegram (print, o que tá tocando, vídeo curto, energia com confirmação) ------------
+_monitores_tg = sistema.monitores
+sistema.monitores = lambda: [{"numero": 1, "x": 0, "y": 0, "largura": 1920, "altura": 1080, "marca": "", "hz": 0},
+                             {"numero": 2, "x": 1920, "y": 0, "largura": 1920, "altura": 1080, "marca": "", "hz": 0}]
+fotos_enviadas = []
+caixa.enviar_fotos = lambda chat, itens: fotos_enviadas.append((chat, itens))
+respostas_tg.clear()
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "print"})
+ok(fotos_enviadas and fotos_enviadas[-1][0] == 111 and len(fotos_enviadas[-1][1]) == 2,
+   f"Telegram “print”: um print por monitor, sem precisar da palavra de ativação ({fotos_enviadas})")
+fotos_enviadas.clear()
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "print do monitor 2"})
+ok(fotos_enviadas and len(fotos_enviadas[-1][1]) == 1, f"Telegram “print do monitor 2”: só o print daquele monitor ({fotos_enviadas})")
+
+ex.caixa = caixa
+fotos_enviadas.clear()
+diga("manda um print no telegram", "Manda um print no Telegram")
+ok(fotos_enviadas and fotos_enviadas[-1][0] == 111, f"Falando no PC “manda um print no Telegram” ({fotos_enviadas})")
+
+_janelas_tg = sistema.janelas_abertas
+sistema.janelas_abertas = lambda: [{"hwnd": 1, "titulo": "Sunset Blvd - Artista X", "exe": "spotify.exe", "monitor": 1},
+                                   {"hwnd": 2, "titulo": "Editor de Código", "exe": "code.exe", "monitor": 2}]
+ex._abas_abertas = lambda: [{"id": 9, "janela": 1, "titulo": "Um Vídeo - YouTube",
+                             "url": "https://www.youtube.com/watch?v=9", "audivel": True, "video_pausado": None,
+                             "ativa": True, "janela_x": 0, "janela_y": 0, "janela_largura": 800, "janela_altura": 600}]
+respostas_tg.clear()
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "o que ta tocando"})
+resposta_tocando = respostas_tg[-1][1] if respostas_tg else ""
+ok("Sunset Blvd" in resposta_tocando and "Um Vídeo" in resposta_tocando and "tocando" in resposta_tocando
+   and "Editor de Código" in resposta_tocando,
+   f"Telegram “o que tá tocando”: Spotify, YouTube e a janela ativa de cada monitor ({resposta_tocando!r})")
+_, falas_toc = diga("o que ta tocando", "O que tá tocando")
+ok(any("Sunset Blvd" in f for f in falas_toc), f"Falando no PC “o que tá tocando” responde falando ({falas_toc})")
+sistema.janelas_abertas = _janelas_tg
+
+videos_enviados = []
+caixa.enviar_video = lambda chat, caminho, legenda="": videos_enviados.append((chat, caminho, legenda))
+_gravar_video = sistema.gravar_video_monitor
+sistema.gravar_video_monitor = lambda numero, segundos=15, fps=8: Path(f"video_fake_m{numero}_{segundos}s.mp4")
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "grava 5 segundos do monitor 1"})
+time.sleep(0.5)
+ok(videos_enviados and videos_enviados[-1][1].name == "video_fake_m1_5s.mp4",
+   f"Telegram “grava N segundos do monitor X”: grava e manda o vídeo ({videos_enviados})")
+sistema.gravar_video_monitor = _gravar_video
+
+comandos_energia = []
+_desligar_pc, _suspender_pc, _reiniciar_pc = sistema.desligar_pc, sistema.suspender_pc, sistema.reiniciar_pc
+_cancelar_desl, _cancelar_susp = sistema.cancelar_desligamento, sistema.cancelar_suspensao
+sistema.desligar_pc = lambda s=30: comandos_energia.append(("desligar", s))
+sistema.suspender_pc = lambda s=30: comandos_energia.append(("suspender", s))
+sistema.reiniciar_pc = lambda s=30: comandos_energia.append(("reiniciar", s))
+sistema.cancelar_desligamento = lambda: comandos_energia.append(("cancelar_desligamento",))
+sistema.cancelar_suspensao = lambda: comandos_energia.append(("cancelar_suspensao",))
+respostas_tg.clear()
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "desligar"})
+ok(not comandos_energia and "certeza" in respostas_tg[-1][1].lower(),
+   f"Telegram “desligar”: pede confirmação antes de fazer qualquer coisa ({respostas_tg[-1:]})")
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "sim"})
+ok(comandos_energia == [("desligar", 30)], f"Depois do “sim”: desliga com aviso de 30 s ({comandos_energia})")
+comandos_energia.clear()
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "dormir"})
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "cancela"})
+ok(("cancelar_desligamento",) in comandos_energia and ("cancelar_suspensao",) in comandos_energia
+   and not any(c[0] == "suspender" for c in comandos_energia),
+   f"“cancela” antes do “sim”: cancela o pedido, nada acontece ({comandos_energia})")
+sistema.desligar_pc, sistema.suspender_pc, sistema.reiniciar_pc = _desligar_pc, _suspender_pc, _reiniciar_pc
+sistema.cancelar_desligamento, sistema.cancelar_suspensao = _cancelar_desl, _cancelar_susp
+sistema.monitores = _monitores_tg
+del ex.caixa
 
 # --- fila do "pensando": 3 pedidos seguidos para a IA lenta + comando simples no meio, nada trava ---------
 class IAFila(IALenta):

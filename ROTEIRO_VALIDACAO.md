@@ -14,6 +14,23 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Telegram: print, "o que tá tocando", vídeo curto e ligar/desligar à distância
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (Telegram) mande `print` pro robô | Chegam as fotos, uma por monitor, com legenda "Monitor N" | (Telegram) |
+| (Telegram) mande `print do monitor 2` | Chega só o print daquele monitor | (Telegram) |
+| `Mestre, manda um print no Telegram` | Fala "Tirando o print..." e chegam as fotos no seu Telegram | `_cmd_print_telegram` |
+| (Telegram) mande `o que tá tocando` | Responde com o que toca no Spotify, cada aba do YouTube (tocando/pausado, monitor) e a janela ativa de cada tela | (Telegram) |
+| `Mestre, o que tá tocando` | Fala a mesma informação em voz alta | `_cmd_tocando` |
+| (Telegram) mande `grava 15 segundos do monitor 1` | Avisa que está gravando e, depois, manda o vídeo daquele monitor | (Telegram) |
+| (Telegram) mande `desligar` | Pergunta "Tem certeza que quer desligar o computador? Responda: sim." e não faz nada ainda | (Telegram) |
+| (Telegram) responda `sim` | Avisa que vai desligar em 30 segundos | (Telegram) |
+| (Telegram) mande `desligar` de novo e, antes do `sim`, mande `cancela` | Cancela, nada acontece | (Telegram) |
+| (Telegram) mande `dormir` (ou `suspender`) e confirme com `sim` | O PC entra em suspensão depois de 30 segundos (cancelável com `cancela`) | (Telegram) |
+| (Telegram) mande `reiniciar` e confirme com `sim` | O PC reinicia depois de 30 segundos (cancelável com `cancela`) | (Telegram) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Itens novos do Telegram (print, o que tá tocando, vídeo, energia) OK | (automático) |
+
 ### Avatar robô na área de trabalho + logo "Onda"
 
 | Frase | O que deve acontecer | Comando esperado |
@@ -175,3 +192,4 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | `Mestre, repete` | Repete a última resposta | `_cmd_historico` |
 | `Mestre, lembra que eu trabalho de manhã` | Guarda o fato pra lembrar depois | `_cmd_memoria` |
 | `Mestre, abre o painel` | Abre a janela do painel | `_cmd_painel` |
+| (painel) Sistema > Validar atualização | Lê este roteiro e vai perguntando cada frase, com OUVI/ENTENDI/FIZ | (painel) |

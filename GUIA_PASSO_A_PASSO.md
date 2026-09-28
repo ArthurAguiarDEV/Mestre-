@@ -42,10 +42,11 @@
 33. **Etapa 30** (versão 12): [Voz Kokoro e Azure, modo descanso, streamings, juntar janelas, áudios do celular](#etapa-30--versão-12)
 34. **Etapa 31** (versão 13): [Painel novo, streamings digitando na busca, tela certa do YouTube, IA sem "pode falar", vozes Natural e ElevenLabs, aviso do Telegram, desligar na hora, validar a atualização no painel](#etapa-31--versão-13)
 35. **Etapa 32** (versão 2.5): [Painel repaginado: menu de ícones, Início em cartões, voz em abas com reserva](#etapa-32--versão-25)
-36. [Personalizar: canais, programas, sites e rotinas](#personalizar)
-37. [Lista de todos os comandos de voz](#lista-de-comandos)
-38. [Problemas comuns e soluções](#problemas-comuns)
-39. [Próximos passos: levar para o celular](#próximos-passos)
+36. **Etapa 33**: [Novidades do Telegram: print, "o que tá tocando", vídeo curto, ligar/desligar à distância](#etapa-33-novidades-do-telegram-print-o-que-tá-tocando-vídeo-curto-e-energia-à-distância)
+37. [Personalizar: canais, programas, sites e rotinas](#personalizar)
+38. [Lista de todos os comandos de voz](#lista-de-comandos)
+39. [Problemas comuns e soluções](#problemas-comuns)
+40. [Próximos passos: levar para o celular](#próximos-passos)
 
 ---
 
@@ -1499,6 +1500,62 @@ A partir daqui a versão tem ponto: depois da 13 vem a **2.5** (o painel mostra 
   - **Usar como reserva**: se a voz ativa falhar (sem internet, sem chave, ainda carregando), ele fala com a reserva. Se a reserva também falhar, ainda tenta a Kokoro e a Edge.
 - Embaixo, **Frase de teste e ajustes**: a frase, **▶ Ouvir** (com a voz ativa), velocidade, tom e fala fluida (valem para todas).
 - Mudou? **Salvar e reiniciar**.
+
+---
+
+## Etapa 33: Novidades do Telegram (print, "o que tá tocando", vídeo curto e energia à distância)
+
+Agora o seu robô do Telegram (o mesmo da Etapa 31, "Caminho 2: Telegram") faz mais coisa. Tudo
+sem precisar falar "Assessor": é só mandar a mensagem direto pro robô, de qualquer lugar.
+
+### 33.1 Print da tela
+- Mande **`print`**: chegam as fotos, uma por monitor, cada uma com a legenda "Monitor N".
+- Mande **`print do monitor 2`**: chega só o print daquele monitor.
+- Falando no PC: *"Assessor, manda um print no Telegram"*.
+
+### 33.2 "O que tá tocando?"
+- Mande **`o que tá tocando`**: ele responde com a música do Spotify, cada aba do YouTube aberta
+  (título, se está tocando ou pausada, e em qual monitor) e a janela ativa de cada tela.
+- Falando no PC: *"Assessor, o que tá tocando"* — ele fala a mesma resposta.
+
+### 33.3 Vídeo curto
+- Mande **`grava 15 segundos do monitor 1`**: ele avisa que está gravando e, no final, manda o
+  vídeo daquele monitor. Sem dizer quanto tempo, grava 15 segundos (máximo 60).
+
+### 33.4 Desligar, suspender ou reiniciar pelo Telegram
+- Mande **`desligar`**, **`dormir`** (ou `suspender`) ou **`reiniciar`**.
+- Ele sempre pergunta primeiro: *"Tem certeza que quer... Responda: sim."* Nada acontece até você
+  responder **`sim`**.
+- Depois do `sim`, ele avisa que vai fazer em **30 segundos**. Pra cancelar dentro desses 30
+  segundos (ou enquanto ele só está esperando a confirmação), mande **`cancela`**.
+- No modo de teste (`MESTRE_SIMULAR=1`) nada acontece de verdade — só aparece no diário.
+
+### 33.5 Ligar o PC de fora de casa
+Essas novidades só funcionam com o PC **ligado**. Se você desligou pelo Telegram e quiser ligar
+de novo estando fora de casa, o jeito mais simples e barato é uma **tomada inteligente Wi-Fi**:
+
+1. **Compre uma tomada inteligente Wi-Fi** (tem barata, com app grátis **Tuya**, **Smart Life** ou
+   **Positivo Casa Inteligente**). Ligue o PC nela.
+2. **Na BIOS do PC**, procure a opção **"Restore on AC Power Loss"** (às vezes chamada de "AC Back
+   Function", "Power Loss Recall" ou "After Power Loss" — o nome muda por fabricante) e deixe em
+   **"Power On"** (ligado). Assim, quando a tomada volta a dar energia, o PC liga sozinho, sem
+   precisar apertar o botão.
+3. **No Windows**, se o PC não ligar direito depois de ficar sem energia, desative a
+   **"Inicialização Rápida"**: Painel de Controle > Opções de Energia > "Escolher a função dos
+   botões de energia" > "Alterar configurações não disponíveis no momento" > desmarque
+   **"Ativar inicialização rápida"**.
+4. Como o Assessor já abre sozinho com o Windows (atalho de inicialização, Etapa 7), o fluxo fica:
+   **desligar pelo Telegram** → esperar **1 minuto** (pra garantir que desligou de verdade) →
+   **desligar e ligar a tomada** pelo app do celular → o PC liga e o Assessor abre sozinho.
+
+> ⚠️ **Nunca corte a tomada com o PC ligado** — desligue sempre pelo Telegram (ou normalmente)
+> antes de mexer na tomada, senão arquivos abertos podem se perder.
+
+**Alternativa (sem comprar nada): Wake-on-LAN.** Se o seu roteador permitir "acordar" o PC pela
+rede, dá pra ligar sem tomada inteligente. O roteador da Vivo Fibra (`192.168.15.1`) geralmente
+**não** tem essa opção no menu dele, mas o PC (ligado por cabo) tem placa de rede Realtek, que
+**suporta** Wake-on-LAN — então se um dia você trocar de roteador por um que tenha essa função, o
+PC já está pronto para usar.
 
 ---
 

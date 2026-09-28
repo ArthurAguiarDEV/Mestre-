@@ -60,6 +60,7 @@ from .video import VideoMixin
 from .midia import MidiaMixin
 from .info import InfoMixin
 from .janelas import JanelasMixin
+from .celular import CelularMixin
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ def saudacao_do_horario() -> str:
 
 # Os comandos de cada assunto estao nos mixins (veja a lista no topo); aqui fica o nucleo.
 class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixin, AnotacoesMixin,
-               VideoMixin, MidiaMixin, InfoMixin, JanelasMixin):
+               VideoMixin, MidiaMixin, InfoMixin, JanelasMixin, CelularMixin):
     ORDEM = [
         "_cmd_pensamento", "_cmd_descanso", "_cmd_versao", "_cmd_conversinha", "_cmd_exportar", "_cmd_historico", "_cmd_memoria", "_cmd_ensinar_rotina", "_cmd_rotinas", "_cmd_encerrar", "_cmd_reiniciar",
         "_cmd_painel", "_cmd_ajuda", "_cmd_ditado", "_cmd_projeto", "_cmd_feedback", "_cmd_obrigado",
@@ -80,7 +81,8 @@ class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixi
         "_cmd_agente_ipm", "_cmd_area_transferencia", "_cmd_juntar", "_cmd_mover", "_cmd_volume", "_cmd_midia", "_cmd_janela",
         "_cmd_youtube_controle", "_cmd_spotify", "_cmd_youtube", "_cmd_streaming", "_cmd_clicar",
         "_cmd_clima", "_cmd_noticias", "_cmd_hora_data", "_cmd_tela", "_cmd_desligar_pc",
-        "_cmd_lembrete", "_cmd_notas", "_cmd_tocar", "_cmd_pesquisa", "_cmd_abrir", "_cmd_esquecer",
+        "_cmd_lembrete", "_cmd_notas", "_cmd_tocar", "_cmd_pesquisa", "_cmd_print_telegram", "_cmd_tocando",
+        "_cmd_abrir", "_cmd_esquecer",
     ]
 
     def __init__(self, cfg: dict, voz: Voz, cerebro: Cerebro, vocab: Vocabulario | None = None):
