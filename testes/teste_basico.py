@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # teste sem janela preta de console
 import sys
 import tempfile
 import textwrap
@@ -32,14 +33,14 @@ def rodar(pasta: Path, codigo: str, espera: int = 300) -> tuple[int, str]:
     # (em arquivo: pelo "-c" o trecho grande passa do limite de linha de comando do Windows)
     script = pasta / "_trecho_teste.py"
     script.write_text(textwrap.dedent(codigo), encoding="utf-8")
-    r = subprocess.run([sys.executable, str(script)], cwd=str(pasta), capture_output=True,
+    r = subprocess.run([sys.executable, str(script)], creationflags=SEM_JANELA, cwd=str(pasta), capture_output=True,
                        text=True, encoding="utf-8", errors="replace", timeout=espera,
                        env={**os.environ, "MESTRE_SIMULAR": "1", "PYTHONIOENCODING": "utf-8"})
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
 def comando(pasta: Path, frase: str) -> str:
-    r = subprocess.run([sys.executable, "-m", "app.main", "--mudo", "--comando", frase], cwd=str(pasta),
+    r = subprocess.run([sys.executable, "-m", "app.main", "--mudo", "--comando", frase], creationflags=SEM_JANELA, cwd=str(pasta),
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
                        env={**os.environ, "MESTRE_SIMULAR": "1", "PYTHONIOENCODING": "utf-8"})
     return (r.stdout or "") + (r.stderr or "")
@@ -1184,7 +1185,7 @@ def main() -> int:
             conferir(False, "Rotina falada: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Vocabulário: muitos jeitos de pedir]")
-        r = subprocess.run([sys.executable, "-m", "testes.frases"], cwd=str(pasta), capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-m", "testes.frases"], creationflags=SEM_JANELA, cwd=str(pasta), capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=300,
                            env={**os.environ, "MESTRE_SIMULAR": "1", "PYTHONIOENCODING": "utf-8"})
         resumo = next((l for l in r.stdout.splitlines() if l.startswith("VOCABULARIO")), r.stdout[-300:] + r.stderr[-500:])

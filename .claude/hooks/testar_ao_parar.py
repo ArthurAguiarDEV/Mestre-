@@ -8,6 +8,7 @@ Para desligar numa sessao: defina MESTRE_SEM_TESTE_AUTO=1.
 import json
 import os
 import subprocess
+SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # teste sem janela preta de console
 import sys
 import time
 from pathlib import Path
@@ -45,7 +46,7 @@ def main() -> None:
     if not python.exists():
         return
     try:
-        r = subprocess.run([str(python), "-m", "testes.teste_basico"], cwd=str(PROJETO), capture_output=True,
+        r = subprocess.run([str(python), "-m", "testes.teste_basico"], creationflags=SEM_JANELA, cwd=str(PROJETO), capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=840,
                            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     except subprocess.TimeoutExpired:

@@ -952,7 +952,7 @@ def parar_mestre() -> bool:
 
 def parar_pid(pid: str) -> None:
     comando = ["taskkill", "/PID", pid, "/F"] if EH_WINDOWS else ["kill", pid]
-    subprocess.run(comando, capture_output=True, check=False)
+    subprocess.run(comando, capture_output=True, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def reiniciar_mestre() -> None:
@@ -973,4 +973,4 @@ def _executar(comando: list[str]) -> None:
     if SIMULADO:
         log.info("[simulado] %s", " ".join(comando))
         return
-    subprocess.run(comando, check=False)
+    subprocess.run(comando, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
