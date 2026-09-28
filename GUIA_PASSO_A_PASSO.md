@@ -661,6 +661,34 @@ Agora ele pode **comparar cada pedido com a sua voz** e ignorar as outras. Roda 
 - **Áudios do celular/Telegram** não passam por essa verificação (o Telegram já sabe que é você).
 - Quer desligar? Desligue a chave (ou **"Apagar cadastro"**) e salve.
 
+### 17.2 Detector local da palavra (opcional, começa desligado)
+
+Hoje o Whisper transcreve **toda** frase que passa do limite de volume, inclusive o vídeo que está tocando
+(nos seus registros, 2 de cada 3 frases transcritas não tinham "Assessor"). O detector local é um "ouvido"
+bem leve (uns 2% de UM núcleo do processador) que procura só a palavra. Ligado, só vai para o Whisper a frase
+em que ele ouviu "Assessor": menos processador e placa de vídeo gastos à toa e menos chance de o vídeo disparar
+um comando. Dentro da conversa, na espera depois de "Assessor", no ditado e no modo descanso ele não filtra nada.
+
+**1. Treinar (uma vez, uns 20 a 40 minutos, grátis, no seu PC):**
+1. Rode o **`ferramentas\15_treinar_palavra.bat`**.
+2. Ele pergunta se você quer **gravar a sua voz falando a palavra 30 vezes** (responda `s`: é o que mais
+   melhora o acerto; varie o jeito: normal, baixo, alto, rápido, longe do microfone, com "ô"/"e aí" antes).
+3. Ele pergunta se quer **gravar 5 minutos do ambiente** com um vídeo tocando (responda `s` e NÃO fale a
+   palavra nesse tempo: ele aprende o que ignorar).
+4. O resto é sozinho: vozes do PC (Kokoro) e da internet (Edge) falando a palavra de vários jeitos, frases que o
+   microfone já ouviu sem a palavra, ruídos. No fim aparece quanto ele acerta nas **suas gravações reais**.
+   O modelo fica em `modelos\palavra\assessor.npz` (se mudar a palavra de ativação, treine de novo).
+
+**2. Ligar:** painel > **Áudio** > **"Detector local da palavra"** > ligar > **Salvar e reiniciar**.
+A linha embaixo diz se o modelo está pronto ou "Modelo não encontrado".
+
+**3. Ajustar:**
+- Ele não te ouve (você chama e nada)? Puxe **"Exigência do detector"** para a esquerda (ex.: 0,30) ou treine de
+  novo com mais gravações suas. Os descartes aparecem no `memoria\ouvido.jsonl` com o motivo
+  "sem a palavra (detector local)" e a nota dele.
+- O vídeo ainda passa? Puxe para a direita (ex.: 0,70). O Whisper continua conferindo a palavra depois.
+- Deu problema? Desligue a chave: volta ao jeito de sempre.
+
 ---
 
 ## Etapa 18: O indicador na tela

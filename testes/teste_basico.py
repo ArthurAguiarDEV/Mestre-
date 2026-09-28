@@ -1305,6 +1305,68 @@ tocar(tom(1.5, freq=400)); tocar(silencio(1.0))
 ok(ch == [] and any(r.get("motivo") == "voz não reconhecida" for r in ouvidas(inicio)),
    "Captação: outra voz é recusada e registrada com o motivo")
 locutor.apagar_impressao()
+
+# 6) Detector local da palavra (simulado: tom de 300 Hz = "falou a palavra")
+from app import palavra_local
+class DetectorFalso:
+    limiar = 0.5
+    def __init__(self, quebrado=False): self.quebrado, self.blocos = quebrado, 0
+    def ouvir(self, bloco):
+        if self.quebrado: raise RuntimeError("quebrou")
+        self.blocos += 1
+        a = np.frombuffer(bloco, dtype=np.int16).astype(np.float32)
+        if not a.any(): return 0.0
+        freq = np.argmax(np.abs(np.fft.rfft(a))) * TAXA / len(a)
+        return 0.9 if 250 < freq < 350 else 0.1
+def contar(o):
+    o.transcricoes = 0
+    orig = o.transcritor.transcrever
+    def t(audio, **k):
+        o.transcricoes += 1; return orig(audio, **k)
+    o.transcritor.transcrever = t
+inicio = time.time()
+o, tocar, ch = novo(["Assessor, abre o YouTube."]); o.detector = DetectorFalso(); contar(o)
+tocar(tom(1.5, freq=300)); tocar(silencio(1.0))
+ok(o.transcricoes == 1 and len(ch) == 1 and ch[0][0] == "abre o youtube",
+   f"Detector: ligado e ouviu a palavra -> a frase vai ao Whisper e é executada {ch}")
+ok(any(r.get("nota_detector") == 0.9 for r in ouvidas(inicio)), "Detector: a nota dele fica no ouvido.jsonl")
+inicio = time.time()
+o, tocar, ch = novo(["Bom dia pessoal."]); o.detector = DetectorFalso(); contar(o)
+tocar(tom(1.5)); tocar(silencio(1.0))
+ok(o.transcricoes == 0 and ch == [] and any(r.get("motivo") == "sem a palavra (detector local)" for r in ouvidas(inicio)),
+   "Detector: sem a palavra a frase nem vai ao Whisper (descarte registrado)")
+o, tocar, ch = novo(["Abre o YouTube."]); o.detector = DetectorFalso(); contar(o)
+estado.atualizar(conversa_ate=time.time() + 30); o._conversa_ate = time.time() + 30
+tocar(tom(1.5)); tocar(silencio(1.0))
+ok(o.transcricoes == 1 and len(ch) == 1, "Detector: na janela de conversa tudo vai ao Whisper (sem precisar da palavra)")
+o, tocar, ch = novo(["Bora voltar a trabalhar."]); o.detector = DetectorFalso(); contar(o)
+estado.atualizar(descanso=True)
+tocar(tom(1.5)); tocar(silencio(1.0))
+estado.atualizar(descanso=False)
+ok(o.transcricoes == 1, "Detector: no modo descanso não filtra ('bora voltar a trabalhar' continua acordando)")
+o, tocar, ch = novo(["Assessor.", "Abre o YouTube."]); o.detector = DetectorFalso(); contar(o)
+tocar(tom(0.6, freq=300)); tocar(silencio(2.0)); tocar(tom(1.2)); tocar(silencio(1.5))
+ok(ch == [("abre o youtube", "Assessor. Abre o YouTube.", False)],
+   f"Detector: 'Assessor' + pausa + comando (sem a palavra) continua virando uma frase só {ch}")
+o, tocar, ch = novo(["Bom dia pessoal.", "Assessor, abre o YouTube."]); o.detector = DetectorFalso(quebrado=True); contar(o)
+tocar(tom(1.5)); tocar(silencio(1.0)); tocar(tom(1.5)); tocar(silencio(1.0))
+ok(o.detector is None and o.transcricoes == 2 and len(ch) == 1, "Detector: se ele der erro, desliga e o Whisper ouve tudo")
+# ligado sem modelo / desligado -> None (o Ouvido segue o fluxo de sempre)
+d, motivo = palavra_local.carregar({"ouvido": {"detector_palavra": True, "detector_modelo": "modelos/palavra/nao_existe.npz"}})
+pronto, texto = palavra_local.situacao({"ouvido": {"detector_palavra": True, "detector_modelo": "modelos/palavra/nao_existe.npz"}})
+ok(d is None and not pronto and "não encontrado" in texto, f"Detector: ligado sem modelo fica indisponível e avisa ({texto[:40]})")
+ok(palavra_local.carregar({})[0] is None and palavra_local.opcoes({})[0] is False and palavra_local.opcoes({})[2] == 0.5,
+   "Detector: config antigo = desligado, exigência 0.5")
+ok(palavra_local.nome_arquivo("Assessor") == "assessor.npz" and palavra_local.nome_arquivo("Jarvis") == "jarvis.npz",
+   "Detector: o arquivo do modelo segue a palavra escolhida")
+o, tocar, ch = novo(["Bom dia pessoal.", "Assessor, abre o YouTube."]); contar(o)   # (detector None = sem modelo/desligado)
+tocar(tom(1.5)); tocar(silencio(1.0)); tocar(tom(1.5)); tocar(silencio(1.0))
+ok(o.transcricoes == 2 and len(ch) == 1, "Detector: desligado/sem modelo = fluxo de sempre (Whisper ouve tudo)")
+rng = np.random.default_rng(5)
+pesos = {"media": np.zeros(1536), "desvio": np.ones(1536), "n": np.array(16), "w1": rng.normal(size=(1536, 4)),
+         "b1": np.zeros(4), "w2": rng.normal(size=(4, 1)), "b2": np.zeros(1)}
+notas = palavra_local.Classificador(pesos).notas(rng.normal(size=(3, 16, 96)))
+ok(notas.shape == (3,) and bool(((notas >= 0) & (notas <= 1)).all()), "Detector: a rede em numpy dá notas de 0 a 1")
 print("FIM_CAPTACAO")
 """
 

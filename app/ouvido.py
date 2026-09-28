@@ -12,7 +12,10 @@
 6. Enquanto ele FALA (a fala toca em segundo plano), o microfone continua ouvindo, mas so vale frase que
    COMECA com a palavra de ativacao (o resto e o eco da propria voz: descartado com motivo "falando").
    Essa frase corta a fala na hora: "Assessor, para" so para; "Assessor, abre o Spotify" para e executa.
-7. Toda frase descartada vai para memoria/ouvido.jsonl com o `motivo` (curta demais, transcricao vazia,
+7. Detector local da palavra (opcional, `ouvido > detector_palavra`, app/palavra_local.py): ouve cada bloco e, fora
+   da conversa/espera/ditado/descanso, so manda ao Whisper a frase em que ele ouviu a palavra (o resto e
+   descartado com motivo "sem a palavra (detector local)", sem gastar o Whisper). Sem modelo: fluxo de sempre.
+8. Toda frase descartada vai para memoria/ouvido.jsonl com o `motivo` (curta demais, transcricao vazia,
    sem a palavra, voz nao reconhecida, cortada pela voz do assistente, falando...).
 """
 import json
@@ -21,8 +24,9 @@ import queue
 import re
 import threading
 import time
+from collections import deque
 
-from . import estado, locutor
+from . import estado, locutor, palavra_local
 from .audio import BLOCO, TAXA, Segmentador, Transcritor, aplicar_ganho, guardar_diagnostico, nivel, sugerir_limiar
 from .config import caminho_do_projeto, palavras_ativacao
 from .texto import extrair_comando, frase_de_volta, normalizar, parecida
@@ -36,6 +40,7 @@ class Ouvido:
     voz = None
     interromper = True
     espera_cont = 1.5
+    detector = None              # palavra_local.Detector (opcional): None = Whisper ouve tudo, como sempre
 
     def __init__(self, cfg: dict, voz: Voz):
         self.cfg = cfg
@@ -69,6 +74,13 @@ class Ouvido:
 
         # Responder so a voz do dono (painel > Audio > Minha voz). Carrega em segundo plano.
         self.verificador = locutor.Verificador.do_config(cfg)
+
+        # Detector local da palavra (painel > Audio). Desligado/sem modelo: None (fluxo de sempre).
+        try:
+            self.detector, self.detector_motivo = palavra_local.carregar(cfg)
+        except Exception as erro:
+            log.warning("Detector da palavra indisponível (%s)", erro)
+            self.detector, self.detector_motivo = None, str(erro)
 
         self.transcritor = Transcritor(o.get("modelo_whisper", "small"), o.get("precisao", "equilibrado"),
                                        o.get("dispositivo", "auto"), palavras_de_dica(cfg), palavra=self.variacoes[0])
@@ -141,6 +153,8 @@ class Ouvido:
         self._blocos = 0                     # relogio do audio (1 bloco = 0,1 s)
         self._seg_eco: Segmentador | None = None   # frases gravadas enquanto ELE fala
         self._resto_conversa: float | None = None  # janela de conversa congelada enquanto ele fala
+        self._notas: deque = deque(maxlen=1200)   # nota do detector da palavra por bloco (ultimos 120 s)
+        self._inicio_frase = 0                     # bloco em que a frase atual comecou
 
     def _laco(self, fila: queue.Queue, seg: Segmentador, ao_ouvir_comando, deve_continuar) -> None:
         while deve_continuar():
@@ -179,6 +193,7 @@ class Ouvido:
             if estado.ler()["nome"] != "pausado":
                 estado.definir("pausado")
             return
+        self._escutar_palavra(bloco)
         if eco:   # ele esta falando (ou acabou de falar)
             if seg.falando and seg.duracao_atual >= 0.8:   # voce falava e ele comecou a falar por cima
                 self._descartar("cortada: o assistente começou a falar", audio_seg=round(seg.duracao_atual, 1))
@@ -202,6 +217,7 @@ class Ouvido:
             self._descartar("curta demais", audio_seg=round(seg.descartada, 1))
             seg.descartada = 0.0
         if seg.falando and not estava_falando:
+            self._inicio_frase = self._blocos
             estado.definir("gravando")
         if audio is None:
             if not seg.falando and estado.ler()["nome"] == "gravando":
@@ -209,6 +225,35 @@ class Ouvido:
             self._vencer_espera(seg, ao_ouvir_comando)
             return
         self._frase(audio, seg, ao_ouvir_comando)
+
+    # --- Detector local da palavra (opcional) ------------------------------------------------------
+    def _escutar_palavra(self, bloco: bytes) -> None:
+        """Passa o bloco ao detector (se houver) e guarda a nota. Erro no detector = desliga e segue sem ele."""
+        if self.detector is None:
+            return
+        try:
+            nota = float(self.detector.ouvir(bloco))
+        except Exception as erro:
+            log.warning("Detector da palavra falhou (%s): desligado até reiniciar, o Whisper ouve tudo", erro)
+            self.detector = None
+            return
+        self._notas.append((self._blocos, nota))
+
+    def _nota_da_frase(self, audio: bytes) -> float:
+        """Maior nota do detector desde um pouco antes do comeco da frase (a fala pre-gravada) ate agora."""
+        inicio = min(self._inicio_frase, self._blocos - len(audio) // (BLOCO * 2)) - MARGEM_DETECTOR
+        return max((n for b, n in self._notas if b >= inicio), default=0.0)
+
+    def _filtrar_pelo_detector(self, audio: bytes, em_conversa: bool, pendente: bool, e: dict) -> dict | None:
+        """None = pode seguir para o Whisper; dict = descartar (com os dados do registro).
+        So filtra fora da conversa, sem espera pendente, fora do ditado e do descanso ("bora voltar" acorda)."""
+        if self.detector is None or em_conversa or pendente or e.get("ditado_desde") or e.get("descanso"):
+            return None
+        nota = self._nota_da_frase(audio)
+        if nota >= self.detector.limiar:
+            self._nota_detector = nota
+            return None
+        return {"nota_detector": round(nota, 2)}
 
     def _segurar_conversa(self) -> None:
         """Enquanto ele fala, a janela de conversa nao corre: ela conta a partir do fim da fala."""
@@ -302,6 +347,13 @@ class Ouvido:
         p = self._pendente
         # comecou dentro da janela de conversa (ou logo depois de "Assessor" sozinho)?
         em_conversa = p["em_conversa"] if p else time.time() - duracao < self._conversa_ate
+        e = estado.ler()
+        self._nota_detector = None
+        barrado = self._filtrar_pelo_detector(audio, em_conversa, bool(p), e)
+        if barrado is not None:   # (nem chega ao Whisper: e o que economiza processador/placa)
+            self._descartar("sem a palavra (detector local)", audio_seg=round(duracao, 1), **barrado)
+            estado.definir("ouvindo")
+            return
         if self._vigia and not em_conversa and not p and not self._chamou_mestre_vosk(audio):
             self._descartar("sem a palavra de ativação (Vosk)", audio_seg=round(duracao, 1))
             estado.definir("ouvindo")
@@ -309,7 +361,6 @@ class Ouvido:
 
         estado.definir("transcrevendo")
         inicio = time.time()
-        e = estado.ler()
         ditado = bool(e.get("ditado_desde"))
         if ditado:   # ditado: modo caprichado (mais preciso, com o texto anterior de contexto)
             log.info("Transcrevendo no modo caprichado (ditado)")
@@ -329,7 +380,8 @@ class Ouvido:
                 p["bloco"], p["quando"] = self._blocos, time.time()
             estado.definir("conversa" if em_conversa else "ouvindo")
             return
-        self._tratar(frase, audio, gasto, em_conversa, ditado, e, seg, ao_ouvir_comando)
+        extra = {"nota_detector": round(self._nota_detector, 2)} if self._nota_detector is not None else None
+        self._tratar(frase, audio, gasto, em_conversa, ditado, e, seg, ao_ouvir_comando, extra=extra)
 
     def _tratar(self, frase: str, audio: bytes, gasto: float, em_conversa: bool, ditado: bool, e: dict,
                 seg: Segmentador, ao_ouvir_comando, extra: dict | None = None, verificada: bool = False) -> None:
@@ -420,6 +472,7 @@ ESPERA_APOS_PALAVRA = 2.5   # s: depois de "Assessor" sozinho, espera o resto da
 ESPERA_CONTINUACAO = 1.5    # s: frase que terminou no meio espera a continuacao mais este tanto
 MAX_PARTES = 6              # (no maximo tantas partes juntadas numa frase so)
 SILENCIO_ECO = 0.6          # s: pausa que fecha uma frase gravada enquanto ele fala
+MARGEM_DETECTOR = 6         # blocos (0,6 s) antes do comeco da frase que ainda contam para o detector
 MAX_FRASE_ECO = 6.0         # s: enquanto ele fala, confere a cada 6 s no maximo (o eco da voz nao tem pausa)
 # Palavras que deixam a frase "pela metade": "abre o site do...", "eu queria que", "pesquisa sobre o, "
 CONECTIVOS = {"do", "da", "dos", "das", "de", "que", "e", "pra", "pro", "pras", "pros", "para", "com", "mas",

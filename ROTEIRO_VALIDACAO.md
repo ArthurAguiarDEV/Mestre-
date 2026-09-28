@@ -193,6 +193,21 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | (com um config.yaml antigo, de antes desta versão, sem as chaves novas) reinicie o Assessor | A IA continua respondendo normalmente pelo Ollama, do jeito de sempre (os padrões do código cobrem a falta das chaves novas) | (automático, ao religar) |
 | (automático) `venv\Scripts\python -m testes.teste_basico` | Itens de "Troca de IA sozinho" (1ª lenta cai pra 2ª, castigo, castigo expira, ordem respeitada) OK | (automático) |
 
+### Detector local da palavra (opcional, começa desligado)
+
+| Frase / ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Áudio > "Reconhecimento de voz (Whisper)" | Aparecem "Detector local da palavra" (desligado), "Exigência do detector" e a linha de situação ("Modelo pronto" ou "Modelo não encontrado") | (painel) |
+| Com o detector DESLIGADO: `Assessor, que horas são?` | Responde como sempre | `_cmd_hora_data` |
+| Rode `ferramentas\15_treinar_palavra.bat` (responda `s` para gravar sua voz 30 vezes) | Termina mostrando quantas das suas gravações reais ele achou e cria `modelos\palavra\assessor.npz` | (ferramenta) |
+| (painel) ligue o detector > Salvar e reiniciar; depois `Assessor, que horas são?` | Responde normal (no ouvido.jsonl a frase tem `nota_detector`) | `_cmd_hora_data` |
+| `Assessor` (pausa de 2 s) `abre o YouTube` | Vira uma frase só, como antes | `_cmd_abrir` |
+| Deixe um vídeo com gente falando tocar 5 minutos sem chamar | Nada executa; no ouvido.jsonl os trechos aparecem com motivo "sem a palavra (detector local)" (sem transcrição) | (ignorado, sem comando) |
+| Durante uma resposta longa: `Assessor, para` | Para de falar na hora (o interromper continua igual) | (só parou) |
+| Na janela de conversa, logo depois de uma resposta: `e amanhã?` (sem a palavra) | Continua valendo sem a palavra | (o comando falado) |
+| Modo descanso + `bora voltar a trabalhar` | Acorda normalmente | `_cmd_descanso` |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Itens "Detector: ..." OK | (automático) |
+
 ## 2. Sempre testar (regressão fixa — todo dia a dia)
 
 | Frase | O que deve acontecer | Comando esperado |

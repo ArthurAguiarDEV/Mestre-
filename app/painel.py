@@ -1200,6 +1200,19 @@ class Painel(ctk.CTk):
                                                                                       "Preciso (Whisper ouve tudo)"))
         linha_campo(f, f"Como detectar “{self.palavra}”", lambda p: ctk.CTkSegmentedButton(
             p, values=["Preciso (Whisper ouve tudo)", f"Leve (Vosk procura “{self.palavra}”)"], variable=self.var_modo))
+        from . import palavra_local
+        det_ligado, _, det_limiar = palavra_local.opcoes(self.cfg)
+        self.var_detector = tk.BooleanVar(value=det_ligado)
+        linha_campo(f, "Detector local da palavra", lambda p: ctk.CTkSwitch(
+            p, text=f"um ouvido leve procura só “{self.palavra}” antes do Whisper (menos processador, menos disparo com vídeo)",
+            variable=self.var_detector))
+        self.var_detector_limiar = tk.DoubleVar(value=det_limiar)
+        linha_campo(f, "Exigência do detector", lambda p: ctk.CTkSlider(
+            p, from_=0.1, to=0.9, number_of_steps=16, variable=self.var_detector_limiar))
+        _, texto_det = palavra_local.situacao(self.cfg)
+        self.rot_detector = ctk.CTkLabel(f, text=texto_det, anchor="w", justify="left", wraplength=620,
+                                         text_color=tema.TEXTO_FRACO)
+        self.rot_detector.pack(fill="x", padx=(32, 18))
         self.var_modelo = tk.StringVar(value=MODELOS_WHISPER.get(o.get("modelo_whisper", "small"), MODELOS_WHISPER["small"]))
         linha_campo(f, "Modelo", lambda p: ctk.CTkOptionMenu(p, values=list(MODELOS_WHISPER.values()), variable=self.var_modelo))
         self.var_precisao = tk.StringVar(value=o.get("precisao", "equilibrado"))
@@ -3617,6 +3630,8 @@ class Painel(ctk.CTk):
         o = configuracao.secao(c, "ouvido")
         o["microfone"] = self._mic_escolhido()
         o["modo_ativacao"] = "vosk" if self.var_modo.get().startswith("Leve") else "whisper"
+        o["detector_palavra"] = bool(self.var_detector.get())
+        o["detector_limiar"] = round(float(self.var_detector_limiar.get()), 2)
         o["modelo_whisper"] = configuracao.aspas(next(k for k, v in MODELOS_WHISPER.items() if v == self.var_modelo.get()))
         o["precisao"] = self.var_precisao.get()
         o["limiar_volume"] = 0 if self.var_auto.get() else int(self.var_limiar.get())

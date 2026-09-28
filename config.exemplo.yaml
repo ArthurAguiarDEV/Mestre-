@@ -53,6 +53,10 @@ ouvido:
 # 4) CEREBRO (para conversar e responder perguntas livres)
 # ---------------------------------------------------------------------
   modo_ativacao: whisper
+  # Detector local da palavra (painel > Audio): so manda ao Whisper frase com a palavra.
+  # Precisa do modelo treinado (ferramentas\15_treinar_palavra.bat). Desligado = Whisper ouve tudo.
+  detector_palavra: false
+  detector_limiar: 0.5
   precisao: equilibrado
   limiar_volume: 150
   ganho: 0.8
