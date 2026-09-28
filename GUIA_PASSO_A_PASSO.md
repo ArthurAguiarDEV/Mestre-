@@ -693,26 +693,31 @@ A linha embaixo diz se o modelo está pronto ou "Modelo não encontrado".
 
 ## Etapa 18: O indicador na tela
 
-### O avatar robô (padrão a partir da 2.5)
+### Texto + robô (padrão a partir da 2.6)
 
 Um **robozinho rosa** fica **logo acima do relógio** (canto de baixo, à direita), sempre por cima das janelas e
-sem botão na barra de tarefas. Ele mostra o que o assistente está fazendo:
+sem botão na barra de tarefas. Em cima dele fica um **balão de texto bem legível** dizendo o que está
+acontecendo — mais fácil de entender do que só os símbolos do robô:
 
-| O robô | Significa |
+| Balão | Significa |
 |---|---|
-| Entra pulando em cena, os olhos verdes acendem | Ligando |
-| Balança devagar e pisca | Ligado, esperando você chamar |
-| Inclina a cabeça, olhos maiores, antena brilhando e ondinhas ao lado | Ouvindo você |
-| Balão com pontinhos em cima e olhar para cima | Pensando (um **número vermelho** = quantos pedidos na fila) |
-| A boca abre e fecha junto com a voz | Falando |
-| Selo verde com ✓ | A resposta pensada está pronta: diga *"pode falar"* |
-| Sai de cena (desce e some) | Pausado. Quando você retoma, ele volta pulando |
-| Olhos fechados e "zzz" | Descansando |
+| (sem balão) | Ligado, ouvindo em silêncio — tela limpa |
+| "Gravando…" / "Ouvindo…" | Detectou sua voz / modo conversa (sem precisar repetir a palavra) |
+| "Pensando: *resumo da sua pergunta*" (e "· Na fila: N" se tiver mais pedidos esperando) | A IA está pensando |
+| "Falando…" | Respondendo |
+| "Pausado" | Microfone em pausa |
+| "Descansando" | Modo descanso: só *"bora voltar a trabalhar"* acorda |
+| "Ligando…" / "Desligando…" | Iniciando ou encerrando o assistente |
+
+O robô fica **menor** enquanto o balão está ativo, e a cor da borda do balão muda com a situação (verde
+ouvindo, roxo pensando, azul-claro falando). Selo verde com ✓ = a resposta pensada está pronta: diga
+*"pode falar"*.
 
 - **Arraste** para onde quiser (ele lembra o lugar). **Duplo clique** abre o painel.
 - **Passe o mouse** por cima: o que ele está fazendo, a última frase que ouviu e a última resposta.
 - **Botão direito:** Pausar/Retomar a escuta, Abrir painel, **Voltar ao lugar padrão** e **Esconder avatar** (volta quando reiniciar).
-- Prefere a bolinha de antes? Painel > **Aparência** > "Indicador na tela" > **Bolinha**, salve e reinicie.
+- Prefere só o robô, sem o balão? Painel > **Aparência** > "Indicador na tela" > **Só robô**. Prefere a
+  bolinha de antes? Escolha **Bolinha**. Salve e reinicie.
 - O avatar usa a biblioteca grátis **PySide6** (o INSTALAR_E_CRIAR_ATALHO.bat e a atualização instalam). Se ela
   faltar ou der erro, aparece a bolinha sozinha.
 - Ele gasta muito pouco: parado quase nada, e quando está pausado não desenha nada.

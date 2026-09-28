@@ -2200,9 +2200,10 @@ aparencia:
   fundo: "Preto"
   fonte: "Comic Sans MS"
   tamanho: "Grande"
-# Indicador perto do relogio: "avatar" (robo animado, precisa do PySide6) ou "bolinha" (painel > Aparencia)
+# Indicador perto do relogio (painel > Aparencia): "texto_avatar" (balao de texto + robo menor, padrao,
+# precisa do PySide6), "avatar" (so o robo) ou "bolinha" (a antiga)
 indicador:
-  tipo: "avatar"
+  tipo: "texto_avatar"
 projetos:
   pasta: "C:/Ias/projetos"
   pesquisar_internet: true

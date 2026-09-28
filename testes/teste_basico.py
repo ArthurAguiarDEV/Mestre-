@@ -2375,8 +2375,29 @@ ok(avatar.posicao_valida((x, y), [(0, 0, 1920, 1032)]) and not avatar.posicao_va
 avatar.salvar_posicao((120, 340)); lida = avatar.ler_posicao(); avatar.salvar_posicao(None)
 ok(lida == (120, 340) and avatar.ler_posicao() is None and "Mestre" in str(avatar.arquivo_posicao()),
    "Avatar: posição arrastada fica salva (APPDATA/Mestre/avatar.json)")
-ok(avatar.tipo_escolhido({}) == "avatar" and avatar.tipo_escolhido({"indicador": {"tipo": "bolinha"}}) == "bolinha"
-   and avatar.tipo_escolhido({"indicador": {"tipo": "xyz"}}) == "avatar", "Avatar: padrão é o avatar; bolinha é opção")
+ok(avatar.tipo_escolhido({}) == "texto_avatar" and avatar.tipo_escolhido({"indicador": {"tipo": "bolinha"}}) == "bolinha"
+   and avatar.tipo_escolhido({"indicador": {"tipo": "avatar"}}) == "avatar"
+   and avatar.tipo_escolhido({"indicador": {"tipo": "xyz"}}) == "texto_avatar",
+   "Avatar: padrão é texto + robô (inclusive config antigo); só robô e bolinha são opções")
+# balão de texto (indicador "Texto + robô"): a função pura que escolhe o texto a partir do estado (sem Qt)
+tb = avatar.texto_balao
+ok(tb({"nome": "ouvindo"}) == "" and tb({"nome": "conversa"}) == "Ouvindo…" and tb({"nome": "gravando"}) == "Gravando…",
+   "Balão: ouvindo em silêncio some (tela limpa); conversa/gravando avisam")
+ok(tb({"nome": "falando"}) == "Falando…" and tb({"nome": "iniciando"}) == "Ligando…"
+   and tb({"nome": "ouvindo"}, rodando=False) == "Desligando…" and tb({"nome": "desligado"}) == "Desligando…"
+   and tb({"nome": "ouvindo"}, pausado=True) == "Pausado" and tb({"nome": "pausado"}) == "Pausado"
+   and tb({"nome": "ouvindo", "descanso": True}) == "Descansando", "Balão: falando/ligando/desligando/pausado/descansando")
+ok(tb({"nome": "pensando", "pensamento_pergunta": "que horas sao"}) == "Pensando: que horas sao",
+   "Balão: Pensando com o resumo da pergunta")
+pergunta_longa = "isso e uma pergunta bem grande que passa dos quarenta caracteres com folga"
+resumo = tb({"nome": "transcrevendo", "pensamento": "pensando", "pensamento_pergunta": pergunta_longa})
+ok(resumo.startswith("Pensando: ") and len(resumo) <= len("Pensando: ") + 40 and resumo.endswith("…"),
+   f"Balão: pergunta longa é resumida a ~40 caracteres ({resumo!r})")
+ok(tb({"nome": "pensando", "pensamentos_fila": 3}) == "Pensando… · Na fila: 3"
+   and tb({"nome": "pensando", "pensamentos_fila": 1}) == "Pensando…", "Balão: fila do pensando (só mostra se > 1)")
+ok(avatar.tamanho_janela("texto_avatar")[0] > avatar.LADO_JANELA and avatar.tamanho_janela("texto_avatar")[1] > avatar.LADO_JANELA
+   and avatar.tamanho_janela("avatar") == (avatar.LADO_JANELA, avatar.LADO_JANELA),
+   "Balão: janela do avatar cresce só no modo texto + robô")
 # fallback: sem PySide6 (ou no teste) nada abre e o Assessor usa a bolinha
 from app import main as m
 class Ex:
@@ -2426,7 +2447,11 @@ tk.Tk.report_callback_exception = lambda self, e, val, tb: erros.append("".join(
 import app.painel as p
 pn = p.Painel(); pn.update()
 pn.mostrar_pagina("Aparência"); pn.update()
-ok(pn.var_indicador.get() == "Avatar robô", "Painel: Indicador começa em “Avatar robô”")
+ok(pn.var_indicador.get() == "Texto + robô", "Painel: Indicador começa em “Texto + robô” (novo padrão)")
+pn.var_indicador.set("Só robô")
+ok(pn.salvar(), "Painel: salvar com “Só robô”")
+c = yaml.safe_load(open("config.yaml", encoding="utf-8"))
+ok(c["indicador"]["tipo"] == "avatar", "Painel: “Só robô” salvo em indicador > tipo")
 pn.var_indicador.set("Bolinha")
 ok(pn.salvar(), "Painel: salvar com o indicador trocado")
 c = yaml.safe_load(open("config.yaml", encoding="utf-8"))

@@ -3216,7 +3216,7 @@ class Painel(ctk.CTk):
         self.pv_campo.pack(fill="x", padx=12)
         self._previa()
 
-        # indicador na tela: avatar robô (padrão) ou a bolinha de antes
+        # indicador na tela: texto + robô (padrão), só o robô, ou a bolinha de antes
         from . import avatar
         f = secao(pagina, "Indicador na tela", "O que fica perto do relógio mostrando se ele está ouvindo, pensando "
                                                "ou falando. Vale depois de reiniciar o assistente.")
@@ -3228,8 +3228,10 @@ class Painel(ctk.CTk):
             ctk.CTkLabel(f, text="O avatar precisa da biblioteca PySide6 (instale pelo INSTALAR_E_CRIAR_ATALHO.bat). "
                                  "Sem ela, aparece a bolinha.", anchor="w", text_color=tema.AVISO,
                          wraplength=640, justify="left").pack(fill="x", padx=(32, 18), pady=(0, 6))
-        ctk.CTkLabel(f, text="Avatar: arraste para mudar de lugar · duplo clique abre o painel · botão direito: pausar, "
-                             "voltar ao lugar padrão ou esconder.", anchor="w", text_color=tema.TEXTO_FRACO,
+        ctk.CTkLabel(f, text="“Texto + robô” mostra um balão com o que está acontecendo (Ouvindo, Pensando: <sua "
+                             "pergunta>, Falando...) e o robô fica menor. “Só robô” tira o balão. Arraste para mudar "
+                             "de lugar · duplo clique abre o painel · botão direito: pausar, voltar ao lugar padrão "
+                             "ou esconder.", anchor="w", text_color=tema.TEXTO_FRACO,
                      wraplength=640, justify="left").pack(fill="x", padx=(32, 18), pady=(0, 8))
 
     def _escolher_cor(self):
@@ -4103,7 +4105,7 @@ class Painel(ctk.CTk):
             ap[chave] = configuracao.aspas(var.get())
         if hasattr(self, "var_indicador"):
             from . import avatar
-            tipo = next((k for k, v in avatar.TIPOS.items() if v == self.var_indicador.get()), "avatar")
+            tipo = next((k for k, v in avatar.TIPOS.items() if v == self.var_indicador.get()), "texto_avatar")
             configuracao.secao(c, "indicador")["tipo"] = configuracao.aspas(tipo)
 
     def _salvar_sugestoes(self, c):

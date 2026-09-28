@@ -242,6 +242,19 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | Modo descanso + `bora voltar a trabalhar` | Acorda normalmente | `_cmd_descanso` |
 | (automático) `venv\Scripts\python -m testes.teste_basico` | Itens "Detector: ..." OK | (automático) |
 
+### Indicador na tela: balão de texto + robô menor (novo padrão)
+
+| Frase / ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, reinicia` (config sem mexer no Indicador) | Aparece o robô perto do relógio COM um balão escuro em cima, texto branco legível | (visual) |
+| Fale qualquer pedido e espere ele processar | O balão muda: (some quando só ouvindo em silêncio) → "Gravando…"/"Ouvindo…" → "Pensando: <resumo do que você pediu>" → "Falando…" | (visual) |
+| Peça algo que dispare a IA em segundo plano e, sem esperar, peça outra coisa | O balão de "Pensando" mostra "· Na fila: 2" (ou o número de pedidos esperando) | (visual) |
+| `Mestre, pode descansar` | Balão mostra "Descansando" | `_cmd_descanso` |
+| Botão direito no indicador > "Pausar a escuta" | Balão mostra "Pausado" antes de sumir | (painel/menu) |
+| (painel) Aparência > "Indicador na tela" > **"Só robô"** > salvar > `Mestre, reinicia` | O robô volta ao tamanho normal, sem balão | (painel) |
+| (painel) Aparência > "Indicador na tela" > **"Bolinha"** > salvar > `Mestre, reinicia` | Volta a pílula antiga (sem o robô) | (painel) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Itens "Balão: ..." (texto por estado, resumo da pergunta, fila, tamanho da janela) e "Painel: Indicador..." OK | (automático) |
+
 ## 2. Sempre testar (regressão fixa — todo dia a dia)
 
 | Frase | O que deve acontecer | Comando esperado |

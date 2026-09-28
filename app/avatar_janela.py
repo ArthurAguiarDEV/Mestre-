@@ -19,8 +19,8 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import (QAction, QBrush, QColor, QFont, QGuiApplication, QLinearGradient, QPainter,
-                           QPainterPath, QPen, QRadialGradient)
+from PySide6.QtGui import (QAction, QBrush, QColor, QFont, QFontMetrics, QGuiApplication, QLinearGradient,
+                           QPainter, QPainterPath, QPen, QRadialGradient)
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 from . import avatar, estado, tema
@@ -32,6 +32,11 @@ BALAO = "#2A1F25"
 ESCURO = "#1C1418"
 LILAS_ZZZ = "#E7C6F0"
 SELO = "#FF5C8A"
+COR_PENSANDO_TXT, COR_FALANDO_TXT, COR_NEUTRA_TXT = "#b388ff", "#4fd1c5", "#8a8f99"
+# balão de texto (indicador "Texto + robô"): mesma cor de destaque usada no resto do app por situação
+CORES_BALAO = {"ligando": VERDE, "idle": VERDE, "ouvindo": VERDE, "pensando": COR_PENSANDO_TXT,
+               "falando": COR_FALANDO_TXT, "pausado": COR_NEUTRA_TXT, "descansando": COR_NEUTRA_TXT,
+               "desligado": COR_NEUTRA_TXT}
 
 
 def tons_do_rosa(cor: str) -> tuple[str, str, str]:
@@ -52,13 +57,16 @@ class Avatar(QWidget):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setFixedSize(avatar.LADO_JANELA, avatar.LADO_JANELA)
+        self.tipo = args.tipo if args.tipo in avatar.TIPOS else "texto_avatar"
+        self.largura, self.altura = avatar.tamanho_janela(self.tipo)
+        self.setFixedSize(self.largura, self.altura)
         self.pai = args.pai
         self.nome, self.palavra = args.nome, args.palavra.capitalize()
         self.arq_estado = Path(args.estado) if args.estado else estado.ARQUIVO_AGORA
         self.claro, self.meio, self.escuro = tons_do_rosa(tema.ROSA)
         self.anim = avatar.Animador()
         self.dados: dict = {}
+        self.balao_texto = ""
         self._mtime = None
         self._ultimo_pai = 0.0
         self._arrasto = None
@@ -84,11 +92,13 @@ class Avatar(QWidget):
 
     def _padrao(self) -> tuple[int, int]:
         g = QGuiApplication.primaryScreen().availableGeometry()
-        return avatar.posicao_padrao((g.x(), g.y(), g.x() + g.width(), g.y() + g.height()))
+        return avatar.posicao_padrao((g.x(), g.y(), g.x() + g.width(), g.y() + g.height()),
+                                     largura=self.largura, altura=self.altura)
 
     def _posicao_inicial(self) -> tuple[int, int]:
         pos = avatar.ler_posicao()
-        return pos if pos and avatar.posicao_valida(pos, self._telas()) else self._padrao()
+        valida = pos and avatar.posicao_valida(pos, self._telas(), largura=self.largura, altura=self.altura)
+        return pos if valida else self._padrao()
 
     def ir_para(self, pos) -> None:
         self.move(int(pos[0]), int(pos[1]))
@@ -129,6 +139,8 @@ class Avatar(QWidget):
         fila = int(self.dados.get("pensamentos_fila") or 0)
         pronto = self.dados.get("pensamento") == "pronto"
         self.anim.mudar(novo, agora, fila, pronto)
+        if self.tipo == "texto_avatar":
+            self.balao_texto = avatar.texto_balao(dados, rodando=vivo, pausado=estado.pausado())
         self._receber_nivel(agora)
         self._atualizar_dica()
         if self.anim.terminou(agora) and self.anim.base == "desligado":
@@ -242,9 +254,18 @@ class Avatar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         p.setRenderHint(QPainter.TextAntialiasing)
+        balao_ativo = self.tipo == "texto_avatar" and bool(self.balao_texto)
+        # o robô fica no canto inferior direito da janela (o balão, quando ativo, ocupa o espaço acima)
+        offset_x, offset_y = self.largura - avatar.LADO_JANELA, self.altura - avatar.LADO_JANELA
+        p.save()
+        p.translate(offset_x, offset_y)
         esc = avatar.TAMANHO / 200
         p.translate(avatar.FOLGA, avatar.FOLGA)
         p.scale(esc, esc)
+        if balao_ativo:   # robô ~35% menor (config avatar.ESCALA_ROBO_BALAO), "grudado" no chão (100, 200)
+            p.translate(100, 200)
+            p.scale(avatar.ESCALA_ROBO_BALAO, avatar.ESCALA_ROBO_BALAO)
+            p.translate(-100, -200)
         # caixa inteira (entrar/voltar/sair): origem no centro
         p.save()
         p.setOpacity(q["in_op"])
@@ -259,7 +280,38 @@ class Avatar(QWidget):
             r = 70 * q["flash_esc"]
             p.drawEllipse(QPointF(100, 110), r, r)
         p.restore()
+        p.restore()   # volta a pixels crus da janela (sem a escala/translação do robô): o balão não pode ficar torto
+        if balao_ativo:
+            self._desenhar_balao(p)
         p.end()
+
+    def _desenhar_balao(self, p: QPainter) -> None:
+        """Etiqueta de texto bem legível em cima do robô (fundo escuro, texto branco, cor de destaque por estado).
+        Alinhada à direita, logo acima do robô: a mesma margem "FOLGA" que o robô usa (nunca sangra pra fora
+        da janela nem da tela — o robô também fica inset por FOLGA dentro da sua caixa)."""
+        texto = self.balao_texto
+        fonte = QFont(tema.FONTE)
+        fonte.setPixelSize(17)
+        fonte.setWeight(QFont.DemiBold)
+        p.setFont(fonte)
+        m = QFontMetrics(fonte)   # métricas da FONTE exata (não depende de p.setFont ter "pegado")
+        margem = avatar.FOLGA        # mesma margem do robô até a borda da janela: fica coladinho nele
+        pad_esq, pad_dir = 26, 14    # pad_esq sobra espaço pra bolinha de cor
+        disponivel = self.largura - 2 * margem - pad_esq - pad_dir
+        if m.horizontalAdvance(texto) > disponivel:
+            texto = m.elidedText(texto, Qt.ElideRight, disponivel)
+        largura = max(70, min(self.largura - 2 * margem, m.horizontalAdvance(texto) + pad_esq + pad_dir))
+        altura = avatar.ALTURA_BALAO - 8
+        x1, y1 = self.largura - margem - largura, 6
+        cor = CORES_BALAO.get(self.anim.base, VERDE)
+        p.setPen(QPen(_cor(cor, 0.85), 1.4))
+        p.setBrush(_cor(ESCURO, 0.92))
+        p.drawRoundedRect(QRectF(x1, y1, largura, altura), altura / 2, altura / 2)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(cor))
+        p.drawEllipse(QPointF(x1 + 14, y1 + altura / 2), 5, 5)
+        p.setPen(QColor("#F5F5F7"))
+        p.drawText(QRectF(x1 + pad_esq, y1, largura - pad_esq - 8, altura), Qt.AlignVCenter | Qt.AlignLeft, texto)
 
     def _grad(self, y0, y1, cores):
         g = QLinearGradient(0, y0, 0, y1)
@@ -416,6 +468,7 @@ def main() -> int:
     parser.add_argument("--nome", default="Assessor")
     parser.add_argument("--palavra", default="assessor")
     parser.add_argument("--estado", default="")
+    parser.add_argument("--tipo", default="texto_avatar")
     args = parser.parse_args()
     if tema.testando():
         return 0   # teste automático: nada aparece na tela

@@ -28,6 +28,53 @@ PORTA_NIVEL = 47634    # 47631 painel, 47632 extensão, 47633 voz natural
 ESTADOS = ("ligando", "idle", "ouvindo", "pensando", "falando", "pausado", "voltando", "descansando", "desligado")
 DURACAO = {"entrar": 1.25, "voltar": 0.9, "sair": 0.75, "desligar": 0.9}
 
+# --- balão de texto (indicador "Texto + robô") -----------------------------------------------------
+LARGURA_BALAO_MAX = 440      # janela mais larga que o robô sozinho: cabe o balão de texto legível
+ALTURA_BALAO = 44            # altura da etiqueta (fundo + texto)
+VAO_BALAO = 8                # espaço entre a etiqueta e o robô
+ESCALA_ROBO_BALAO = 0.65     # robô ~35% menor quando o balão está ativo (configurável aqui)
+TAMANHO_TEXTO_PERGUNTA = 36  # resumo da pergunta no "Pensando: ..." (~40 caracteres pedidos)
+
+
+def tamanho_janela(tipo: str) -> tuple[int, int]:
+    """Tamanho da janela do avatar: maior no modo "Texto + robô" (sobra espaço para o balão em cima)."""
+    if tipo == "texto_avatar":
+        return LARGURA_BALAO_MAX, LADO_JANELA + ALTURA_BALAO + VAO_BALAO
+    return LADO_JANELA, LADO_JANELA
+
+
+def texto_balao(dados: dict, rodando: bool = True, pausado: bool = False) -> str:
+    """Texto do balão a partir do estado do Assessor (logs/estado_agora.json). "" = balão escondido
+    (ocioso: só o robô, tela mais limpa)."""
+    nome = str(dados.get("nome") or "")
+    if not rodando or nome == "desligado":
+        return "Desligando…"
+    if pausado or nome == "pausado":
+        return "Pausado"
+    if nome == "iniciando":
+        return "Ligando…"
+    if dados.get("descanso"):
+        return "Descansando"
+    if nome == "falando":
+        return "Falando…"
+    if nome == "gravando":
+        return "Gravando…"
+    if dados.get("pensamento") == "pensando" or nome in ("pensando", "trabalhando", "transcrevendo"):
+        pergunta = str(dados.get("pensamento_pergunta") or "").strip()
+        if pergunta:
+            resumo = pergunta if len(pergunta) <= TAMANHO_TEXTO_PERGUNTA else pergunta[:TAMANHO_TEXTO_PERGUNTA - 1] + "…"
+            texto = f"Pensando: {resumo}"
+        else:
+            texto = "Pensando…"
+        fila = int(dados.get("pensamentos_fila") or 0)
+        if fila > 1:
+            texto += f" · Na fila: {fila}"
+        return texto
+    if nome == "conversa":
+        return "Ouvindo…"
+    return ""   # ouvindo em silêncio (idle): nada de balão, fica só o robô
+
+
 # --- estado do Assessor -> estado do avatar -------------------------------------------------------
 
 
@@ -285,22 +332,26 @@ class Animador:
 # --- posição na tela ----------------------------------------------------------------------------
 
 
-def posicao_padrao(area: tuple, lado: int = LADO_JANELA, folga: int = FOLGA, margem: int = 8) -> tuple[int, int]:
+def posicao_padrao(area: tuple, folga: int = FOLGA, margem: int = 8, largura: int = LADO_JANELA,
+                    altura: int = LADO_JANELA) -> tuple[int, int]:
     """Logo acima do relógio: canto inferior direito da área de trabalho (sem a barra de tarefas).
-    area = (esquerda, topo, direita, baixo) do monitor principal, com direita/baixo exclusivos."""
+    area = (esquerda, topo, direita, baixo) do monitor principal, com direita/baixo exclusivos.
+    largura/altura = tamanho da janela (maior no modo "Texto + robô": o robô fica no mesmo canto,
+    só sobra espaço à esquerda/em cima para o balão)."""
     esq, topo, dir_, baixo = area
-    x = dir_ - lado + folga - margem
-    y = baixo - lado + folga - 4
+    x = dir_ - largura + folga - margem
+    y = baixo - altura + folga - 4
     return max(esq - folga, x), max(topo - folga, y)
 
 
-def posicao_valida(pos, telas: list, lado: int = LADO_JANELA) -> bool:
-    """A posição salva ainda cai (pelo menos o meio do robô) em algum monitor? telas = [(esq, topo, dir, baixo)]."""
+def posicao_valida(pos, telas: list, largura: int = LADO_JANELA, altura: int = LADO_JANELA) -> bool:
+    """A posição salva ainda cai (pelo menos o meio do robô) em algum monitor? telas = [(esq, topo, dir, baixo)].
+    O robô fica no canto inferior direito da janela (largura/altura maiores no modo "Texto + robô")."""
     try:
         x, y = int(pos[0]), int(pos[1])
     except (TypeError, ValueError, IndexError):
         return False
-    cx, cy = x + lado // 2, y + lado // 2
+    cx, cy = x + largura - LADO_JANELA // 2, y + altura - LADO_JANELA // 2
     return any(e <= cx < d and t <= cy < b for e, t, d, b in telas)
 
 
@@ -329,13 +380,14 @@ def salvar_posicao(pos) -> None:
         pass
 
 
-# --- configuração: avatar ou bolinha --------------------------------------------------------------
-TIPOS = {"avatar": "Avatar robô", "bolinha": "Bolinha"}
+# --- configuração: texto+robô (padrão), só robô ou bolinha -----------------------------------------
+TIPOS = {"texto_avatar": "Texto + robô", "avatar": "Só robô", "bolinha": "Bolinha"}
 
 
 def tipo_escolhido(cfg: dict) -> str:
-    tipo = str((cfg.get("indicador") or {}).get("tipo") or "avatar").strip().lower()
-    return tipo if tipo in TIPOS else "avatar"
+    """"texto_avatar" é o padrão (também quando o config é antigo e não tem essa chave ainda)."""
+    tipo = str((cfg.get("indicador") or {}).get("tipo") or "").strip().lower()
+    return tipo if tipo in TIPOS else "texto_avatar"
 
 
 def pyside_instalado() -> bool:
@@ -355,8 +407,9 @@ def _python_sem_janela() -> str:
     return str(pythonw) if pythonw.exists() else sys.executable
 
 
-def iniciar(nome: str = "Assessor", palavra: str = "assessor"):
-    """Abre o avatar num processo separado. None = não deu (sem PySide6, teste automático...): use a bolinha."""
+def iniciar(nome: str = "Assessor", palavra: str = "assessor", tipo: str = "texto_avatar"):
+    """Abre o avatar num processo separado. None = não deu (sem PySide6, teste automático...): use a bolinha.
+    tipo = "texto_avatar" (balão de texto + robô menor, padrão) ou "avatar" (só o robô)."""
     global _processo, ATIVO
     if os.environ.get("MESTRE_SIMULAR") == "1":
         return None   # teste automático: nada aparece na tela
@@ -367,7 +420,8 @@ def iniciar(nome: str = "Assessor", palavra: str = "assessor"):
     try:
         _processo = subprocess.Popen(
             [_python_sem_janela(), "-m", "app.avatar_janela", "--pai", str(os.getpid()), "--nome", nome,
-             "--palavra", palavra], cwd=str(PASTA_PROJETO), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+             "--palavra", palavra, "--tipo", tipo],
+            cwd=str(PASTA_PROJETO), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError as erro:
         log.warning("Avatar não abriu (%s): usando a bolinha", erro)
         return None

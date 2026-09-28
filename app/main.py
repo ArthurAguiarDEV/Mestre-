@@ -73,9 +73,10 @@ def _mostrar_avatar(cfg: dict, executor: Executor) -> bool:
     False = nao deu (escolheu a bolinha, sem PySide6, ou o avatar fechou com erro): mostre a bolinha."""
     from . import avatar
 
-    if avatar.tipo_escolhido(cfg) != "avatar":
+    tipo = avatar.tipo_escolhido(cfg)
+    if tipo not in ("avatar", "texto_avatar"):
         return False
-    processo = avatar.iniciar(getattr(executor, "nome", "Assessor"), str(getattr(executor, "palavra", "assessor")))
+    processo = avatar.iniciar(getattr(executor, "nome", "Assessor"), str(getattr(executor, "palavra", "assessor")), tipo)
     if processo is None:
         return False
     return avatar.acompanhar(processo, lambda: executor.rodando) != "falhou"
