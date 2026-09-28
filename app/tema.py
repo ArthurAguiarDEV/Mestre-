@@ -175,36 +175,83 @@ def aplicar() -> None:
     ctk.set_default_color_theme(str(arquivo))
 
 
-# --- Icone (bandeja do relogio e atalho) --------------------------------------------
-def desenhar_icone(cor: str | None = None, tamanho: int = 512):
-    """O "A" do Assessor (moldura, balão de fala e ondas de voz) na cor de destaque.
-    Desenha em escala 4x e reduz, para as linhas ficarem lisas. Devolve uma imagem do Pillow."""
+# --- Icone (bandeja do relogio, atalho, janela e menu do painel): logo "Onda" -------------------
+VERDE_ONDA = "#7DE3B8"
+
+
+def tons_logo(cor: str) -> tuple[str, str, str]:
+    """(claro, meio, escuro) do "A". Rosa padrão = cores exatas do protótipo; outra cor = misturas."""
+    if cor.upper() == "#F5A6C8":
+        return "#FFD3E5", "#F5A6C8", "#D9829F"
+    return misturar(cor, "#FFFFFF", 0.5), cor, misturar(cor, "#000000", 0.12)
+
+
+def desenhar_icone(cor: str | None = None, tamanho: int = 512, simples: bool | None = None):
+    """Logo "Onda": o "A" na cor de destaque e a barra do A virou uma onda de voz verde.
+    Até 40 px usa a versão simplificada (traço mais grosso, 3 barras, sem brilho). Desenha em 4x e reduz.
+    Devolve uma imagem RGBA do Pillow (grade de 256, igual ao SVG do protótipo)."""
+    import numpy as np
     from PIL import Image, ImageDraw
 
-    cor = cor or ROSA
-    destaque = (*_rgb(cor), 255)
-    fundo = (28, 20, 24, 255)
-    verde = (125, 227, 184, 255)
-    grande = tamanho * 4
-    im = Image.new("RGBA", (grande, grande), (0, 0, 0, 0))
+    cor = cor if cor and cor_valida(cor) else ROSA
+    simples = tamanho <= 40 if simples is None else simples
+    g = max(64, tamanho * 4)
+    u = g / 256
+
+    def mascara(desenho):
+        m = Image.new("L", (g, g), 0)
+        desenho(ImageDraw.Draw(m))
+        return m
+
+    def gradiente(x1, y1, x2, y2, paradas):
+        """Degradê linear (userSpaceOnUse) como no SVG."""
+        yy, xx = np.mgrid[0:g, 0:g].astype(np.float32) / u
+        dx, dy = x2 - x1, y2 - y1
+        t = np.clip(((xx - x1) * dx + (yy - y1) * dy) / (dx * dx + dy * dy), 0, 1)
+        pos = [p for p, _ in paradas]
+        canais = [np.interp(t, pos, [_rgb(c)[i] for _, c in paradas]) for i in range(3)]
+        return Image.fromarray(np.dstack(canais + [np.full_like(t, 255)]).astype(np.uint8), "RGBA")
+
+    im = Image.new("RGBA", (g, g), (0, 0, 0, 0))
+    # placa escura arredondada (degradê de cima para baixo)
+    placa = mascara(lambda d: d.rounded_rectangle((8 * u, 8 * u, 248 * u, 248 * u), radius=64 * u, fill=255))
+    im.paste(gradiente(0, 8, 0, 248, [(0, "#2C1F26"), (1, "#140E11")]), (0, 0), placa)
+    if not simples:
+        borda = Image.new("RGBA", (g, g), (0, 0, 0, 0))
+        ImageDraw.Draw(borda).rounded_rectangle((9.5 * u, 9.5 * u, 246.5 * u, 246.5 * u), radius=62.5 * u,
+                                                outline=(*_rgb(cor), 56), width=max(1, round(3 * u)))
+        im.alpha_composite(borda)
+        # brilho redondo atrás do A
+        yy, xx = np.mgrid[0:g, 0:g].astype(np.float32) / u
+        r = np.sqrt((xx - 128) ** 2 + (yy - 150) ** 2) / 96
+        alfa = np.clip(1 - r, 0, 1) * 0.45 * 0.5 * 255
+        halo = np.dstack([np.full_like(r, c) for c in _rgb(cor)] + [alfa]).astype(np.uint8)
+        halo_im = Image.fromarray(halo, "RGBA")
+        halo_im.putalpha(Image.fromarray(np.minimum(np.array(placa), alfa).astype(np.uint8), "L"))
+        im.alpha_composite(halo_im)
+    # o "A" (traço grosso com pontas e junta redondas)
+    largura = (46 if simples else 38) * u
+    pontos = [(62 * u, 206 * u), (128 * u, 54 * u), (194 * u, 206 * u)]
+
+    def letra(d):
+        d.line(pontos, fill=255, width=round(largura), joint="curve")
+        for x, y in pontos:
+            d.ellipse((x - largura / 2, y - largura / 2, x + largura / 2, y + largura / 2), fill=255)
+    claro, meio, escuro = tons_logo(cor)
+    im.paste(gradiente(40, 40, 220, 230, [(0, claro), (0.55, meio), (1, escuro)]), (0, 0), mascara(letra))
+    # a onda de voz no lugar da barra do A (contorno escuro por baixo, como paint-order: stroke)
+    barras = ([(96, 14, 44), (128, 14, 64), (160, 14, 44)] if simples
+              else [(92, 11, 26), (110, 11, 46), (128, 11, 62), (146, 11, 46), (164, 11, 26)])
+    contorno = (5 if simples else 4) / 2
     d = ImageDraw.Draw(im)
-    u = grande / 100  # desenho pensado numa grade de 100 x 100
-
-    def p(x, y):
-        return (x * u, y * u)
-
-    d.rounded_rectangle((*p(3, 3), *p(97, 97)), radius=22 * u, fill=fundo)
-    d.rounded_rectangle((*p(11, 11), *p(89, 89)), radius=16 * u, outline=destaque, width=round(4 * u))
-    d.line([p(30, 74), p(50, 26), p(70, 74)], fill=destaque, width=round(10 * u), joint="curve")
-    d.line([p(38, 58), p(62, 58)], fill=destaque, width=round(10 * u))
-    for x, y1, y2 in ((71, 45, 55), (78, 40, 60), (85, 45, 55)):  # ondas de voz
-        d.line([p(x, y1), p(x, y2)], fill=verde, width=round(4 * u))
-        for y in (y1, y2):
-            d.ellipse((*p(x - 2, y - 2), *p(x + 2, y + 2)), fill=verde)
-    d.rounded_rectangle((*p(66, 14), *p(86, 28)), radius=7 * u, fill=destaque)  # balão de fala
-    for x in (73, 80):
-        d.ellipse((*p(x - 2.5, 18.5), *p(x + 2.5, 23.5)), fill=fundo)
+    for x, w, h in barras:
+        for folga, tinta in ((contorno, (28, 20, 24, 255)), (0, (*_rgb(VERDE_ONDA), 255))):
+            caixa = ((x - w / 2 - folga) * u, (158 - h / 2 - folga) * u, (x + w / 2 + folga) * u, (158 + h / 2 + folga) * u)
+            d.rounded_rectangle(caixa, radius=(w / 2 + folga) * u, fill=tinta)
     return im.resize((tamanho, tamanho), Image.LANCZOS)
+
+
+TAMANHOS_ICO = (16, 24, 32, 48, 64, 128, 256)
 
 
 def definir_icone_da_barra() -> None:
@@ -217,8 +264,8 @@ def definir_icone_da_barra() -> None:
 
 
 def salvar_icones(cor: str | None = None) -> None:
-    """Regrava app/icone.png e app/icone.ico na cor escolhida (atalho e janela)."""
-    im = desenhar_icone(cor)
+    """Regrava app/icone.png (256) e app/icone.ico (16 a 256, cada tamanho desenhado para ele) na cor escolhida."""
     pasta = Path(__file__).parent
-    im.resize((256, 256)).save(pasta / "icone.png")
-    im.save(pasta / "icone.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    desenhar_icone(cor, 256).save(pasta / "icone.png")
+    imagens = [desenhar_icone(cor, t) for t in TAMANHOS_ICO]
+    imagens[-1].save(pasta / "icone.ico", sizes=[(t, t) for t in TAMANHOS_ICO], append_images=imagens[:-1])

@@ -14,6 +14,24 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Avatar robô na área de trabalho + logo "Onda"
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (visual) Reinicie: `Mestre, reinicia` | O robozinho rosa entra pulando logo acima do relógio, os olhos verdes acendem; a bolinha do topo não aparece mais | (visual) |
+| `Mestre, que horas são` | Enquanto você fala: inclina a cabeça, olhos maiores, antena brilha, ondinhas. Na resposta: a boca mexe junto com a voz | `_cmd_hora_data` |
+| `Mestre, me explica a teoria da relatividade` e logo `Mestre, me explica buracos negros` | Balão com pontinhos; com 2 na fila aparece o número vermelho "2" | (IA) |
+| (visual) Botão direito no robô > Pausar a escuta, depois Retomar | Ele sai de cena; ao retomar volta pulando | (visual) |
+| `Mestre, pode descansar` e depois `Mestre, bora voltar a trabalhar` | Olhos fechados e "zzz"; depois acorda | `_cmd_descanso` |
+| (visual) Arraste o robô para outro lugar e reinicie | Ele volta no lugar novo; botão direito > Voltar ao lugar padrão leva para cima do relógio | (visual) |
+| (visual) Duplo clique no robô | Abre o painel | (visual) |
+| (visual) Botão direito > Esconder avatar | Some (volta ao reiniciar); o assistente continua ouvindo | (visual) |
+| (visual) `Mestre, desliga` | O robô se despede (olhos apagam) e some junto | `_cmd_encerrar` |
+| (painel) Aparência > Indicador na tela > Bolinha, salvar e reiniciar | Volta a bolinha de antes; trocar para "Avatar robô" traz o robô de novo | (painel) |
+| (visual) Ícone do atalho, da bandeja perto do relógio e do menu do painel | É o "A" rosa com a onda verde no lugar da barra | (visual) |
+| (painel) Aparência: troque a cor de destaque e aplique | O ícone e a cabeça do robô (após reiniciar) seguem a cor nova | (painel) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Itens "Avatar" e "Logo Onda" OK | (automático) |
+
 ### Painel 2.5: menu de ícones, Início em cartões e Voz em abas
 
 | Frase | O que deve acontecer | Comando esperado |

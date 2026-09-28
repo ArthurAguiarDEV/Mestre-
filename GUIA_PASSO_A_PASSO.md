@@ -664,6 +664,35 @@ Agora ele pode **comparar cada pedido com a sua voz** e ignorar as outras. Roda 
 
 ## Etapa 18: O indicador na tela
 
+### O avatar robô (padrão a partir da 2.5)
+
+Um **robozinho rosa** fica **logo acima do relógio** (canto de baixo, à direita), sempre por cima das janelas e
+sem botão na barra de tarefas. Ele mostra o que o assistente está fazendo:
+
+| O robô | Significa |
+|---|---|
+| Entra pulando em cena, os olhos verdes acendem | Ligando |
+| Balança devagar e pisca | Ligado, esperando você chamar |
+| Inclina a cabeça, olhos maiores, antena brilhando e ondinhas ao lado | Ouvindo você |
+| Balão com pontinhos em cima e olhar para cima | Pensando (um **número vermelho** = quantos pedidos na fila) |
+| A boca abre e fecha junto com a voz | Falando |
+| Selo verde com ✓ | A resposta pensada está pronta: diga *"pode falar"* |
+| Sai de cena (desce e some) | Pausado. Quando você retoma, ele volta pulando |
+| Olhos fechados e "zzz" | Descansando |
+
+- **Arraste** para onde quiser (ele lembra o lugar). **Duplo clique** abre o painel.
+- **Passe o mouse** por cima: o que ele está fazendo, a última frase que ouviu e a última resposta.
+- **Botão direito:** Pausar/Retomar a escuta, Abrir painel, **Voltar ao lugar padrão** e **Esconder avatar** (volta quando reiniciar).
+- Prefere a bolinha de antes? Painel > **Aparência** > "Indicador na tela" > **Bolinha**, salve e reinicie.
+- O avatar usa a biblioteca grátis **PySide6** (o INSTALAR_E_CRIAR_ATALHO.bat e a atualização instalam). Se ela
+  faltar ou der erro, aparece a bolinha sozinha.
+- Ele gasta muito pouco: parado quase nada, e quando está pausado não desenha nada.
+
+O ícone do programa (atalho, bandeja do relógio e menu do painel) também mudou: é o **"A" com uma onda de voz
+verde** no lugar da barra, na cor de destaque que você escolher na Aparência.
+
+### A bolinha (opção)
+
 Uma pílula pequena fica **no topo da tela, sempre visível**, mostrando o que o Mestre está fazendo:
 
 | Cor | Mensagem | Significa |

@@ -1774,6 +1774,119 @@ print("FIM_SUGESTOES")
 """
 
 
+AVATAR = r"""
+# Avatar robo (processo separado, PySide6) + logo "Onda"
+import os, sys, json, math, time, wave, struct, tempfile, subprocess, threading, traceback, tkinter as tk
+from pathlib import Path
+import yaml
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
+from app import avatar, tema, estado
+v = avatar.visual
+ok(v({"nome": "iniciando"}) == "ligando" and v({"nome": "ouvindo"}) == "idle" and v({"nome": "gravando"}) == "ouvindo"
+   and v({"nome": "conversa"}) == "ouvindo" and v({"nome": "falando"}) == "falando"
+   and v({"nome": "ouvindo", "pensamento": "pensando"}) == "pensando" and v({"nome": "transcrevendo"}) == "pensando"
+   and v({"nome": "ouvindo", "descanso": True}) == "descansando" and v({"nome": "ouvindo"}, pausado=True) == "pausado"
+   and v({"nome": "ouvindo"}, rodando=False) == "desligado" and v({"nome": "desligado"}) == "desligado",
+   "Avatar: estado do assistente -> animação (ligando/ouvindo/pensando/falando/pausado/descansando/desligado)")
+a = avatar.Animador()
+ok(a.mudar("ligando", 0.0) == "entrar" and a.quadro(0.05)["in_op"] < 0.2 and a.quadro(0.6)["in_op"] > 0.9
+   and a.quadro(2.0)["anim"] == "" and a.base == "idle", "Avatar: ligando = entra em cena e fica normal")
+ok(a.fps(2.0) == 20, f"Avatar: parado no normal anima devagar (20 quadros/s) ({a.fps(2.0)})")
+a.mudar("ouvindo", 3.0); q = [a.quadro(3.0 + i / 60) for i in range(60)][-1]
+ok(q["ondas"] > 0.9 and q["tilt"] < -6 and q["olhos_sx"] > 1.15 and a.fps(4.0) == 60,
+   "Avatar: ouvindo = atento (inclina, olhos maiores, ondas, 60 quadros/s)")
+a.mudar("pensando", 5.0, fila=3); q = [a.quadro(5.0 + i / 30) for i in range(45)][-1]
+ok(q["balao"] > 0.9 and q["selo"] > 0.9 and q["selo_texto"] == "3", "Avatar: pensando = balão com pontinhos + selo com a fila (3)")
+a.mudar("pensando", 7.0, fila=1); q = [a.quadro(7.0 + i / 30) for i in range(45)][-1]
+ok(q["selo"] < 0.1, "Avatar: fila de 1 não mostra o selo")
+a.mudar("falando", 9.0)
+for i in range(30):
+    a.nivel(0.05, 9.0 + i / 60); q_baixo = a.quadro(9.0 + i / 60)
+for i in range(30):
+    a.nivel(1.0, 9.5 + i / 60); q_alto = a.quadro(9.5 + i / 60)
+ok(q_alto["boca"] > 0.9 and q_alto["boca_sy"] > q_baixo["boca_sy"] + 0.5,
+   f"Avatar: falando = a boca abre com o volume da fala ({q_baixo['boca_sy']:.2f} -> {q_alto['boca_sy']:.2f})")
+ok(a.mudar("pausado", 11.0) == "sair" and a.visivel(11.3) and not a.visivel(12.0) and a.fps(12.0) == 0,
+   "Avatar: pausado = sai de cena e para de desenhar (0 quadros/s)")
+ok(a.mudar("idle", 13.0) == "voltar" and a.visivel(13.1), "Avatar: voltando = entra de novo")
+a.mudar("descansando", 15.0); q = [a.quadro(15.0 + i / 20) for i in range(40)][-1]
+ok(q["zzz"] > 0.9 and q["olhos_sy"] < 0.2, "Avatar: descansando = olhos fechados e zzz")
+ok(a.mudar("desligado", 20.0) == "desligar" and not a.terminou(20.3) and a.terminou(21.0),
+   "Avatar: desligado = despedida e fecha")
+x, y = avatar.posicao_padrao((0, 0, 1920, 1032))
+L, F = avatar.LADO_JANELA, avatar.FOLGA
+ok(1920 - 30 <= x + L - F <= 1920 and 1032 - 20 <= y + L - F <= 1032 and x > 1700,
+   f"Avatar: posição padrão logo acima do relógio ({x}, {y})")
+x2, y2 = avatar.posicao_padrao((1920, 0, 3840, 1080))
+ok(x2 > 3600 and y2 > 900, "Avatar: posição padrão respeita onde fica a área de trabalho")
+ok(avatar.posicao_valida((x, y), [(0, 0, 1920, 1032)]) and not avatar.posicao_valida((5000, 10), [(0, 0, 1920, 1032)]),
+   "Avatar: posição salva fora das telas (monitor desligado) volta ao padrão")
+avatar.salvar_posicao((120, 340)); lida = avatar.ler_posicao(); avatar.salvar_posicao(None)
+ok(lida == (120, 340) and avatar.ler_posicao() is None and "Mestre" in str(avatar.arquivo_posicao()),
+   "Avatar: posição arrastada fica salva (APPDATA/Mestre/avatar.json)")
+ok(avatar.tipo_escolhido({}) == "avatar" and avatar.tipo_escolhido({"indicador": {"tipo": "bolinha"}}) == "bolinha"
+   and avatar.tipo_escolhido({"indicador": {"tipo": "xyz"}}) == "avatar", "Avatar: padrão é o avatar; bolinha é opção")
+# fallback: sem PySide6 (ou no teste) nada abre e o Assessor usa a bolinha
+from app import main as m
+class Ex:
+    rodando = True; nome = "Jarvis"; palavra = "jarvis"
+ok(avatar.iniciar() is None and m._mostrar_avatar({}, Ex()) is False, "Avatar: no teste automático não aparece nada")
+os.environ["MESTRE_SIMULAR"] = "0"
+_pi = avatar.pyside_instalado; avatar.pyside_instalado = lambda: False
+ok(avatar.iniciar() is None and m._mostrar_avatar({}, Ex()) is False, "Avatar: sem PySide6 cai para a bolinha")
+avatar.pyside_instalado = _pi
+os.environ["MESTRE_SIMULAR"] = "1"
+ok(m._mostrar_avatar({"indicador": {"tipo": "bolinha"}}, Ex()) is False, "Avatar: escolheu bolinha = bolinha")
+falha = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"])
+fechou = subprocess.Popen([sys.executable, "-c", "raise SystemExit(0)"])
+rodando = [True]
+threading.Timer(1.5, lambda: rodando.__setitem__(0, False)).start()
+ok(avatar.acompanhar(falha, lambda: True) == "falhou" and avatar.acompanhar(fechou, lambda: rodando[0]) == "escondido",
+   "Avatar: fechou com erro = bolinha; escondido pelo menu = segue sem indicador")
+avatar.ATIVO = False; avatar.enviar_nivel(0.5)   # desligado: nao faz nada (nem erro)
+arq = os.path.join(tempfile.mkdtemp(), "fala.wav")
+with wave.open(arq, "wb") as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)
+    w.writeframes(b"".join(struct.pack("<h", int((8000 if n < 12000 else 300) * math.sin(n / 9))) for n in range(24000)))
+env = avatar.envelope(Path(arq))
+ok(env and len(env) in (29, 30, 31) and avatar.nivel_no_tempo(env, 100) > 0.8 and avatar.nivel_no_tempo(env, 800) < 0.2
+   and avatar.nivel_no_tempo(env, 5000) == 0.0, "Avatar: volume da fala (voz alta -> boca aberta, silêncio -> fechada)")
+if avatar.pyside_instalado():
+    from app import avatar_janela
+    sys.argv = ["x"]
+    ok(avatar_janela.main() == 0, "Avatar: a janela não abre no teste automático")
+    ok(avatar_janela.tons_do_rosa("#F5A6C8") == ("#FFD0E3", "#F5A6C8", "#CF7896") and len(avatar_janela.tons_do_rosa("#8DB8F7")) == 3,
+       "Avatar: cabeça rosa do protótipo (e segue a cor de destaque)")
+# logo "Onda": icone.png e icone.ico em todos os tamanhos
+tema.salvar_icones("#8DB8F7")
+from PIL import Image
+ico = Image.open("app/icone.ico")
+ok(sorted(ico.info["sizes"]) == [(t, t) for t in (16, 24, 32, 48, 64, 128, 256)] and Image.open("app/icone.png").size == (256, 256),
+   "Logo Onda: icone.png (256) e icone.ico (16 a 256) gerados")
+import numpy as np
+px = np.asarray(tema.desenhar_icone("#8DB8F7", 64).convert("RGBA")).reshape(-1, 4).astype(int)
+verde = int(((px[:, 1] > 200) & (px[:, 0] < 160) & (px[:, 3] > 200)).sum())
+azul = int(((px[:, 2] > 220) & (px[:, 0] < 170) & (px[:, 3] > 200)).sum())
+ok(verde > 20 and azul > 100, f"Logo Onda: A na cor de destaque + onda verde ({azul} {verde})")
+ok(tema.desenhar_icone(None, 16).getbbox() is not None, "Logo Onda: versão simples em 16 px")
+# painel > Aparencia: Indicador avatar/bolinha salvo no config
+erros = []
+tk.Tk.report_callback_exception = lambda self, e, val, tb: erros.append("".join(traceback.format_exception(e, val, tb)))
+import app.painel as p
+pn = p.Painel(); pn.update()
+pn.mostrar_pagina("Aparência"); pn.update()
+ok(pn.var_indicador.get() == "Avatar robô", "Painel: Indicador começa em “Avatar robô”")
+pn.var_indicador.set("Bolinha")
+ok(pn.salvar(), "Painel: salvar com o indicador trocado")
+c = yaml.safe_load(open("config.yaml", encoding="utf-8"))
+ok(c["indicador"]["tipo"] == "bolinha" and c["aparencia"], "Painel: “Bolinha” salvo em indicador > tipo")
+ok(not erros, "Avatar/painel sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
+pn._fechar()
+print("FIM_AVATAR")
+"""
+
+
 PAINEL_25 = r"""
 # Painel 2.5: menu de icones, paginas sob demanda, Inicio em cartoes (status, fila, ultimos comandos)
 import json, os, time, traceback, tkinter as tk
@@ -2018,6 +2131,14 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
         if "FIM_PAINEL_25" not in saida:
             conferir(False, "Painel 2.5: o teste rodou até o fim", saida[-1500:])
+
+        print("\n[Avatar robô e logo Onda]")
+        cod, saida = rodar(pasta, AVATAR, espera=180)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_AVATAR" not in saida:
+            conferir(False, "Avatar: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Atualização por .zip]")
         destino = copiar_projeto(Path(tmp) / "outra")

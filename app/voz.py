@@ -429,13 +429,19 @@ class Voz:
             pygame.mixer.init()
             self._pygame_ok = True
         geracao = self._geracao
+        from . import avatar   # avatar na tela: a boca segue o volume da fala (UDP local, só enquanto fala)
+        niveis = avatar.envelope(arquivo) if avatar.ATIVO else None
         pygame.mixer.music.load(str(arquivo))
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             if geracao != self._geracao:   # parar(): corta na hora
                 pygame.mixer.music.stop()
                 break
+            if niveis:
+                avatar.enviar_nivel(avatar.nivel_no_tempo(niveis, pygame.mixer.music.get_pos()))
             time.sleep(0.02)
+        if niveis:
+            avatar.enviar_nivel(0.0)
         pygame.mixer.music.unload()
 
     # --- Voz do Windows (offline) ----------------------------------------

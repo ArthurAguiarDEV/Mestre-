@@ -13,7 +13,7 @@ ARQUIVO_ICONE = Path(__file__).with_name("icone.png")
 
 
 def imagem_do_icone():
-    """O "M" na cor de destaque escolhida no Painel > Aparencia."""
+    """Logo "Onda" (o "A" com a onda de voz) na cor de destaque escolhida no Painel > Aparencia."""
     try:
         from . import tema
 

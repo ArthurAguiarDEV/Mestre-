@@ -531,7 +531,7 @@ class Painel(ctk.CTk):
         # marca (icone do programa + nome); o nome comeca depois da parte visivel do menu fechado
         marca = ctk.CTkFrame(dentro, fg_color="transparent")
         marca.pack(fill="x", pady=(16, 8))
-        self._logo = ctk.CTkImage(tema.desenhar_icone(tema.ROSA, 128), size=(36, 36))
+        self._logo = ctk.CTkImage(icones.logo(tema.ROSA, 128), size=(36, 36))
         ctk.CTkLabel(marca, text="", image=self._logo, width=48).pack(side="left", padx=(10, 0))
         ctk.CTkLabel(marca, text=self.nome, anchor="w", font=tema.fonte(17, True)).pack(side="left", padx=(16, 0))
         # rodape: versao do projeto e da extensao
@@ -2896,6 +2896,22 @@ class Painel(ctk.CTk):
         self.pv_campo.pack(fill="x", padx=12)
         self._previa()
 
+        # indicador na tela: avatar robô (padrão) ou a bolinha de antes
+        from . import avatar
+        f = secao(pagina, "Indicador na tela", "O que fica perto do relógio mostrando se ele está ouvindo, pensando "
+                                               "ou falando. Vale depois de reiniciar o assistente.")
+        tipo = avatar.tipo_escolhido(self.cfg)
+        self.var_indicador = tk.StringVar(value=avatar.TIPOS[tipo])
+        linha_campo(f, "Indicador", lambda p: ctk.CTkSegmentedButton(p, values=list(avatar.TIPOS.values()),
+                                                                     variable=self.var_indicador), 150)
+        if not avatar.pyside_instalado():
+            ctk.CTkLabel(f, text="O avatar precisa da biblioteca PySide6 (instale pelo INSTALAR_E_CRIAR_ATALHO.bat). "
+                                 "Sem ela, aparece a bolinha.", anchor="w", text_color=tema.AVISO,
+                         wraplength=640, justify="left").pack(fill="x", padx=(32, 18), pady=(0, 6))
+        ctk.CTkLabel(f, text="Avatar: arraste para mudar de lugar · duplo clique abre o painel · botão direito: pausar, "
+                             "voltar ao lugar padrão ou esconder.", anchor="w", text_color=tema.TEXTO_FRACO,
+                     wraplength=640, justify="left").pack(fill="x", padx=(32, 18), pady=(0, 8))
+
     def _escolher_cor(self):
         from tkinter import colorchooser
 
@@ -3648,6 +3664,10 @@ class Painel(ctk.CTk):
         ap = configuracao.secao(c, "aparencia")
         for chave, var in self.vars_aparencia.items():
             ap[chave] = configuracao.aspas(var.get())
+        if hasattr(self, "var_indicador"):
+            from . import avatar
+            tipo = next((k for k, v in avatar.TIPOS.items() if v == self.var_indicador.get()), "avatar")
+            configuracao.secao(c, "indicador")["tipo"] = configuracao.aspas(tipo)
 
     def _salvar_sugestoes(self, c):
         from . import sugestoes

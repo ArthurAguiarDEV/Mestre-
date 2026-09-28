@@ -320,3 +320,11 @@ def avatar(cor: str, tamanho: int = 280):
     for x in (30, 90):   # bochechas
         d.ellipse((*p(x - 5, 72), *p(x + 5, 78)), fill=(*(int(v * 0.86) for v in destaque[:3]), 255))
     return im.resize((tamanho, tamanho), Image.LANCZOS)
+
+
+@lru_cache(maxsize=8)
+def logo(cor: str, tamanho: int = 128):
+    """Logo "Onda" (o "A" com a onda de voz) para o menu do painel. Mesmo desenho do ícone da bandeja e do atalho."""
+    from . import tema
+
+    return tema.desenhar_icone(cor, tamanho)

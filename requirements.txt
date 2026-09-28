@@ -23,3 +23,4 @@ torch             # base do reconhecimento da SUA voz (versao so processador, ~5
 torchaudio
 huggingface_hub   # baixa o modelo de voz do speechbrain
 speechbrain      # "responder so a minha voz": compara a voz com o cadastro (modelo de 85 MB, gratis, local)
+PySide6-Essentials  # avatar robo animado perto do relogio (gratis, LGPL; sem ele aparece a bolinha)

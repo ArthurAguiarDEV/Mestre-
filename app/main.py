@@ -68,6 +68,19 @@ def escutar(cfg: dict, voz: Voz, executor: Executor) -> None:
         executor.rodando = False
 
 
+def _mostrar_avatar(cfg: dict, executor: Executor) -> bool:
+    """Avatar robo (processo separado, PySide6) no lugar da bolinha. Fica aqui (linha principal) ate desligar.
+    False = nao deu (escolheu a bolinha, sem PySide6, ou o avatar fechou com erro): mostre a bolinha."""
+    from . import avatar
+
+    if avatar.tipo_escolhido(cfg) != "avatar":
+        return False
+    processo = avatar.iniciar(getattr(executor, "nome", "Assessor"), str(getattr(executor, "palavra", "assessor")))
+    if processo is None:
+        return False
+    return avatar.acompanhar(processo, lambda: executor.rodando) != "falhou"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Mestre - assistente pessoal por voz")
     parser.add_argument("--texto", action="store_true", help="digitar em vez de falar")
@@ -113,7 +126,10 @@ def main() -> None:
     def vigiar_desligar():   # "desliga": o indicador fecha sozinho; se algo segurar (microfone, rede), sai assim mesmo
         while executor.rodando:
             time.sleep(0.2)
+        estado.definir("desligado")   # o avatar se despede (e fecha sozinho)
         time.sleep(1.5)
+        from . import avatar
+        avatar.encerrar(0.1)
         log.info("Desligando (saida garantida)")
         if ARQUIVO_PID.exists() and ARQUIVO_PID.read_text().strip() == str(os.getpid()):
             ARQUIVO_PID.unlink()
@@ -137,19 +153,22 @@ def main() -> None:
         if mostrar:
             # A escuta roda em segundo plano; o indicador fica na "linha principal" (exigencia do Windows)
             threading.Thread(target=escutar, args=(cfg, voz, executor), daemon=True).start()
-            import tkinter as tk
-            from .overlay import Indicador
+            if not _mostrar_avatar(cfg, executor):   # sem PySide6 ou deu erro: a bolinha de sempre
+                import tkinter as tk
+                from .overlay import Indicador
 
-            raiz = tk.Tk()
-            raiz.title("Mestre")
-            Indicador(raiz, executor, sistema.abrir_painel, sistema.reiniciar_mestre)
-            raiz.mainloop()
+                raiz = tk.Tk()
+                raiz.title("Mestre")
+                Indicador(raiz, executor, sistema.abrir_painel, sistema.reiniciar_mestre)
+                raiz.mainloop()
             executor.rodando = False
         else:
             escutar(cfg, voz, executor)
     except KeyboardInterrupt:
         pass
     finally:
+        from . import avatar
+        avatar.encerrar(1.0)
         if icone:
             try:
                 icone.stop()
