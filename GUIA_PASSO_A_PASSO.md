@@ -1405,6 +1405,23 @@ Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por 
 
 Linhas "(painel)" ou "(visual)" do roteiro não têm frase para falar: faça o que a tela diz e marque ✅ ou ❌. Enquanto a validação está aberta, o assistente guarda o áudio de cada frase em `logs/validacao/` (só as últimas 120).
 
+#### Modo contínuo (o jeito mais rápido)
+A caixinha **Modo contínuo** já vem marcada. Com ela:
+1. Clique **▶ Começar** e vá falando as frases que aparecem (a frase fica grande na tela).
+2. Deu certo? Aparece **✅ Deu certo!** e em 1,5 segundo vem a próxima frase **sozinha**, sem clicar em nada.
+3. Deu errado? Ele **para** e mostra em letras grandes o que aconteceu: **OUVI** (o que o reconhecimento escreveu) → **ENTENDI** (e qual comando atendeu) → **FIZ** (o que ele respondeu). Se o ouvido jogou a frase fora, aparece também **DESCARTEI** com o motivo: *curta demais*, *sem a palavra de ativação*, *voz não reconhecida*... Isso mostra exatamente o que ele entendeu. Depois é só **❌ Deu errado** (para anotar "o certo era"), **Repetir** ou **Pular**.
+4. Ficou 15 segundos sem ouvir nada? Aparece **"Não ouvi nada — fale de novo ou Pular"**.
+5. As linhas "(painel)", "(visual)" e "(automático)" ficam fora do modo contínuo. Quer conferir essas também? Marque **Incluir linhas de painel/visual**.
+Prefere o jeito antigo (você confirma cada frase)? Desmarque **Modo contínuo** antes de começar.
+
+### 31.10 Sugestões de melhoria (todo dia às 8h)
+O assistente olha sozinho, uma vez por dia, o que aconteceu desde a última olhada (no mínimo as últimas 24 horas) e monta uma **lista de sugestões**. Ele **não muda nada** no projeto: só sugere.
+- O que ele procura: frases que o ouvido jogou fora (e por quê), a palavra de ativação escrita errada pelo reconhecimento, frases com cara de comando (abre, toca, pausa, volume...) que caíram na IA, "não entendi", pedidos repetidos logo em seguida (sinal de erro) e jeitos novos de falar que funcionaram.
+- Quando: no horário do painel > **Sistema** > **Sugestões de melhoria** > **Horário** (padrão **08:00**). Se o computador estava desligado nesse horário, ele analisa assim que ligar. Dá para desligar em **Analisar todo dia**. Mudou? **Salvar e reiniciar**.
+- Na mesma página: **🔍 Analisar agora** faz a análise na hora. As sugestões aparecem em páginas de 8 (◀ ▶), cada uma com as frases, os horários e os motivos.
+- Marque as que valem a pena e clique **🛠 Mandar marcadas para o Claude**: o painel salva o pedido em `exportacoes/pedido_sugestoes_*.md` e abre o **Claude Code** no terminal já com ele (igual ao botão da validação; você acompanha e aprova tudo).
+- Com a IA ligada, a análise automática ainda ganha um **resumo da IA** no topo da lista (feito em segundo plano, nunca atrapalha).
+
 ---
 
 ## Personalizar

@@ -2212,3 +2212,7 @@ recebidos:
   pasta_ligada: true
   telegram_ligado: true
   destino: "projeto"
+# Sugestoes de melhoria: 1x por dia olha o historico e monta uma lista (painel > Sistema > Sugestoes de melhoria)
+sugestoes:
+  ligado: true
+  hora: "08:00"

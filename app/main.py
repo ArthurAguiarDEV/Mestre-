@@ -116,6 +116,11 @@ def main() -> None:
     from .ponte import Ponte
     executor.ponte = Ponte()   # a extensao do Brave conversa com o Mestre por aqui (abas, janelas e YouTube)
     executor.ponte.iniciar()
+    try:   # "Sugestões de melhoria": 1x por dia (sugestoes > hora), so gera a lista em memoria/sugestoes.json
+        from . import sugestoes
+        sugestoes.iniciar_agendador(cfg, executor.cerebro, lambda: executor.rodando)
+    except Exception:
+        log.exception("Nao consegui ligar as sugestoes de melhoria (seguindo mesmo assim)")
     from . import bandeja
 
     icone = bandeja.iniciar(sistema.abrir_painel, sistema.reiniciar_mestre,

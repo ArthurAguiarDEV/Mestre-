@@ -54,7 +54,7 @@ class Item:
     o_que: str                  # 2a coluna
     esperado: str               # 3a coluna, como esta no roteiro
     comandos: list[str] = field(default_factory=list)   # _cmd_* esperados
-    tipo: str = ""              # comando | ia | ignorado | acordar | qualquer | manual | ""
+    tipo: str = ""              # comando | ia | ignorado | acordar | qualquer | chamou | manual | ""
     manual: bool = False        # (painel)/(visual)/(automático): nao ha frase para falar
 
     def para_falar(self, palavra: str = "") -> str:
@@ -108,6 +108,8 @@ def _tipo_esperado(esperado: str, comandos: list[str], manual: bool) -> str:
     n = normalizar(esperado.replace("`", ""))
     if manual or re.search(r"\b(painel|automatico|teste|visual|bandeja)\b", n):
         return "manual"
+    if "so chamou" in n:
+        return "chamou"
     if "ignorad" in n:
         return "ignorado"
     if "acorda" in n:
@@ -233,7 +235,7 @@ def capturar(desde: float, historico: list[dict] | None = None, ouvidas: list[di
     else:
         fiz = "(nada registrado: ignorado ou ainda trabalhando)"
     return {"ouvi": str((ouvido or {}).get("texto") or (pedido or {}).get("pedido") or ""),
-            "entendi": entendi, "rota": rota, "fiz": fiz,
+            "entendi": entendi, "rota": rota, "fiz": fiz, "pedidos": len(pedidos),
             "audio": str((ouvido or {}).get("audio") or ""),
             "ts": max(_ts(pedido) if pedido else 0.0, _ts(ouvido) if ouvido else 0.0)}
 
@@ -269,6 +271,8 @@ def conferir(item: Item, captura: dict | None) -> str | None:
         return "ok" if rota == "saiu do descanso" else "falha"
     if item.tipo == "qualquer":
         return "ok" if "_cmd_" in rota else "falha"
+    if item.tipo == "chamou":
+        return "ok" if rota == "so chamou" else "falha"
     return None
 
 
@@ -326,6 +330,116 @@ class Sessao:
 
 
 # =====================================================================
+#  Modo continuo: avanca sozinho no ✅, so para no ❌
+# =====================================================================
+AVANCO_SEGUNDOS = 1.5     # depois do ✅, espera isso e passa para a proxima frase
+SILENCIO_SEGUNDOS = 15    # nada ouvido nesse tempo: "não ouvi nada — fale de novo ou Pular"
+ESPERA_IA = 15            # caiu na IA: espera a IA virar o comando certo antes de dar ❌
+ESPERA_DESCARTE = 4       # frase descartada parecida com a esperada: espera isso (pode vir a certa) e da ❌
+ESPERA_IGNORADO = 3       # frase que deve ser ignorada: ouviu e nada aconteceu nesse tempo = ✅
+
+
+def manual(item: Item) -> bool:
+    """Linha sem frase para falar ((painel)/(visual)/(automático)): fica fora do modo continuo por padrao."""
+    return item.manual or item.tipo == "manual"
+
+
+def para_continuo(itens: list[Item], incluir_manuais: bool = False) -> list[Item]:
+    return [i for i in itens if incluir_manuais or not manual(i)]
+
+
+def _parecida(texto: str, item: Item) -> bool:
+    """A frase ouvida parece com o que era para falar? (so assim um descarte conta como a tentativa)"""
+    from difflib import SequenceMatcher
+
+    ouvido = set(normalizar(texto).split())
+    if not ouvido:
+        return False
+    for fala in item.falas or [item.frase]:
+        esperado = normalizar(re.sub(r"\bMestre\b", "", fala))
+        palavras = set(esperado.split())
+        if not palavras:
+            continue
+        comum = len(ouvido & palavras) / len(palavras)
+        if comum >= 0.5 or SequenceMatcher(None, normalizar(texto), esperado).ratio() >= 0.6:
+            return True
+    return False
+
+
+def descartes(desde: float, ouvidas: list[dict] | None = None) -> list[dict]:
+    """Frases que o ouvido jogou fora depois de `desde`, com o motivo (curta demais, sem a palavra,
+    voz não reconhecida...). "só a palavra: esperando o resto" nao e descarte (o resto ainda vem)."""
+    if ouvidas is None:
+        from . import memoria
+        ouvidas = memoria.ouvidas(80)
+    lista = []
+    for o in ouvidas:
+        motivo = str(o.get("motivo") or "")
+        if _ts(o) >= desde and motivo and not motivo.startswith("só a palavra"):
+            lista.append({"texto": str(o.get("texto") or ""), "motivo": motivo, "ts": _ts(o),
+                          "data": str(o.get("data") or "")})
+    return lista
+
+
+def avaliar_continuo(item: Item, desde: float, agora: float | None = None, historico: list[dict] | None = None,
+                     ouvidas: list[dict] | None = None) -> dict:
+    """Decide sozinho o que fazer com a frase da tela no modo continuo.
+
+    estado: "esperando" | "ok" (avanca) | "falha" (para e mostra OUVI → ENTENDI → FIZ + motivos) |
+            "silencio" (nada ouvido em SILENCIO_SEGUNDOS) | "conferir" (nao da para decidir: o usuario marca)
+    """
+    agora = time.time() if agora is None else agora
+    if historico is None or ouvidas is None:
+        from . import memoria
+        historico = memoria.historico(80) if historico is None else historico
+        ouvidas = memoria.ouvidas(80) if ouvidas is None else ouvidas
+    captura = capturar(desde, historico, ouvidas)
+    fora = descartes(desde, ouvidas)
+    parecidos = [d for d in fora if _parecida(d["texto"], item)]
+    novas = [o for o in ouvidas if _ts(o) >= desde]
+    r = {"estado": "esperando", "captura": captura, "descartes": parecidos or fora[-3:], "sugestao": None}
+    if manual(item):
+        r["estado"] = "conferir"
+        return r
+    sugestao = conferir(item, captura)
+    rota = str((captura or {}).get("rota") or "")
+    ultimo = max([_ts(o) for o in novas] + [float((captura or {}).get("ts") or 0)] + [desde])
+    if item.tipo == "ignorado":
+        if rota and not rota.startswith("ignorado"):
+            r.update(estado="falha", sugestao="falha")
+        elif novas and agora - ultimo >= ESPERA_IGNORADO:
+            r.update(estado="ok", sugestao="ok")
+        elif not novas and agora - desde >= SILENCIO_SEGUNDOS:
+            r["estado"] = "silencio"
+        return r
+    if sugestao == "ok":
+        falas = max(1, len(item.falas))
+        if int((captura or {}).get("pedidos") or 0) >= falas:
+            r.update(estado="ok", sugestao="ok")
+        return r   # varias falas ("A → B"): espera a ultima
+    if sugestao == "falha":
+        if rota == "ia" and item.tipo == "comando" and agora - float(captura.get("ts") or 0) < ESPERA_IA:
+            return r   # a IA pode transformar no comando certo em segundo plano
+        r.update(estado="falha", sugestao="falha")
+        return r
+    if captura and rota:   # atendeu, mas o roteiro nao diz o comando: o usuario confere
+        r["estado"] = "conferir"
+        return r
+    if parecidos and agora - parecidos[-1]["ts"] >= ESPERA_DESCARTE:
+        r.update(estado="falha", sugestao="falha")   # falou a frase e ela foi jogada fora
+        return r
+    if not parecidos and agora - ultimo >= SILENCIO_SEGUNDOS:
+        r["estado"] = "silencio"   # nada (ou so "Mestre" sozinho) ha 15 s
+    return r
+
+
+def texto_descartes(lista: list[dict]) -> str:
+    """Linhas curtas para a tela: 'descartei "abre o yutubi" (curta demais)'."""
+    return "\n".join(f"descartei “{d['texto'] or '(nada)'}” ({d['motivo']})" for d in lista)
+
+
+
+# =====================================================================
 #  Relatorio e FEEDBACK
 # =====================================================================
 def _limpar(texto) -> str:
@@ -342,6 +456,8 @@ def linha_feedback(item: Item, r: dict) -> str:
     esperado = ", ".join(item.comandos) or _limpar(item.esperado)
     linha = (f"FEEDBACK: ouvi \"{_limpar(c.get('ouvi')) or _limpar(item.para_falar())}\" · entendi \"{entendi}\" · "
              f"respondi \"{_limpar(c.get('fiz'))}\" · o certo era: {certo} (validação: esperado {esperado})")
+    if c.get("descartado"):
+        linha += f" (ouvido: {_limpar(c['descartado'])})"
     if c.get("audio"):
         linha += f" [áudio: {c['audio']}]"
     return linha
@@ -372,6 +488,7 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
               f"- **Ouvi:** {c.get('ouvi') or '(nada)'}",
               f"- **Entendi:** {c.get('entendi') or '(nada)'} → `{c.get('rota') or 'nenhum comando'}`",
               f"- **Fiz:** {c.get('fiz') or '(nada)'}",
+              *([f"- **Descartado pelo ouvido:** {_limpar(c['descartado'])}"] if c.get("descartado") else []),
               f"- **Esperado:** {item.o_que} · `{', '.join(item.comandos) or item.esperado}`",
               f"- **O certo era:** {r.get('certo_era') or '(não disse)'}"]
         if c.get("audio"):
@@ -438,12 +555,13 @@ def pedido_de_correcao(relatorio: Path) -> str:
             "e rode /entregar.")
 
 
-def salvar_pedido_correcao(pedido: str, agora: datetime | None = None, pasta: Path | None = None) -> Path:
-    """Salva o pedido em exportacoes/pedido_correcao_AAAA-MM-DD_HHMM.md."""
+def salvar_pedido_correcao(pedido: str, agora: datetime | None = None, pasta: Path | None = None,
+                           prefixo: str = "pedido_correcao") -> Path:
+    """Salva o pedido em exportacoes/<prefixo>_AAAA-MM-DD_HHMM.md (as Sugestões usam "pedido_sugestoes")."""
     agora = agora or datetime.now()
     pasta = Path(pasta or PASTA_EXPORTACOES)
     pasta.mkdir(parents=True, exist_ok=True)
-    arquivo = pasta / f"pedido_correcao_{agora:%Y-%m-%d_%H%M}.md"
+    arquivo = pasta / f"{prefixo}_{agora:%Y-%m-%d_%H%M}.md"
     arquivo.write_text(pedido.strip() + "\n", encoding="utf-8")
     return arquivo
 

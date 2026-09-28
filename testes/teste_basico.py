@@ -1212,6 +1212,36 @@ ok(v.capturar(0, [{"data": "27/09/2026 13:02", "tipo": "comando", "pedido": "x",
 ok(v.fala_nova(t0 + 18, ouv + [{"ts": t0 + 30, "texto": "Era pra abrir o Gmail", "chamou": False}])
    == "Era pra abrir o Gmail", "Validação: 'o certo era' falado")
 
+# modo continuo (funcao pura): avanca no ✅, para no ❌, silencio, descartes com o motivo
+A = v.avaliar_continuo
+ok(A(itens[0], t0, t0 + 4, hist, ouv)["estado"] == "ok", "Contínuo: comando certo = ✅ (avança sozinho)")
+r = A(itens[8], t0 + 15, t0 + 40, hist2, ouv + [{"ts": t0 + 19, "texto": "Mestre, abre o Gmail.", "chamou": True}])
+ok(r["estado"] == "falha", f"Contínuo: comando errado = ❌ (para) ({r['estado']})")
+hia = [{"ts": t0 + 3, "tipo": "comando", "pedido": "Mestre abre o gmail", "entendi": "abre o gmail", "rota": "ia"}]
+ok(A(itens[8], t0, t0 + 5, hia, ouv)["estado"] == "esperando" and A(itens[8], t0, t0 + 30, hia, ouv)["estado"] == "falha",
+   "Contínuo: caiu na IA espera a IA virar comando antes do ❌")
+ok(A(itens[0], t0 + 100, t0 + 105, hist, ouv)["estado"] == "esperando"
+   and A(itens[0], t0 + 100, t0 + 100 + v.SILENCIO_SEGUNDOS + 1, hist, ouv)["estado"] == "silencio",
+   "Contínuo: nada ouvido em ~15 s = 'não ouvi nada'")
+desc = [{"ts": t0 + 200, "texto": "que horas são", "chamou": False, "motivo": "sem a palavra de ativação"},
+        {"ts": t0 + 201, "texto": "", "motivo": "curta demais", "descartado": True},
+        {"ts": t0 + 202, "texto": "Mestre", "chamou": True, "motivo": "só a palavra: esperando o resto (3.0s)"}]
+r = A(itens[0], t0 + 199, t0 + 199 + v.ESPERA_DESCARTE + 4, hist, desc)
+ok(r["estado"] == "falha" and [d["motivo"] for d in r["descartes"]] == ["sem a palavra de ativação"]
+   and "sem a palavra de ativação" in v.texto_descartes(r["descartes"]),
+   f"Contínuo: frase descartada mostra o motivo do ouvido.jsonl ({r['estado']}, {r['descartes']})")
+ok(A(itens[0], t0 + 199, t0 + 201, hist, desc)["estado"] == "esperando", "Contínuo: descarte espera um pouco (a certa pode vir)")
+ign = [{"ts": t0 + 300, "texto": "Mestre, toca o vídeo", "chamou": False, "motivo": "sem a palavra de ativação"}]
+ok(A(itens[4], t0 + 299, t0 + 305, [], ign)["estado"] == "ok"
+   and A(itens[4], t0 + 299, t0 + 305, [{"ts": t0 + 301, "tipo": "comando", "pedido": "x", "rota": "_cmd_youtube"}],
+         ign)["estado"] == "falha", "Contínuo: frase que deve ser ignorada (✅ se nada rodou, ❌ se rodou)")
+um = [{"ts": t0 + 401, "tipo": "comando", "pedido": "a", "rota": "_cmd_ensinar_rotina", "resposta": "?"}]
+dois = um + [{"ts": t0 + 405, "tipo": "comando", "pedido": "b", "rota": "rotina falada: cancelou", "resposta": "ok"}]
+ok(A(itens[5], t0 + 400, t0 + 403, um, [])["estado"] == "esperando" and A(itens[5], t0 + 400, t0 + 407, dois, [])["estado"] == "ok",
+   "Contínuo: frase em duas partes (A → B) espera a segunda")
+ok(len(v.para_continuo(itens)) == len(itens) - 1 and len(v.para_continuo(itens, True)) == len(itens),
+   "Contínuo: linhas (painel)/(visual) ficam fora por padrão (opção para incluir)")
+
 # sessao, relatorio e FEEDBACK (numa copia do MELHORIAS)
 s = v.Sessao(itens[:3] + [itens[8]], "Tudo")
 s.marcar("ok", c, "ok")
@@ -1253,6 +1283,7 @@ import app.painel as p
 pn = p.Painel(); pn.update()
 pn.mostrar_pagina("Validar atualização"); pn.update()
 pn.var_val_escolha.set("Só sempre testar")
+pn.var_val_continuo.set(False)   # o modo de antes (com clique) continua existindo
 pn._val_comecar(); pn.update()
 item = pn._val.atual
 ok(pn.rot_val_frase.cget("text").startswith("Fale:") and v.ARQUIVO_ATIVA.exists(),
@@ -1307,8 +1338,182 @@ pn._val_atualizar_botao_claude(); pn.update()
 ok(pn.bt_val_claude.cget("state") == "disabled",
    "Validação: botão 'Mandar para o Claude corrigir' desativado sem falhas no relatório")
 
+
+# modo continuo no painel: avanca sozinho no ✅ e para no ❌ (historico simulado)
+def esperar(seg):
+    fim = time.time() + seg
+    while time.time() < fim:
+        pn.update(); time.sleep(0.05)
+
+v.ler_roteiro = lambda *a, **k: list(itens)
+pn.var_val_escolha.set("Só novidades"); pn.var_val_continuo.set(True); pn.var_val_manuais.set(False)
+pn._val_comecar(); pn.update()
+ok(len(pn._val.itens) == 6 and not any(v.manual(i) for i in pn._val.itens),
+   f"Contínuo (painel): começa sem as linhas de painel ({len(pn._val.itens)} frases)")
+time.sleep(0.05)
+memoria.ouvido("Mestre, que horas são?", chamou=True)
+memoria.registrar("Mestre, que horas são?", "São dez horas.", "comando", {"entendi": "que horas sao", "rota": "_cmd_hora_data"})
+pn._val_vigiar_continuo(pn._val, pn._val.atual); pn.update()
+ok(pn._val_estado == "ok" and "Deu certo" in pn.rot_val_sugestao.cget("text"), "Contínuo (painel): ✅ sozinho, sem clique")
+esperar(v.AVANCO_SEGUNDOS + 0.4)
+ok(pn._val.indice == 1 and pn._val.resultados[0]["veredito"] == "ok", "Contínuo (painel): passou para a próxima frase sozinho")
+time.sleep(0.05)
+memoria.ouvido("Mestre, abre a b", chamou=True)
+memoria.registrar("Mestre, abre a b", "Abrindo o YouTube.", "comando", {"entendi": "abre a b", "rota": "_cmd_youtube"})
+pn._val_vigiar_continuo(pn._val, pn._val.atual); pn.update()
+esperar(v.AVANCO_SEGUNDOS + 0.4)
+destaque = {k: r.cget("text") for k, (_, r) in pn.rot_val_destaque.items()}
+ok(pn._val_estado == "falha" and pn._val.indice == 1 and bool(pn.fr_val_destaque.winfo_manager())
+   and "_cmd_youtube" in destaque["entendi"] and "abre a b" in destaque["ouvi"] and "YouTube" in destaque["fiz"],
+   f"Contínuo (painel): parou no ❌ e mostra OUVI → ENTENDI → FIZ em destaque ({destaque})")
+pn._val_marcar("pulado"); pn.update()
+ok(pn._val.indice == 2 and not pn.fr_val_destaque.winfo_manager() and pn._val_estado in ("", "esperando"),
+   "Contínuo (painel): Pular segue para a próxima e esconde o destaque")
+time.sleep(0.05)
+memoria.ouvido("o que é um buraco negro", chamou=False, conversa=False, motivo="sem a palavra de ativação")
+pn._val.exibida_em -= v.ESPERA_DESCARTE + 1
+pn._val_vigiar_continuo(pn._val, pn._val.atual); pn.update()
+destaque = pn.rot_val_destaque["descartes"][1].cget("text")
+ok(pn._val_estado == "falha" and "sem a palavra de ativação" in destaque,
+   f"Contínuo (painel): frase descartada mostra o motivo ({pn._val_estado}, {destaque!r})")
+pn._val_errado(); pn.ent_val_certo.insert(0, "era pra pensar"); pn._val_confirmar_erro(); pn.update()
+ok("sem a palavra de ativação" in pn._val.resultados[2]["captura"].get("descartado", ""),
+   "Contínuo (painel): o ❌ leva o motivo do descarte para o relatório")
+pn._val_parar(); pn.update()
+ok(pn._val is None and "Descartado pelo ouvido" in pn._val_relatorio.read_text(encoding="utf-8"),
+   "Contínuo (painel): relatório com o motivo do descarte")
+ok(not erros, "Contínuo (painel): sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
+
 pn._fechar()
 print("FIM_VALIDACAO")
+"""
+
+SUGESTOES = r"""
+# Sugestoes de melhoria: analise com historico/ouvido sinteticos, agendamento e a pagina do painel
+import json, time, traceback, tkinter as tk
+from datetime import datetime, timedelta
+from pathlib import Path
+from app import sugestoes as sg
+
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+
+# agendamento
+d = datetime(2026, 9, 28)
+P = sg.proxima_execucao
+ok(sg.hora_config("8h30") == (8, 30) and sg.hora_config("7") == (7, 0) and sg.hora_config("xx") == (8, 0)
+   and sg.hora_texto("9:05") == "09:05", "Sugestões: horário do config (08:00, 8h30, inválido = 08:00)")
+ok(P("08:00", (d.replace(hour=8, minute=1)).timestamp(), d.replace(hour=10)) == (d + timedelta(days=1)).replace(hour=8),
+   "Sugestões: já rodou hoje = amanhã às 8h")
+ok(P("08:00", (d - timedelta(days=1)).replace(hour=8, minute=5).timestamp(), d.replace(hour=7)) == d.replace(hour=8),
+   "Sugestões: antes das 8h = hoje às 8h")
+ok(P("08:00", (d - timedelta(days=1)).replace(hour=8, minute=5).timestamp(), d.replace(hour=9, minute=30))
+   == d.replace(hour=9, minute=30), "Sugestões: PC desligado às 8h = roda na próxima abertura")
+ok(P("08:00", None, d.replace(hour=7)) == d.replace(hour=7), "Sugestões: nunca rodou = roda já")
+ag = sg.Agendador({"sugestoes": {"hora": "08:00"}})
+hoje = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
+sg.ARQUIVO_SUGESTOES.unlink(missing_ok=True)
+ok(ag.passo(hoje) and not ag.passo(hoje + timedelta(hours=2)) and ag.passo(hoje + timedelta(days=1)),
+   "Sugestões: agendador roda 1x por dia (e não de novo no mesmo dia)")
+ok(sg.configuracao({}) == (True, "08:00"), "Sugestões: sem config = ligado às 08:00")
+
+# analise
+agora = datetime(2026, 9, 28, 9, 0).timestamp()
+t = agora - 3600
+ouv = [
+    {"ts": agora - 90000, "texto": "", "motivo": "curta demais"},                          # antes da janela
+    {"ts": t, "texto": "", "motivo": "curta demais", "descartado": True},
+    {"ts": t + 5, "texto": "", "motivo": "curta demais", "descartado": True},
+    {"ts": t + 9, "texto": "Assessor, abre o Spotify", "motivo": "voz não reconhecida", "voz_nao_reconhecida": 0.3},
+    {"ts": t + 12, "texto": "Acessor, abre o YouTube", "chamou": False, "motivo": "sem a palavra de ativação"},
+    {"ts": t + 14, "texto": "tá bom então", "chamou": False, "motivo": "sem a palavra de ativação"},
+    {"ts": t + 16, "texto": "Assessor", "chamou": True, "motivo": "só a palavra: esperando o resto (3.0s)"},
+]
+hist = [
+    {"ts": agora - 90000, "tipo": "comando", "pedido": "Assessor, bota um rock", "rota": "_cmd_spotify"},
+    {"ts": t + 20, "tipo": "comando", "pedido": "Assessor, abre o bloco de notas", "entendi": "abre o bloco de notas", "rota": "ia"},
+    {"ts": t + 30, "tipo": "ia virou comando", "pedido": "abre o bloco de notas", "rota": "_cmd_abrir"},
+    {"ts": t + 40, "tipo": "comando", "pedido": "Assessor, o que é um buraco negro", "entendi": "o que e um buraco negro", "rota": "ia"},
+    {"ts": t + 50, "tipo": "comando", "pedido": "Assessor, faz aquele negócio", "entendi": "faz aquele negocio", "rota": "nao_entendi"},
+    {"ts": t + 60, "tipo": "comando", "pedido": "Assessor, toca a playlist rock", "entendi": "toca a playlist rock", "rota": "_cmd_spotify"},
+    {"ts": t + 70, "tipo": "comando", "pedido": "Assessor, toca a playlist rock", "entendi": "toca a playlist rock", "rota": "_cmd_spotify"},
+    {"ts": t + 200, "tipo": "comando", "pedido": "Assessor, aumenta o volume", "entendi": "aumenta o volume", "rota": "_cmd_volume"},
+    {"ts": t + 205, "tipo": "comando", "pedido": "Assessor, aumenta o volume", "entendi": "aumenta o volume", "rota": "_cmd_volume"},
+    {"ts": t + 300, "tipo": "comando", "pedido": "Assessor, bota um rock", "entendi": "bota um rock", "rota": "_cmd_spotify"},
+    {"ts": t + 310, "tipo": "comando", "pedido": "Assessor, isso tá errado", "rota": "_cmd_feedback"},
+]
+lista = sg.analisar(hist, ouv, agora - 86400, "assessor", ["assessor", "assessores"], frases_conhecidas="")
+ids = [x["id"] for x in lista]
+print("IDS", ids)
+esperados = {"descartada:curta demais", "descartada:voz nao reconhecida", "palavra:acessor", "ia:abre",
+             "nao_entendi:geral", "repetido:geral", "variacao:_cmd_spotify", "variacao:_cmd_volume"}
+ok(set(ids) == esperados, f"Sugestões: análise acha o esperado ({ids})")
+por = {x["id"]: x for x in lista}
+ok(por["descartada:curta demais"]["quantas"] == 2, "Sugestões: descartes agrupados por motivo (fora da janela não conta)")
+ok("_cmd_abrir" in por["ia:abre"]["evidencias"][0]["info"] and por["ia:abre"]["quantas"] == 1,
+   "Sugestões: caiu na IA com cara de comando (e o que a IA fez depois); pergunta de verdade não entra")
+ok(por["repetido:geral"]["quantas"] == 1, "Sugestões: repetido logo em seguida (volume repetido é normal)")
+ok([e["frase"] for e in por["variacao:_cmd_spotify"]["evidencias"]] == ["Assessor, toca a playlist rock"],
+   "Sugestões: jeito novo de falar (o já visto antes não conta)")
+ok(sg.analisar(hist, ouv, agora - 86400, "assessor", ["assessor"], frases_conhecidas="toca a playlist rock")
+   and "variacao:_cmd_spotify" not in [x["id"] for x in sg.analisar(hist, ouv, agora - 86400, "assessor", ["assessor"],
+                                                                      frases_conhecidas="Mestre, toca a playlist rock")],
+   "Sugestões: frase que já está em testes/frases.py não vira sugestão")
+arq = Path("memoria/sugestoes_teste.json")
+dados = sg.rodar({"assistente": {"palavra_ativacao": "Assessor"}}, agora=agora, historico=hist, ouvidas=ouv, arquivo=arq)
+salvo = json.loads(arq.read_text(encoding="utf-8"))
+ids_salvos = {x["id"] for x in salvo["sugestoes"]}   # (o frases.py de verdade ja tem "aumenta o volume")
+ok(salvo["ts"] == round(agora, 2) and ids_salvos <= esperados and len(ids_salvos) >= len(esperados) - 1 and salvo["desde"] == round(agora - 86400, 2),
+   "Sugestões: grava memoria/sugestoes.json (últimas 24 h)")
+dados2 = sg.rodar({}, agora=agora + 3 * 86400, historico=hist, ouvidas=ouv, arquivo=arq)
+ok(dados2["desde"] == round(agora, 2), "Sugestões: PC desligado dias = olha desde a última análise")
+pedido = sg.pedido_para_claude([por["ia:abre"], por["palavra:acessor"]], "28/09/2026 09:00", "Jarvis")
+ok("Jarvis" in pedido and "abre o bloco de notas" in pedido and "sem a palavra de ativação" in pedido
+   and "/entregar" in pedido, "Sugestões: pedido leva as marcadas com as evidências (frases, horários, motivos)")
+
+class IAFalsa:
+    tipo, ligado = "ollama", True
+    def _ollama(self, sistema, mensagens, formato=None): return "Resumo: corrigir a palavra."
+ok(sg.resumir_com_ia(IAFalsa(), dict(dados2, sugestoes=dados["sugestoes"]), arq) == "Resumo: corrigir a palavra."
+   and sg.ler(arq)["resumo_ia"] == "Resumo: corrigir a palavra.", "Sugestões: IA ligada resume (em segundo plano)")
+
+# painel
+erros = []
+tk.Tk.report_callback_exception = lambda self, e, vv, tb: erros.append("".join(traceback.format_exception(e, vv, tb)))
+muitas = [{"id": f"ia:v{i}", "tipo": "ia", "titulo": f"Sugestão {i}", "detalhe": "d", "quantas": 1,
+           "evidencias": [{"data": "28/09 08:00", "frase": f"frase {i}", "info": "motivo x"}]} for i in range(20)]
+sg._gravar({"gerado_em": "28/09/2026 08:00", "ts": 123.0, "desde_texto": "27/09/2026 08:00", "automatica": True,
+            "sugestoes": muitas, "resumo_ia": ""}, sg.ARQUIVO_SUGESTOES)
+import app.painel as p
+pn = p.Painel(); pn.update()
+pn.mostrar_pagina("Sugestões de melhoria"); pn.update()
+visiveis = [l for l in pn._sug_linhas if l["frame"].winfo_manager()]
+ok(len(pn._sug_linhas) == 8 and len(visiveis) == 8 and pn.rot_sug_pagina.cget("text") == "Página 1 de 3",
+   f"Sugestões (painel): página abre com 20 sugestões em páginas de 8 ({pn.rot_sug_pagina.cget('text')})")
+ok(pn.bt_sug_claude.cget("state") == "disabled", "Sugestões (painel): botão do Claude desativado sem nada marcado")
+l0 = pn._sug_linhas[0]; l0["var"].set(True); pn._sug_alternar(l0)
+pn._sug_ir(1); pn._sug_ir(1); pn.update()
+l1 = pn._sug_linhas[0]; l1["var"].set(True); pn._sug_alternar(l1)
+visiveis = [l for l in pn._sug_linhas if l["frame"].winfo_manager()]
+ok(len(visiveis) == 4 and pn._sug_marcadas == {"ia:v0", "ia:v16"}, "Sugestões (painel): marcar em páginas diferentes")
+pn._sug_mandar_claude(); pn.update()
+arquivos = sorted(Path("exportacoes").glob("pedido_sugestoes_*.md"))
+texto = arquivos[-1].read_text(encoding="utf-8") if arquivos else ""
+cmd = pn._sug_ultimo_comando_claude
+ok(arquivos and "frase 0" in texto and "frase 16" in texto and "frase 5" not in texto,
+   "Sugestões (painel): pedido com as marcadas salvo em exportacoes/")
+ok(cmd is None or (cmd[-1].startswith("Leia o arquivo exportacoes/pedido_sugestoes_") and "-p" not in cmd),
+   f"Sugestões (painel): mesmo fluxo supervisionado do Claude, nada abre no teste ({cmd})")
+pn._sug_analisar(); pn.update()
+ok(pn._sug_dados.get("ts") != 123.0 and "Última análise" in pn.rot_sug_info.cget("text"),
+   "Sugestões (painel): Analisar agora")
+pn.ent_sug_hora.delete(0, "end"); pn.ent_sug_hora.insert(0, "7h30"); pn.var_sug_ligado.set(False)
+ok(pn.salvar(), "Sugestões (painel): salvar")
+from app import configuracao
+c = configuracao.carregar()
+ok(str(c["sugestoes"]["hora"]) == "07:30" and c["sugestoes"]["ligado"] is False, "Sugestões (painel): horário salvo no config")
+ok(not erros, "Sugestões (painel): sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
+pn._fechar()
+print("FIM_SUGESTOES")
 """
 
 
@@ -1452,6 +1657,14 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
         if "FIM_VALIDACAO" not in saida:
             conferir(False, "Validação: o teste rodou até o fim", saida[-1500:])
+
+        print("\n[Sugestões de melhoria]")
+        cod, saida = rodar(pasta, SUGESTOES, espera=120)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_SUGESTOES" not in saida:
+            conferir(False, "Sugestões: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Atualização por .zip]")
         destino = copiar_projeto(Path(tmp) / "outra")

@@ -70,11 +70,24 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | `Mestre, continua o vídeo` (um pausado, mesmo que à mão) | Volta o vídeo pausado por último, sem perguntar | `_cmd_youtube_controle` |
 | `Mestre, pausa o vídeo` (os dois vídeos tocando) | Pergunta "No monitor 1 ou no 2?" e usa a resposta | `_cmd_youtube_controle` |
 
+### Validação contínua e sugestões diárias
+
+| Frase / ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Sistema > Validar atualização → deixe "Modo contínuo" marcado → Começar e fale as frases uma atrás da outra | Cada frase que dá certo ganha ✅ sozinha e a próxima aparece em ~1,5 s, sem clique; linhas (painel)/(visual) ficam de fora | (painel) |
+| (painel) no modo contínuo, fale outra coisa no lugar da frase (ex.: `Mestre, abre o bloco de notas`) | Para no ❌ e mostra grande OUVI → ENTENDI (com o comando) → FIZ | (painel) |
+| (painel) no modo contínuo, fale a frase SEM a palavra de ativação | Uns 4 s depois para no ❌ com DESCARTEI “...” (sem a palavra de ativação) | (painel) |
+| (painel) no modo contínuo, fique uns 15 s calado | Aparece "Não ouvi nada — fale de novo ou Pular" | (painel) |
+| (painel) no modo contínuo, marque "Incluir linhas de painel/visual" e comece de novo | As linhas (painel)/(visual) voltam; nelas ele para e espera você marcar ✅ ou ❌ | (painel) |
+| (painel) Sistema > Sugestões de melhoria → 🔍 Analisar agora | Lista as sugestões (descartadas, caíram na IA, não entendi, repetidos, jeitos novos) em páginas de 8, com frases, horários e motivos | (painel) |
+| (painel) marque 1 ou 2 sugestões → "🛠 Mandar marcadas para o Claude" | Salva `exportacoes/pedido_sugestoes_*.md` e abre o Claude Code no terminal já com o pedido | (painel) |
+| (painel) Sugestões de melhoria → Horário 08:00, ligado → Salvar e reiniciar; no outro dia abra a página | "Última análise: ... (automática)" das 8h (ou de quando o PC ligou, se estava desligado) | (painel) |
+
 ### Outras novidades
 
 | Frase / ação | O que deve acontecer | Comando esperado |
 |---|---|---|
-| (automático) `venv\Scripts\python -m testes.teste_basico` | Linha "Nenhum erro escondido nos botões" fecha OK, teste completo 228 de 228 | (teste automático) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Linha "Nenhum erro escondido nos botões" fecha OK, teste completo 275 de 275 | (teste automático) |
 | (visual) olhe o ícone perto do relógio (bandeja) | Ícone novo, na cor escolhida em Aparência | (bandeja) |
 | (painel) abra o painel, ensine uma rotina nova por voz SEM fechar o painel, depois clique Salvar no painel | A rotina nova continua no config.yaml; uma rotina que você apagar no painel continua apagada | (painel) |
 | (painel) Sistema > Validar atualização → "Só novidades" → Começar; fale a frase que aparece; marque ✅/❌ (no ❌ diga "o certo era") → Parar | Mostra OUVI / ENTENDI (com o comando) / FIZ de cada frase e sugere ✅/❌; no fim cria `exportacoes/validacao_AAAA-MM-DD_HHMM.md` e cada ❌ vira FEEDBACK no MELHORIAS.md | (painel) |

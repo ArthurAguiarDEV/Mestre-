@@ -497,6 +497,8 @@ class Painel(ctk.CTk):
         self.botoes_menu[nome].configure(fg_color=tema.ROSA_FUNDO, text_color=tema.ROSA, font=tema.fonte(14, True))
         self._marcas_menu[nome].configure(fg_color=tema.ROSA)
         self.titulo_pagina.configure(text=f"{PAGINAS[nome][0]}  {nome}")
+        if nome == "Sugestões de melhoria" and hasattr(self, "_sug_linhas"):
+            self._sug_recarregar()
         self.subtitulo_pagina.configure(text=descricao)
         self.pagina_atual = nome
 
@@ -2445,6 +2447,9 @@ class Painel(ctk.CTk):
         self._val_sugestao = None
         self._val_errado_desde = 0.0   # clicou ❌: a proxima frase ouvida vira "o certo era"
         self._val_ultimo_comando_claude = None   # "Mandar para o Claude corrigir" (para o teste automatico)
+        self._val_estado = ""        # modo continuo: esperando | ok | falha | conferir | silencio
+        self._val_descartes = []     # frases que o ouvido jogou fora (com o motivo)
+        self._val_avanco = None      # after() que passa para a proxima frase depois do ✅
         f = secao(pagina, "Validar atualização",
                   f"Depois de atualizar, fale as frases do roteiro uma por vez ao {self.nome} (ligado, como sempre). "
                   "Para cada frase o painel mostra o que ele OUVIU, o que ENTENDEU (e qual comando atendeu) e o que "
@@ -2456,6 +2461,14 @@ class Painel(ctk.CTk):
         ctk.CTkSegmentedButton(linha, values=list(validacao.ESCOLHAS), variable=self.var_val_escolha).pack(side="left")
         self.bt_val_comecar = ctk.CTkButton(linha, text="▶  Começar", width=130, command=self._val_comecar)
         self.bt_val_comecar.pack(side="left", padx=10)
+        opcoes = ctk.CTkFrame(f, fg_color="transparent")
+        opcoes.pack(fill="x", padx=(32, 18), pady=(2, 0))
+        self.var_val_continuo = tk.BooleanVar(value=True)
+        ctk.CTkCheckBox(opcoes, text="Modo contínuo (passa sozinho quando dá certo, só para no ❌)",
+                        variable=self.var_val_continuo).pack(side="left")
+        self.var_val_manuais = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(opcoes, text="Incluir linhas de painel/visual", variable=self.var_val_manuais).pack(side="left",
+                                                                                                        padx=14)
         self.rot_val_progresso = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
         self.rot_val_progresso.pack(fill="x", padx=(32, 18), pady=(6, 0))
         self.rot_val_frase = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
@@ -2475,6 +2488,20 @@ class Painel(ctk.CTk):
         self.rot_val_sugestao = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
                                              font=tema.fonte(14, True))
         self.rot_val_sugestao.pack(fill="x", padx=(32, 18), pady=(6, 2))
+        # destaque do ❌ no modo continuo: OUVI → ENTENDI → FIZ grandes + por que o ouvido descartou
+        self.fr_val_destaque = ctk.CTkFrame(f, fg_color=tema.CARTAO, corner_radius=12, border_width=2,
+                                            border_color=tema.AVISO)
+        self.rot_val_destaque = {}
+        for chave, rotulo, tamanho, cor in (("ouvi", "OUVI", 20, tema.TEXTO), ("entendi", "ENTENDI", 20, tema.ROSA),
+                                            ("fiz", "FIZ", 18, tema.AVISO), ("descartes", "DESCARTEI", 16, tema.AVISO)):
+            lf = ctk.CTkFrame(self.fr_val_destaque, fg_color="transparent")
+            lf.pack(fill="x", padx=14, pady=3)
+            ctk.CTkLabel(lf, text=rotulo, width=120, anchor="nw", font=tema.fonte(15, True),
+                         text_color=tema.TEXTO_FRACO).pack(side="left", anchor="n")
+            valor = ctk.CTkLabel(lf, text="-", anchor="w", justify="left", wraplength=640,
+                                 font=tema.fonte(tamanho, True), text_color=cor)
+            valor.pack(side="left", fill="x", expand=True)
+            self.rot_val_destaque[chave] = (lf, valor)
         botoes = ctk.CTkFrame(f, fg_color="transparent")
         botoes.pack(fill="x", padx=(32, 18), pady=4)
         self.bt_val_ok = ctk.CTkButton(botoes, text="✅  Deu certo", width=130, command=lambda: self._val_marcar("ok"))
@@ -2533,11 +2560,15 @@ class Painel(ctk.CTk):
     def _val_comecar(self):
         from . import validacao
         itens = validacao.escolher(validacao.ler_roteiro(), self.var_val_escolha.get())
+        continuo = bool(self.var_val_continuo.get())
+        if continuo:
+            itens = validacao.para_continuo(itens, bool(self.var_val_manuais.get()))
         if not itens:
             self.rot_val_resultado.configure(text="Não achei frases no ROTEIRO_VALIDACAO.md para essa escolha.",
                                              text_color=tema.AVISO)
             return
         self._val = validacao.Sessao(itens, self.var_val_escolha.get())
+        self._val.continuo = continuo
         validacao.ligar_audio(True)   # o ouvido guarda o audio de cada frase (para o relatorio)
         self.rot_val_resultado.configure(text="")
         self.bt_val_relatorio.pack_forget()
@@ -2546,6 +2577,8 @@ class Painel(ctk.CTk):
 
     def _val_nova_frase(self):
         self._val_captura, self._val_sugestao, self._val_errado_desde = None, None, 0.0
+        self._val_cancelar_avanco()
+        self._val_estado, self._val_descartes = "", []
         self.fr_val_certo.pack_forget()
         self.ent_val_certo.delete(0, "end")
         if self._val and self._val.acabou:
@@ -2571,6 +2604,8 @@ class Painel(ctk.CTk):
         item = s.atual
         self.rot_val_progresso.configure(
             text=f"Frase {s.indice + 1} de {len(s.itens)} · {validacao.NOMES_SECAO.get(item.secao, '')} › {item.grupo}")
+        continuo = getattr(s, "continuo", False)
+        self.rot_val_frase.configure(font=tema.fonte(26 if continuo else 18, True))
         if item.manual:
             self.rot_val_frase.configure(text=f"Faça: {item.para_falar(self.palavra)}")
         else:
@@ -2587,6 +2622,69 @@ class Painel(ctk.CTk):
         marca = {"ok": "Sugestão: ✅  ", "falha": "Sugestão: ❌  "}.get(sug, "")
         cor = {"ok": tema.SUCESSO, "falha": tema.AVISO}.get(sug, tema.TEXTO_FRACO)
         self.rot_val_sugestao.configure(text=marca + validacao.explicar(item, self._val_captura, sug), text_color=cor)
+        if continuo:
+            self._val_desenhar_continuo(item, entendi)
+        else:
+            self.fr_val_destaque.pack_forget()
+
+    def _val_desenhar_continuo(self, item, entendi: str):
+        """Modo continuo: a situacao em uma frase e, no ❌, OUVI → ENTENDI → FIZ em destaque."""
+        from . import validacao
+        estado, c = self._val_estado, self._val_captura or {}
+        esperado = ", ".join(item.comandos) or item.esperado or "?"
+        falando = ("🎙  Pode falar. Quando der certo passa sozinho para a próxima.", tema.TEXTO_FRACO)
+        textos = {
+            "ok": ("✅  Deu certo! Indo para a próxima...", tema.SUCESSO),
+            "falha": (f"❌  Não bateu (esperado {esperado}, atendeu {c.get('rota') or 'nada'}). "
+                      "Veja abaixo o que ele entendeu: ❌ Deu errado para anotar, Repetir ou Pular.", tema.AVISO),
+            "conferir": ("Não dá para conferir sozinho: marque ✅ Deu certo ou ❌ Deu errado.", tema.AVISO),
+            "silencio": ("🔇  Não ouvi nada — fale de novo ou Pular.", tema.AVISO),
+        }
+        texto, cor = textos.get(estado, falando)
+        self.rot_val_sugestao.configure(text=texto, text_color=cor)
+        mostrar = estado in ("falha", "conferir") or (estado == "silencio" and self._val_descartes)
+        if not mostrar:
+            self.fr_val_destaque.pack_forget()
+            return
+        valores = {"ouvi": f"“{c['ouvi']}”" if c.get("ouvi") else "(nada chegou ao comando)",
+                   "entendi": entendi or "(nada)", "fiz": c.get("fiz") or "(nada)",
+                   "descartes": validacao.texto_descartes(self._val_descartes)}
+        for chave, (linha, rotulo) in self.rot_val_destaque.items():
+            rotulo.configure(text=valores[chave] or "-")
+            if chave == "descartes" and not valores[chave]:
+                linha.pack_forget()
+            elif not linha.winfo_manager():
+                linha.pack(fill="x", padx=14, pady=3)
+        self.fr_val_destaque.pack(fill="x", padx=(32, 18), pady=6, after=self.rot_val_sugestao)
+
+    def _val_cancelar_avanco(self):
+        if self._val_avanco is not None:
+            try:
+                self.after_cancel(self._val_avanco)
+            except Exception:
+                pass
+            self._val_avanco = None
+
+    def _val_avancar(self, indice: int):
+        """Chamado AVANCO_SEGUNDOS depois do ✅ no modo continuo."""
+        self._val_avanco = None
+        if self._val is not None and self._val.indice == indice and self._val_estado == "ok":
+            self._val_marcar("ok")
+
+    def _val_vigiar_continuo(self, s, item):
+        from . import validacao
+        if self._val_estado in ("ok", "falha", "conferir"):
+            return   # ja decidiu: esperando o avanco ou o clique
+        r = validacao.avaliar_continuo(item, s.exibida_em)
+        mudou = (r["estado"], r["captura"], r["descartes"]) != (self._val_estado, self._val_captura,
+                                                                 self._val_descartes)
+        self._val_estado, self._val_captura, self._val_descartes = r["estado"], r["captura"], r["descartes"]
+        self._val_sugestao = r["sugestao"] or validacao.conferir(item, r["captura"])
+        if r["estado"] == "ok":
+            indice = s.indice
+            self._val_avanco = self.after(int(validacao.AVANCO_SEGUNDOS * 1000), lambda: self._val_avancar(indice))
+        if mudou:
+            self._val_desenhar()
 
     def _val_vigiar(self):
         """Uma vez por segundo: o que o assistente registrou desde que a frase apareceu."""
@@ -2600,6 +2698,8 @@ class Painel(ctk.CTk):
                 fala = validacao.fala_nova(self._val_errado_desde)
                 if fala and not self.ent_val_certo.get().strip():
                     self.ent_val_certo.insert(0, fala)
+            elif getattr(s, "continuo", False):
+                self._val_vigiar_continuo(s, item)
             elif not item.manual:
                 captura = validacao.capturar(s.exibida_em)
                 if captura != self._val_captura:
@@ -2608,12 +2708,17 @@ class Painel(ctk.CTk):
                     self._val_desenhar()
         except Exception as erro:   # (arquivo sendo escrito pelo outro processo etc.: tenta de novo)
             self.rot_val_resultado.configure(text=f"Não consegui ler o histórico agora: {erro}", text_color=tema.AVISO)
-        self.after(1000, self._val_vigiar)
+        self.after(500 if getattr(s, "continuo", False) else 1000, self._val_vigiar)
 
     def _val_marcar(self, veredito: str, certo_era: str = ""):
         if not self._val or self._val.atual is None:
             return
-        self._val.marcar(veredito, self._val_captura, self._val_sugestao, certo_era)
+        captura = self._val_captura
+        if self._val_descartes and veredito == "falha":   # o relatorio leva o motivo do descarte
+            from . import validacao
+            texto = validacao.texto_descartes(self._val_descartes).replace("\n", " · ")
+            captura = dict(captura or {}, descartado=texto)
+        self._val.marcar(veredito, captura, self._val_sugestao, certo_era)
         self._val_nova_frase()
 
     def _val_errado(self):
@@ -2639,6 +2744,9 @@ class Painel(ctk.CTk):
         from . import validacao
         s, self._val = self._val, None
         validacao.ligar_audio(False)
+        self._val_cancelar_avanco()
+        self._val_estado, self._val_descartes = "", []
+        self.fr_val_destaque.pack_forget()
         self.fr_val_certo.pack_forget()
         self._val_desenhar()
         if s is None or not s.resultados:
@@ -2677,6 +2785,183 @@ class Painel(ctk.CTk):
         arquivo = validacao.ultimo_relatorio()
         if arquivo:
             sistema.abrir_arquivo(arquivo)
+
+    # -----------------------------------------------------------------
+    #  Sugestoes de melhoria (app/sugestoes.py: 1x por dia, so gera a lista)
+    # -----------------------------------------------------------------
+    SUG_POR_PAGINA = 8
+
+    def _aba_sugestoes(self, pagina):
+        from . import sugestoes
+        self._sug_dados = sugestoes.ler()
+        self._sug_marcadas: set[str] = set()
+        self._sug_pagina = 0
+        self._sug_ultimo_comando_claude = None   # para o teste automatico conferir
+        self._sug_ultimo_pedido = ""
+        cfg_sug = self._sec("sugestoes")
+        f = secao(pagina, "Análise diária",
+                  f"Todo dia, no horário escolhido, o {self.nome} olha o que aconteceu desde a última análise: "
+                  "frases jogadas fora pelo ouvido (e o motivo), frases com cara de comando que caíram na IA, "
+                  "\"não entendi\", pedidos repetidos logo em seguida e jeitos novos de falar que funcionaram. "
+                  "Ele NÃO muda nada sozinho: só monta a lista abaixo. Se o computador estava desligado no "
+                  "horário, a análise roda quando ele ligar.")
+        self.var_sug_ligado = tk.BooleanVar(value=bool(cfg_sug.get("ligado", True)))
+        linha_campo(f, "Analisar todo dia", lambda m: ctk.CTkCheckBox(m, text="ligado", variable=self.var_sug_ligado))
+        self.ent_sug_hora = linha_campo(f, "Horário (HH:MM)", lambda m: ctk.CTkEntry(m, width=90))
+        self.ent_sug_hora.insert(0, sugestoes.hora_texto(cfg_sug.get("hora", sugestoes.HORA_PADRAO)))
+        f = secao(pagina, "Sugestões", "Marque as que valem a pena e mande para o Claude Code: ele recebe as "
+                                      "sugestões com as frases, os horários e os motivos, e você acompanha no terminal.")
+        topo = ctk.CTkFrame(f, fg_color="transparent")
+        topo.pack(fill="x", padx=(32, 18), pady=4)
+        ctk.CTkButton(topo, text="🔍  Analisar agora", width=150, command=self._sug_analisar).pack(side="left")
+        self.rot_sug_info = ctk.CTkLabel(topo, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        self.rot_sug_info.pack(side="left", padx=12, fill="x", expand=True)
+        self.rot_sug_resumo = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800)
+        self.rot_sug_resumo.pack(fill="x", padx=(32, 18), pady=(2, 4))
+        # um numero FIXO de linhas (a lista pode crescer: nada de um widget por sugestao)
+        self._sug_linhas = []
+        for _ in range(self.SUG_POR_PAGINA):
+            linha = ctk.CTkFrame(f, fg_color=tema.CAMPO, corner_radius=10)
+            var = tk.BooleanVar(value=False)
+            caixa = ctk.CTkCheckBox(linha, text="", width=28, variable=var)
+            caixa.pack(side="left", anchor="n", padx=(10, 4), pady=10)
+            textos = ctk.CTkFrame(linha, fg_color="transparent")
+            textos.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=6)
+            titulo_sug = ctk.CTkLabel(textos, text="", anchor="w", justify="left", wraplength=720,
+                                      font=tema.fonte(14, True))
+            titulo_sug.pack(fill="x")
+            detalhe = ctk.CTkLabel(textos, text="", anchor="w", justify="left", wraplength=720,
+                                   text_color=tema.TEXTO_FRACO, font=tema.fonte(12))
+            detalhe.pack(fill="x")
+            self._sug_linhas.append({"frame": linha, "var": var, "caixa": caixa, "titulo": titulo_sug,
+                                     "detalhe": detalhe, "id": None})
+        self.rot_sug_vazia = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        nav = ctk.CTkFrame(f, fg_color="transparent")
+        nav.pack(fill="x", padx=(32, 18), pady=4)
+        self._sug_nav = nav
+        self.bt_sug_antes = ctk.CTkButton(nav, text="◀", width=40, **SECUNDARIO, command=lambda: self._sug_ir(-1))
+        self.bt_sug_antes.pack(side="left")
+        self.rot_sug_pagina = ctk.CTkLabel(nav, text="", width=140)
+        self.rot_sug_pagina.pack(side="left", padx=6)
+        self.bt_sug_depois = ctk.CTkButton(nav, text="▶", width=40, **SECUNDARIO, command=lambda: self._sug_ir(1))
+        self.bt_sug_depois.pack(side="left")
+        ctk.CTkButton(nav, text="Marcar todas", width=120, **SECUNDARIO,
+                      command=lambda: self._sug_marcar_todas(True)).pack(side="left", padx=(16, 4))
+        ctk.CTkButton(nav, text="Desmarcar", width=100, **SECUNDARIO,
+                      command=lambda: self._sug_marcar_todas(False)).pack(side="left", padx=4)
+        fim = ctk.CTkFrame(f, fg_color="transparent")
+        fim.pack(fill="x", padx=(32, 18), pady=(4, 8))
+        self.bt_sug_claude = ctk.CTkButton(fim, text="🛠  Mandar marcadas para o Claude", width=260,
+                                           command=self._sug_mandar_claude)
+        self.bt_sug_claude.pack(side="left")
+        self.rot_sug_status = ctk.CTkLabel(fim, text="", anchor="w", justify="left", wraplength=520,
+                                           text_color=tema.TEXTO_FRACO)
+        self.rot_sug_status.pack(side="left", padx=12, fill="x", expand=True)
+        self._sug_desenhar()
+
+    def _sug_lista(self) -> list[dict]:
+        return list((self._sug_dados or {}).get("sugestoes") or [])
+
+    def _sug_recarregar(self):
+        """Ao abrir a página: pega a análise mais nova (o Assessor pode ter rodado a das 8h)."""
+        from . import sugestoes
+        novos = sugestoes.ler()
+        if novos.get("ts") != (self._sug_dados or {}).get("ts"):
+            self._sug_dados, self._sug_marcadas, self._sug_pagina = novos, set(), 0
+        self._sug_desenhar()
+
+    def _sug_desenhar(self):
+        lista = self._sug_lista()
+        dados = self._sug_dados or {}
+        if dados.get("gerado_em"):
+            quem = "automática" if dados.get("automatica") else "feita por você"
+            self.rot_sug_info.configure(text=f"Última análise: {dados['gerado_em']} ({quem}), olhando desde "
+                                             f"{dados.get('desde_texto', '?')} · {len(lista)} sugestão(ões)")
+        else:
+            self.rot_sug_info.configure(text="Ainda não teve análise. Clique em Analisar agora.")
+        resumo = str(dados.get("resumo_ia") or "").strip()
+        self.rot_sug_resumo.configure(text=f"Resumo da IA: {resumo}" if resumo else "")
+        paginas = max(1, -(-len(lista) // self.SUG_POR_PAGINA))
+        self._sug_pagina = max(0, min(self._sug_pagina, paginas - 1))
+        inicio = self._sug_pagina * self.SUG_POR_PAGINA
+        for i, linha in enumerate(self._sug_linhas):
+            linha["frame"].pack_forget()
+        for i, linha in enumerate(self._sug_linhas):
+            if inicio + i >= len(lista):
+                linha["id"] = None
+                continue
+            sug = lista[inicio + i]
+            linha["id"] = sug.get("id")
+            linha["var"].set(sug.get("id") in self._sug_marcadas)
+            linha["caixa"].configure(command=lambda l=linha: self._sug_alternar(l))
+            evid = sug.get("evidencias") or []
+            exemplos = [f"{e.get('data')} “{e.get('frase')}” ({e.get('info')})" for e in evid[-3:]]
+            mais = f"\n… e mais {len(evid) - 3}" if len(evid) > 3 else ""
+            linha["titulo"].configure(text=str(sug.get("titulo") or ""))
+            linha["detalhe"].configure(text=str(sug.get("detalhe") or "") + ("\n• " + "\n• ".join(exemplos)
+                                                                           if exemplos else "") + mais)
+            linha["frame"].pack(fill="x", padx=(32, 18), pady=3, before=self._sug_nav)
+        if lista:
+            self.rot_sug_vazia.pack_forget()
+        else:
+            self.rot_sug_vazia.configure(text="Nenhuma sugestão por enquanto." if dados.get("gerado_em") else "")
+            self.rot_sug_vazia.pack(fill="x", padx=(32, 18), pady=4, before=self._sug_nav)
+        self.rot_sug_pagina.configure(text=f"Página {self._sug_pagina + 1} de {paginas}")
+        self.bt_sug_antes.configure(state="normal" if self._sug_pagina > 0 else "disabled")
+        self.bt_sug_depois.configure(state="normal" if self._sug_pagina < paginas - 1 else "disabled")
+        n = len(self._sug_marcadas)
+        self.bt_sug_claude.configure(state="normal" if n else "disabled",
+                                     text=f"🛠  Mandar marcadas para o Claude ({n})" if n
+                                     else "🛠  Mandar marcadas para o Claude")
+
+    def _sug_alternar(self, linha):
+        if not linha["id"]:
+            return
+        if linha["var"].get():
+            self._sug_marcadas.add(linha["id"])
+        else:
+            self._sug_marcadas.discard(linha["id"])
+        self._sug_desenhar()
+
+    def _sug_marcar_todas(self, sim: bool):
+        self._sug_marcadas = {s.get("id") for s in self._sug_lista()} if sim else set()
+        self._sug_desenhar()
+
+    def _sug_ir(self, passo: int):
+        self._sug_pagina += passo
+        self._sug_desenhar()
+
+    def _sug_analisar(self):
+        from . import sugestoes
+        try:
+            self._sug_dados = sugestoes.rodar(self.cfg)
+        except Exception as erro:
+            self.rot_sug_status.configure(text=f"Não consegui analisar: {erro}", text_color=tema.AVISO)
+            return
+        self._sug_marcadas, self._sug_pagina = set(), 0
+        self.rot_sug_status.configure(text=f"✓ Análise pronta: {len(self._sug_lista())} sugestão(ões).",
+                                      text_color=tema.SUCESSO)
+        self._sug_desenhar()
+
+    def _sug_mandar_claude(self):
+        """Mesmo fluxo supervisionado da validação: salva o pedido e abre o Claude Code interativo."""
+        from . import sugestoes, validacao
+        marcadas = [s for s in self._sug_lista() if s.get("id") in self._sug_marcadas]
+        if not marcadas:
+            self.rot_sug_status.configure(text="Marque pelo menos uma sugestão.", text_color=tema.AVISO)
+            return
+        pedido = sugestoes.pedido_para_claude(marcadas, (self._sug_dados or {}).get("gerado_em", ""), self.nome)
+        arquivo = validacao.salvar_pedido_correcao(pedido, prefixo="pedido_sugestoes")
+        comando = validacao.comando_para_abrir_claude(validacao.prompt_curto(arquivo))
+        self._sug_ultimo_pedido, self._sug_ultimo_comando_claude = pedido, comando
+        if sistema.abrir_com_comando(comando, PASTA_PROJETO):
+            self.rot_sug_status.configure(text=f"✓ Mandei {len(marcadas)} sugestão(ões) para o Claude "
+                                               f"(pedido em exportacoes/{arquivo.name}).", text_color=tema.SUCESSO)
+            return
+        sistema.copiar(pedido)
+        messagebox.showinfo(self.nome, "Não encontrei o Claude Code instalado (comando \"claude\"). "
+                                       "Copiei o pedido para a área de transferência: abra um terminal na "
+                                       "pasta do projeto, rode \"claude\" e cole (Ctrl+V).")
 
     # =================================================================
     #  Salvar
@@ -2763,6 +3048,10 @@ class Painel(ctk.CTk):
             for chave, var in self.vars_aparencia.items():
                 ap[chave] = configuracao.aspas(var.get())
             configuracao.secao(c, "central")["ligar_mestre_ao_abrir"] = bool(self.var_ligar_ao_abrir.get())
+            from . import sugestoes
+            sg = configuracao.secao(c, "sugestoes")
+            sg["ligado"] = bool(self.var_sug_ligado.get())
+            sg["hora"] = configuracao.aspas(sugestoes.hora_texto(self.ent_sug_hora.get()))
             configuracao.secao(c, "assistente")["cidade"] = configuracao.aspas(self.ent_cidade.get().strip() or "São Paulo")
             from .config import gerar_variacoes
             from .texto import normalizar
@@ -2837,6 +3126,7 @@ class Painel(ctk.CTk):
             from . import validacao
             validacao.ligar_audio(False)
             self._val = None   # para o laco _val_vigiar nao mexer em widgets ja destruidos
+            self._val_cancelar_avanco()
         servidor = getattr(self, "_servidor", None)
         if servidor:   # libera a porta ja (para um painel novo conseguir abrir logo em seguida)
             try:
@@ -2890,6 +3180,8 @@ PAGINAS = {
     "Melhorias":         ("✎", "Ideias e feedbacks para o Claude Code implementar.", Painel._aba_melhorias),
     "Validar atualização": ("✔", "Fale as frases do roteiro e confira o que ele ouviu, entendeu e fez.",
                             Painel._aba_validacao),
+    "Sugestões de melhoria": ("✧", "Todo dia ele olha o que deu errado e sugere melhorias para o Claude.",
+                              Painel._aba_sugestoes),
 }
 
 
@@ -2898,7 +3190,7 @@ GRUPOS_MENU = [
     ("VOZ E OUVIDO", ["Voz", "Áudio"]),
     ("APPS E SITES", ["YouTube", "Spotify", "Programas e sites", "Rotinas", "Atalhos"]),
     ("INTEGRAÇÕES", ["IPM e projetos", "Celular"]),
-    ("SISTEMA", ["Histórico", "Melhorias", "Validar atualização", "Aparência"]),
+    ("SISTEMA", ["Histórico", "Melhorias", "Validar atualização", "Sugestões de melhoria", "Aparência"]),
 ]
 
 
