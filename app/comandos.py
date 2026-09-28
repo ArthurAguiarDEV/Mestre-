@@ -2079,7 +2079,7 @@ class Executor:
         sistema.abrir_site(url)
 
     SELECAO_YOUTUBE = ("abrir_n", "abrir_titulo", "canal_n", "titulos")   # escolher algo QUE ESTA na tela
-    CONTROLE_DO_QUE_TOCA = ("pausar", "pular", "proximo")
+    CONTROLE_DO_QUE_TOCA = ("pausar", "pular", "proximo", "continuar")
 
     def _cmd_youtube_controle(self, t: str) -> bool:
         puro = re.sub(r"\b(\w+?)s (videos?|resultados?)\b", r"\1 \2", self._pedido_puro())   # "os terceiros videos"
@@ -2171,9 +2171,16 @@ class Executor:
         abas = self._abas_abertas()
         candidatas = self._abas_na_tela(abas, "youtube.com")
         if monitor is None and acao in self.CONTROLE_DO_QUE_TOCA:
-            tocando = [a for a in candidatas if a.get("audivel")]
-            if len(tocando) == 1:
-                candidatas = tocando
+            if acao == "continuar":
+                # "continua o video": vai para a que foi pausada por ultimo (pelo Mestre ou a mao),
+                # sem perguntar, se a extensao souber dizer.
+                pausadas = [a for a in candidatas if a.get("video_pausado")]
+                if pausadas:
+                    candidatas = [max(pausadas, key=lambda a: a.get("video_pausado_em") or 0)]
+            else:
+                tocando = [a for a in candidatas if a.get("audivel")]
+                if len(tocando) == 1:
+                    candidatas = tocando
         tem = None
         if acao == "abrir_titulo":
             falado = self._titulo_falado(puro)

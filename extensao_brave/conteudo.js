@@ -126,4 +126,22 @@
   });
   // mantem a extensao acordada enquanto houver uma aba do YouTube aberta
   setInterval(() => chrome.runtime.sendMessage({mestre: 'acorda'}).catch(() => {}), 20000);
+
+  // Avisa o Mestre quando o video desta aba pausa/toca (pelo Mestre OU pela sua mao), para
+  // "continua o video" saber, sozinho, em qual aba (a que foi pausada por ultimo).
+  let videoObservado = null;
+  function avisarEstado(pausado) {
+    chrome.runtime.sendMessage({mestre: 'video_estado', pausado}).catch(() => {});
+  }
+  function observarVideo() {
+    const v = document.querySelector('video');
+    if (v === videoObservado) return;
+    videoObservado = v;
+    if (!v) return;
+    v.addEventListener('pause', () => avisarEstado(true));
+    v.addEventListener('play', () => avisarEstado(false));
+    if (!v.paused) avisarEstado(false);
+  }
+  observarVideo();
+  new MutationObserver(observarVideo).observe(document.documentElement, {childList: true, subtree: true});
 })();

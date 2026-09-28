@@ -4,6 +4,10 @@
 // - acoes dentro do YouTube (repassadas para conteudo.js na aba do YouTube em uso).
 const MESTRE = "http://127.0.0.1:47632";
 let rodando = false;
+// Estado do video por aba (avisado pelo conteudo.js): {pausado, quando}. Usado por "continua o
+// video" para saber, sozinho, qual aba foi pausada por ultimo (mesmo se pausada pela sua mao).
+const estadoVideo = new Map();
+chrome.tabs.onRemoved.addListener(id => estadoVideo.delete(id));
 
 async function janelaEmUso() {
   try { return await chrome.windows.getLastFocused({windowTypes: ["normal"]}); } catch (e) { return null; }
@@ -48,6 +52,9 @@ const noNavegador = {
       id: a.id, janela: j.id, titulo: a.title || "", url: a.url || "", ativa: a.active,
       janela_em_uso: !!emUso && emUso.id === j.id, abas_na_janela: j.tabs.length,
       ultimo_acesso: a.lastAccessed || 0, audivel: !!a.audible,
+      // video: se esta pausado agora e quando pausou/tocou por ultimo (para "continua o video" escolher a aba)
+      video_pausado: estadoVideo.has(a.id) ? estadoVideo.get(a.id).pausado : null,
+      video_pausado_em: estadoVideo.has(a.id) ? estadoVideo.get(a.id).quando : 0,
       // onde a janela esta na tela (para saber o monitor) e se esta minimizada
       janela_x: j.left, janela_y: j.top, janela_largura: j.width, janela_altura: j.height, janela_estado: j.state})));
   },
@@ -273,5 +280,10 @@ chrome.runtime.onStartup.addListener(laco);
 chrome.runtime.onInstalled.addListener(laco);
 chrome.alarms.create("mestre", {periodInMinutes: 0.5});
 chrome.alarms.onAlarm.addListener(laco);
-chrome.runtime.onMessage.addListener((msg) => { if (msg && msg.mestre === "acorda") laco(); });
+chrome.runtime.onMessage.addListener((msg, remetente) => {
+  if (msg && msg.mestre === "acorda") laco();
+  else if (msg && msg.mestre === "video_estado" && remetente && remetente.tab) {
+    estadoVideo.set(remetente.tab.id, {pausado: !!msg.pausado, quando: Date.now()});
+  }
+});
 laco();

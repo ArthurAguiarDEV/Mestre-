@@ -594,6 +594,37 @@ ok(yt2.feito[-1:] == [("abrir", 22, "https://youtube.com/watch?v=224")], f"Víde
 ext2.pedidos.clear(); diga("clica em continuar assistindo", "Clica em continuar assistindo")
 cliques = [p for p in ext2.pedidos if p[0] == "clicar" and not p[1].get("so_ver")]
 ok(cliques and cliques[0][1].get("aba") == 23, f"“Clica em …” vai na janela que tem esse botão ({cliques})")
+
+# --- YouTube em 2 telas: "pausa"/"continua" decidem sozinhos (aba que toca / aba pausada por último) ------
+class YTPausa(YTFalso):
+    def __init__(self):
+        super().__init__(); self.aba_alvo = None
+    def pausar(self, pausar):
+        self.feito.append(("pausar", self.aba_alvo, pausar)); return "ok"
+yt3 = YTPausa(); ex._yt = lambda: yt3
+ext3 = ExtAbas()
+ext3.abas = [
+    {"id": 31, "janela": 1, "titulo": "YouTube", "url": "https://www.youtube.com/watch?v=1", "ativa": True,
+     "janela_x": 100, "janela_y": 0, "janela_largura": 800, "janela_altura": 600, "ultimo_acesso": 9,
+     "audivel": True, "video_pausado": False, "video_pausado_em": 0},
+    {"id": 32, "janela": 2, "titulo": "YouTube", "url": "https://www.youtube.com/watch?v=2", "ativa": True,
+     "janela_x": 2000, "janela_y": 0, "janela_largura": 800, "janela_altura": 600, "ultimo_acesso": 5,
+     "audivel": False, "video_pausado": True, "video_pausado_em": 500},
+]
+ex.ponte = ext3
+diga("pausa o video", "Pausa o vídeo")
+ok(yt3.feito[-1:] == [("pausar", 31, True)], f"“pausa” vai sozinho na aba que está tocando, sem perguntar ({yt3.feito[-1:]})")
+yt3.feito.clear(); diga("continua o video", "Continua o vídeo")
+ok(yt3.feito[-1:] == [("pausar", 32, False)], f"“continua” volta sozinho na aba pausada por último, sem perguntar ({yt3.feito[-1:]})")
+ext3.abas[1]["audivel"] = True   # as duas tocando ao mesmo tempo
+sistema.monitor_do_mouse = lambda: 3   # mouse numa 3ª tela: não desempata
+yt3.feito.clear()
+_, falas_p = diga("pausa o video", "Pausa o vídeo")
+perguntou2 = any("monitor 1 ou no 2" in f for f in falas_p) and not yt3.feito
+diga("no um", "No um")
+ok(perguntou2 and yt3.feito[-1:] == [("pausar", 31, True)],
+   f"Duas abas tocando ao mesmo tempo: pergunta e usa a resposta ({falas_p}, {yt3.feito[-1:]})")
+
 sistema.monitores, sistema.janelas_abertas, sistema.monitor_do_mouse = _monitores, _janelas, _mouse
 ex._yt = lambda: yt
 del ex.ponte

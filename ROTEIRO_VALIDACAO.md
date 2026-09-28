@@ -62,6 +62,14 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | `Mestre, reinicia` com a voz "Natural" escolhida | Assim que liga, fala com a Kokoro/Edge enquanto a Natural carrega (uns 60 s na 1ª vez); depois que ela fica pronta (painel > Voz mostra "ligada"), as falas seguintes já saem na voz Natural | (o comando falado) |
 | (painel) Voz > Natural > "Reinstalar" | Encerra sozinho o servidor antigo antes de baixar de novo (não trava em "Failed to remove ~orch") | (painel) |
 
+### YouTube sem perguntar a tela (recarregue a extensão no Brave e dê F5 nas abas)
+
+| Frase / ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, pausa o vídeo` (YouTube em 2 telas, só um tocando) | Pausa o que está tocando, sem perguntar a tela | `_cmd_youtube_controle` |
+| `Mestre, continua o vídeo` (um pausado, mesmo que à mão) | Volta o vídeo pausado por último, sem perguntar | `_cmd_youtube_controle` |
+| `Mestre, pausa` (os dois vídeos tocando) | Pergunta "No monitor 1 ou no 2?" e usa a resposta | `_cmd_youtube_controle` |
+
 ### Outras novidades
 
 | Frase / ação | O que deve acontecer | Comando esperado |
