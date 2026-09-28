@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from . import configuracao, estado, personalidades, segredos, sistema, tema, youtube
+from . import configuracao, estado, icones, personalidades, segredos, sistema, tema, youtube
 from .audio import BLOCO, TAXA, Segmentador, Transcritor, aplicar_ganho, nivel, sugerir_limiar
 from .config import PASTA_LOGS, PASTA_PROJETO
 from .vocabulario import Vocabulario, atalhos_no_disco
@@ -338,6 +338,91 @@ def linha_campo(master, rotulo: str, widget_fabrica, largura_rotulo=230):
     return w
 
 
+RAIL = 68            # menu lateral fechado: so os icones
+RAIL_ABERTO = 236    # com o mouse em cima: icones + nomes
+LILAS = "#C3A6F5"
+COR_SITUACAO = {"ouvindo": tema.SUCESSO, "pensando": LILAS, "falando": tema.ROSA, "descansando": tema.TEXTO_FRACO,
+                "pausado": tema.AVISO, "desligado": tema.TEXTO_FRACO}
+ROTULOS_COMANDO = (("OUVI", "#26324a", "#8DB8F7"), ("ENTENDI", "#352a4a", LILAS), ("FIZ", "#1a2a24", tema.SUCESSO))
+
+
+def _descendentes(w):
+    yield w
+    for filho in w.winfo_children():
+        yield from _descendentes(filho)
+
+
+def _ligar_eventos(w, **eventos) -> None:
+    """Liga eventos no widget e em tudo dentro dele (os do customtkinter tem canvas/rotulo por dentro)."""
+    for x in _descendentes(w):
+        for sequencia, funcao in eventos.items():
+            tk.Misc.bind(x, f"<{sequencia}>", funcao, "+")
+
+
+def cartao(master, titulo: str, icone: str = "", sub: str = ""):
+    """Cartao do Inicio (como os do prototipo): titulo com icone, explicacao curta e o corpo (devolvido)."""
+    c = ctk.CTkFrame(master, fg_color=tema.CARTAO, corner_radius=16, border_width=1, border_color=tema.BORDA)
+    topo = ctk.CTkFrame(c, fg_color="transparent")
+    topo.pack(fill="x", padx=18, pady=(16, 2 if sub else 8))
+    if icone:
+        ctk.CTkLabel(topo, text="", image=icones.ctk_icone(icone, tema.ROSA, 18), width=20).pack(side="left", padx=(0, 8))
+    ctk.CTkLabel(topo, text=titulo, anchor="w", font=tema.fonte(15, True)).pack(side="left")
+    if sub:
+        ctk.CTkLabel(c, text=sub, anchor="w", justify="left", wraplength=420, text_color=tema.TEXTO_FRACO,
+                     font=tema.fonte(12)).pack(fill="x", padx=18, pady=(0, 8))
+    corpo = ctk.CTkFrame(c, fg_color="transparent")
+    corpo.pack(fill="both", expand=True, padx=18, pady=(0, 16))
+    c.corpo = corpo
+    return c
+
+
+class Dica:
+    """Balaozinho ao lado do menu (nome e o que tem na pagina). Uma janelinha so, reaproveitada."""
+
+    def __init__(self, raiz):
+        self.raiz, self.janela, self._agendado = raiz, None, None
+
+    def agendar(self, onde, titulo: str, texto: str) -> None:
+        self.cancelar()
+        if tema.testando():
+            return   # (teste automatico: nenhuma janela aparece)
+        self._agendado = self.raiz.after(650, lambda: self._mostrar(onde(), titulo, texto))
+
+    def _mostrar(self, onde, titulo, texto) -> None:
+        self._agendado = None
+        try:
+            if self.janela is None:
+                self.janela = tk.Toplevel(self.raiz)
+                self.janela.overrideredirect(True)
+                self.janela.attributes("-topmost", True)
+                self.janela.configure(bg=tema.BORDA)
+                corpo = tk.Frame(self.janela, bg=tema.CAMPO)
+                corpo.pack(padx=1, pady=1)
+                self._t = tk.Label(corpo, bg=tema.CAMPO, fg=tema.TEXTO, anchor="w", justify="left",
+                                   font=(tema.FONTE, 10 + tema.TAMANHO - 14, "bold"))
+                self._t.pack(fill="x", padx=10, pady=(7, 0))
+                self._x = tk.Label(corpo, bg=tema.CAMPO, fg=tema.TEXTO_FRACO, anchor="w", justify="left", wraplength=260,
+                                   font=(tema.FONTE, 9 + tema.TAMANHO - 14))
+                self._x.pack(fill="x", padx=10, pady=(1, 8))
+            self._t.configure(text=titulo)
+            self._x.configure(text=texto)
+            self.janela.geometry(f"+{onde[0]}+{onde[1]}")
+            self.janela.deiconify()
+            self.janela.lift()
+        except tk.TclError:
+            pass
+
+    def cancelar(self) -> None:
+        if self._agendado:
+            self.raiz.after_cancel(self._agendado)
+            self._agendado = None
+        if self.janela is not None:
+            try:
+                self.janela.withdraw()
+            except tk.TclError:
+                pass
+
+
 # =====================================================================
 #  Painel
 # =====================================================================
@@ -373,51 +458,31 @@ class Painel(ctk.CTk):
         self._voz_extrair = None      # (modelo de reconhecimento da voz, carregado so quando precisa)
         self._cad_frases: list[str] | None = None
         self._transcritores: dict = {}
+        self._ultimos_valores: dict = {}   # (_por: so reconfigura widget quando o valor muda)
+        self._inicio_novo = None
+        self._coletando = False
+        self._marca_hist = None
+        self._comandos_cache: list[dict] = []
+        # nomes das rotinas de quando o painel abriu (ver _salvar_rotinas / configuracao.mesclar_novas_por_nome)
+        self._rotinas_iniciais = {str((r or {}).get("nome", "")).strip().lower() for r in (self.cfg.get("rotinas") or [])}
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
         self._montar_lateral()
-        conteudo = ctk.CTkFrame(self, fg_color=tema.FUNDO, corner_radius=0)
-        conteudo.grid(row=0, column=1, sticky="nsew")
-        conteudo.grid_columnconfigure(0, weight=1)
-        conteudo.grid_rowconfigure(1, weight=1)
-        cabecalho = ctk.CTkFrame(conteudo, fg_color="transparent")
-        cabecalho.grid(row=0, column=0, sticky="ew", padx=28, pady=(22, 6))
-        ctk.CTkLabel(cabecalho, text=f"v{self.versao}", width=54, height=26, corner_radius=13, fg_color=tema.ROSA_FUNDO,
-                     text_color=tema.ROSA, font=tema.fonte(12, True)).pack(side="right", anchor="n", pady=6)
-        textos = ctk.CTkFrame(cabecalho, fg_color="transparent")
-        textos.pack(side="left", fill="x", expand=True)
-        self.titulo_pagina = ctk.CTkLabel(textos, text="", anchor="w",
-                                          font=tema.fonte(24, True))
-        self.titulo_pagina.pack(fill="x")
-        self.subtitulo_pagina = ctk.CTkLabel(textos, text="", anchor="w", text_color=tema.TEXTO_FRACO,
-                                             font=tema.fonte(13))
-        self.subtitulo_pagina.pack(fill="x")
-
-        self.paginas = {}
-        for nome, (icone, descricao, montar) in PAGINAS.items():
-            frame = ctk.CTkScrollableFrame(conteudo, fg_color="transparent")
-            montar(self, frame)
-            self.paginas[nome] = (frame, descricao)
-
-        rodape = ctk.CTkFrame(conteudo, fg_color=tema.LATERAL, corner_radius=0, height=64)
-        rodape.grid(row=2, column=0, sticky="ew")
-        self.aviso = ctk.CTkLabel(rodape, text="As mudanças só valem depois de salvar.", text_color=tema.TEXTO_FRACO)
-        self.aviso.pack(side="left", padx=24, pady=16)
-        ctk.CTkButton(rodape, text=f"✓  Salvar e reiniciar o {self.nome}", height=40, width=240, corner_radius=20,
-                      font=tema.fonte(14, True),
-                      command=lambda: self.salvar(reiniciar=True)).pack(side="right", padx=(6, 24), pady=12)
-        ctk.CTkButton(rodape, text="Salvar", height=40, width=110, corner_radius=20, **SECUNDARIO,
-                      command=self.salvar).pack(side="right", padx=6, pady=12)
+        self._montar_conteudo()
         if configuracao.ultimo_conserto:
             self.aviso.configure(text_color=tema.AVISO, text=(
                 "Consertei o config.yaml: a seção " + ", ".join(configuracao.ultimo_conserto) +
                 " estava repetida (fiquei com a última). Original em config.yaml.antes_do_conserto."))
         carregando.destroy()
+        # paginas sob demanda: cada uma e montada na 1a vez que aparece e depois so troca (instantaneo)
+        self.paginas = {nome: (None, info[1]) for nome, info in PAGINAS.items()}
+        self._montadas: list[str] = []
         self.mostrar_pagina("Início")
+        self._rail.lift()
         self.protocol("WM_DELETE_WINDOW", self._fechar)
         self.after(100, self._atualizar_medidor)
-        self.after(2000, self._vigiar_status)
+        self.after(1000, self._tique_status)
         escutar_chamados(self)
 
     def _colocar_icone(self):
@@ -438,130 +503,363 @@ class Painel(ctk.CTk):
         self.after(300, lambda: self.attributes("-topmost", False))
         self.focus_force()
 
-    # --- menu lateral --------------------------------------------------------
+    def _por(self, w, **opcoes) -> None:
+        """configure() so quando muda (o Inicio atualiza a cada segundo sem redesenhar nada a toa)."""
+        if self._ultimos_valores.get(id(w)) != opcoes:
+            w.configure(**opcoes)
+            self._ultimos_valores[id(w)] = opcoes
+
+    # --- menu lateral compacto (so icones; abre com o mouse em cima) ------------
     def _montar_lateral(self):
         from .atualizar import versao_atual
         from .ponte import VERSAO_EXTENSAO
-        lateral = ctk.CTkFrame(self, fg_color=tema.LATERAL, corner_radius=0, width=240)
-        lateral.grid(row=0, column=0, sticky="nsw")
-        lateral.grid_propagate(False)
-        lateral.pack_propagate(False)
-        # marca: bolinha com a inicial + nome + situacao (ligado/desligado)
-        marca = ctk.CTkFrame(lateral, fg_color="transparent")
-        marca.pack(fill="x", padx=16, pady=(20, 10))
-        bola = tk.Canvas(marca, width=42, height=42, bg=tema.LATERAL, highlightthickness=0)
-        bola.create_oval(1, 1, 41, 41, fill=tema.ROSA, outline="")
-        bola.create_text(21, 21, text=(self.nome[:1] or "M").upper(), fill=tema.TEXTO_NO_ROSA,
-                         font=(tema.FONTE, 16 + tema.TAMANHO - 14, "bold"))
-        bola.pack(side="left")
-        textos = ctk.CTkFrame(marca, fg_color="transparent")
-        textos.pack(side="left", padx=10, fill="x", expand=True)
-        ctk.CTkLabel(textos, text=self.nome, anchor="w", font=tema.fonte(19, True)).pack(fill="x")
-        self.status_lateral = ctk.CTkLabel(textos, text="", anchor="w", font=tema.fonte(12))
-        self.status_lateral.pack(fill="x")
-        # rodape: versao do projeto e da extensao
-        rodape = ctk.CTkFrame(lateral, fg_color="transparent")
-        rodape.pack(side="bottom", fill="x", padx=18, pady=(6, 14))
         self.versao = versao_atual()
-        self.rot_versao = ctk.CTkLabel(rodape, text=f"Versão {self.versao}  ·  extensão {VERSAO_EXTENSAO}", anchor="w",
+        escala = ctk.ScalingTracker.get_widget_scaling(self)
+        self._rail_fechado, self._rail_aberto = round(RAIL * escala), round(RAIL_ABERTO * escala)
+        self._rail_largura = self._rail_alvo = self._rail_fechado
+        self._rail_anim = self._rail_abrir = self._rail_vigia = None
+        self._dica = Dica(self)
+        # o espaco do menu fechado fica reservado; o menu aberto passa POR CIMA do conteudo (nada se mexe)
+        tk.Frame(self, width=self._rail_fechado, bg=tema.LATERAL, highlightthickness=0, bd=0).grid(
+            row=0, column=0, sticky="ns")
+        self._rail = tk.Frame(self, bg=tema.LATERAL, highlightthickness=0, bd=0)
+        self._rail.place(x=0, y=0, relheight=1, width=self._rail_fechado)
+        dentro = tk.Frame(self._rail, bg=tema.LATERAL, highlightthickness=0, bd=0)
+        dentro.place(x=0, y=0, relheight=1, width=self._rail_aberto)   # largura fixa: o menu so "recorta"
+        tk.Frame(self._rail, bg=tema.BORDA, width=1, highlightthickness=0, bd=0).place(
+            relx=1, x=-1, y=0, relheight=1, width=1)
+        # marca (icone do programa + nome); o nome comeca depois da parte visivel do menu fechado
+        marca = ctk.CTkFrame(dentro, fg_color="transparent")
+        marca.pack(fill="x", pady=(16, 8))
+        self._logo = ctk.CTkImage(tema.desenhar_icone(tema.ROSA, 128), size=(36, 36))
+        ctk.CTkLabel(marca, text="", image=self._logo, width=48).pack(side="left", padx=(10, 0))
+        ctk.CTkLabel(marca, text=self.nome, anchor="w", font=tema.fonte(17, True)).pack(side="left", padx=(16, 0))
+        # rodape: versao do projeto e da extensao
+        pe = ctk.CTkFrame(dentro, fg_color="transparent")
+        pe.pack(side="bottom", fill="x", pady=(6, 14))
+        ctk.CTkLabel(pe, text=self.versao, width=48, height=22, corner_radius=11, fg_color=tema.ROSA_FUNDO,
+                     text_color=tema.ROSA, font=tema.fonte(11, True)).pack(side="left", padx=(10, 0))
+        self.rot_versao = ctk.CTkLabel(pe, text=f"Versão {self.versao} · extensão {VERSAO_EXTENSAO}", anchor="w",
                                        text_color=tema.TEXTO_FRACO, font=tema.fonte(11))
-        self.rot_versao.pack(fill="x")
-        # itens, em grupos
-        menu = ctk.CTkScrollableFrame(lateral, fg_color="transparent", scrollbar_button_color=tema.LATERAL,
+        self.rot_versao.pack(side="left", padx=(16, 0))
+        menu = ctk.CTkScrollableFrame(dentro, fg_color=tema.LATERAL, corner_radius=0,
+                                      scrollbar_button_color=tema.LATERAL,
                                       scrollbar_button_hover_color=tema.SECUNDARIO_HOVER)
-        menu.pack(fill="both", expand=True, padx=(6, 0))
-        self.botoes_menu, self._marcas_menu = {}, {}
+        menu.pack(fill="both", expand=True)
+        self.botoes_menu, self._rotulos_menu = {}, {}
         for grupo, nomes in GRUPOS_MENU:
-            ctk.CTkLabel(menu, text=grupo, anchor="w", text_color=tema.TEXTO_FRACO, height=16,
-                         font=tema.fonte(10, True)).pack(fill="x", padx=14, pady=(10, 2))
+            g = ctk.CTkFrame(menu, fg_color="transparent", height=22)
+            g.pack(fill="x", pady=(8, 1))
+            ctk.CTkFrame(g, width=20, height=2, corner_radius=1, fg_color=tema.BORDA).pack(side="left", padx=(24, 0))
+            ctk.CTkLabel(g, text=grupo, anchor="w", height=18, text_color=tema.TEXTO_FRACO,
+                         font=tema.fonte(10, True)).pack(side="left", padx=(28, 0))
             for nome in nomes:
-                icone = PAGINAS[nome][0]
-                linha = ctk.CTkFrame(menu, fg_color="transparent", height=32)
-                linha.pack(fill="x", pady=0)
-                marca_sel = ctk.CTkFrame(linha, width=4, height=22, corner_radius=2, fg_color="transparent")
-                marca_sel.pack(side="left", padx=(2, 4))
-                b = ctk.CTkButton(linha, text=f"{icone}   {nome}", anchor="w", height=31, corner_radius=9,
-                                  fg_color="transparent", hover_color=tema.SECUNDARIO, text_color=tema.TEXTO,
-                                  font=tema.fonte(14), command=lambda n=nome: self.mostrar_pagina(n))
-                b.pack(side="left", fill="x", expand=True, padx=(0, 8))
-                self.botoes_menu[nome] = b
-                self._marcas_menu[nome] = marca_sel
+                self._item_menu(menu, nome)
+        _ligar_eventos(self._rail, Enter=self._rail_entrou)
+
+    def _item_menu(self, menu, nome: str):
+        icone, descricao = PAGINAS[nome][0], PAGINAS[nome][1]
+        linha = ctk.CTkFrame(menu, fg_color="transparent")
+        linha.pack(fill="x", pady=1)
+        bt = ctk.CTkButton(linha, text="", image=icones.ctk_icone(icone, tema.TEXTO_FRACO, 21), width=48, height=40,
+                           corner_radius=12, fg_color="transparent", hover_color=tema.CARTAO,
+                           command=lambda: self.mostrar_pagina(nome))
+        bt.pack(side="left", padx=(10, 0))
+        rot = ctk.CTkLabel(linha, text=nome, anchor="w", text_color=tema.TEXTO_FRACO, font=tema.fonte(13), cursor="hand2")
+        rot.pack(side="left", fill="x", expand=True, padx=(16, 0))
+        self.botoes_menu[nome], self._rotulos_menu[nome] = bt, rot
+
+        def entrar(_=None):
+            if nome != getattr(self, "pagina_atual", None):
+                self._por(bt, fg_color=tema.CARTAO)
+                self._por(rot, text_color=tema.TEXTO)
+            self._dica.agendar(lambda: (self._rail.winfo_rootx() + self._rail_largura + 8, linha.winfo_rooty()),
+                               nome, descricao)
+
+        def sair(_=None):
+            if nome != getattr(self, "pagina_atual", None):
+                self._por(bt, fg_color="transparent")
+                self._por(rot, text_color=tema.TEXTO_FRACO)
+            self._dica.cancelar()
+        _ligar_eventos(linha, Enter=entrar, Leave=sair)
+        for w in (linha, rot):   # (o botao do icone ja tem o command)
+            _ligar_eventos(w, **{"Button-1": lambda _=None: self.mostrar_pagina(nome)})
+
+    def _marcar_item(self, nome: str, ativo: bool):
+        cor = tema.ROSA if ativo else tema.TEXTO_FRACO
+        self._por(self.botoes_menu[nome], fg_color=tema.ROSA_FUNDO if ativo else "transparent",
+                  hover_color=tema.ROSA_FUNDO if ativo else tema.CARTAO,
+                  image=icones.ctk_icone(PAGINAS[nome][0], cor, 21))
+        self._por(self._rotulos_menu[nome], text_color=cor, font=tema.fonte(13, ativo))
+
+    def _rail_entrou(self, _=None):
+        if self._rail_alvo != self._rail_aberto and self._rail_abrir is None:
+            self._rail_abrir = self.after(90, self._rail_expandir)   # (passar rapido por cima nao abre)
+        if self._rail_vigia is None:
+            self._rail_vigia = self.after(100, self._vigiar_rail)
+
+    def _rail_expandir(self):
+        self._rail_abrir = None
+        self._rail_ir(self._rail_aberto)
+
+    def _ponteiro_no_rail(self) -> bool:
+        try:
+            x, y = self.winfo_pointerxy()
+            rx, ry = self._rail.winfo_rootx(), self._rail.winfo_rooty()
+            return rx <= x < rx + self._rail_largura and ry <= y < ry + self._rail.winfo_height()
+        except tk.TclError:
+            return False
+
+    def _vigiar_rail(self):
+        """Enquanto o mouse esta no menu, confere a cada 0,1 s; saiu = fecha (so roda nesse tempo)."""
+        if self._ponteiro_no_rail():
+            self._rail_vigia = self.after(100, self._vigiar_rail)
+            return
+        self._rail_vigia = None
+        if self._rail_abrir is not None:
+            self.after_cancel(self._rail_abrir)
+            self._rail_abrir = None
+        self._dica.cancelar()
+        self._rail_ir(self._rail_fechado)
+
+    def _rail_ir(self, alvo: int):
+        self._rail_alvo = alvo
+        if alvo == self._rail_aberto:
+            self._rail.lift()
+        if self._rail_anim is None:
+            self._rail_passo()
+
+    def _rail_passo(self):
+        """Animacao curta (~0,1 s): so muda a largura de UM quadro; o conteudo do menu nao e redesenhado."""
+        falta = self._rail_alvo - self._rail_largura
+        if abs(falta) <= 3:
+            self._rail_largura = self._rail_alvo
+        else:
+            self._rail_largura += int(falta * 0.5)
+        self._rail.place_configure(width=self._rail_largura)
+        self._rail_anim = self.after(12, self._rail_passo) if self._rail_largura != self._rail_alvo else None
+
+    # --- conteudo: cabecalho, pagina e rodape ------------------------------------
+    def _montar_conteudo(self):
+        conteudo = ctk.CTkFrame(self, fg_color=tema.FUNDO, corner_radius=0)
+        conteudo.grid(row=0, column=1, sticky="nsew")
+        conteudo.grid_columnconfigure(0, weight=1)
+        conteudo.grid_rowconfigure(1, weight=1)
+        self._conteudo = conteudo
+        cabecalho = ctk.CTkFrame(conteudo, fg_color="transparent")
+        cabecalho.grid(row=0, column=0, sticky="ew", padx=28, pady=(20, 8))
+        direita = ctk.CTkFrame(cabecalho, fg_color="transparent")
+        direita.pack(side="right", anchor="n", pady=6)
+        self.status_lateral = ctk.CTkLabel(direita, text="", anchor="e", font=tema.fonte(12))
+        self.status_lateral.pack(side="left", padx=(0, 12))
+        ctk.CTkLabel(direita, text=f"v{self.versao}", width=54, height=26, corner_radius=13, fg_color=tema.ROSA_FUNDO,
+                     text_color=tema.ROSA, font=tema.fonte(12, True)).pack(side="left")
+        caixa = ctk.CTkFrame(cabecalho, width=46, height=46, corner_radius=13, fg_color=tema.ROSA_FUNDO)
+        caixa.pack(side="left", padx=(0, 14))
+        caixa.pack_propagate(False)
+        self.icone_pagina = ctk.CTkLabel(caixa, text="", image=icones.ctk_icone("casa", tema.ROSA, 22))
+        self.icone_pagina.pack(expand=True)
+        textos = ctk.CTkFrame(cabecalho, fg_color="transparent")
+        textos.pack(side="left", fill="x", expand=True)
+        self.titulo_pagina = ctk.CTkLabel(textos, text="", anchor="w", height=30, font=tema.fonte(22, True))
+        self.titulo_pagina.pack(fill="x")
+        self.subtitulo_pagina = ctk.CTkLabel(textos, text="", anchor="w", height=18, text_color=tema.TEXTO_FRACO,
+                                             font=tema.fonte(13))
+        self.subtitulo_pagina.pack(fill="x")
+
+        rodape = ctk.CTkFrame(conteudo, fg_color=tema.LATERAL, corner_radius=0, height=64)
+        rodape.grid(row=2, column=0, sticky="ew")
+        self.aviso = ctk.CTkLabel(rodape, text="As mudanças só valem depois de salvar.", text_color=tema.TEXTO_FRACO)
+        self.aviso.pack(side="left", padx=24, pady=16)
+        ctk.CTkButton(rodape, text=f"✓  Salvar e reiniciar o {self.nome}", height=40, width=240, corner_radius=20,
+                      font=tema.fonte(14, True),
+                      command=lambda: self.salvar(reiniciar=True)).pack(side="right", padx=(6, 24), pady=12)
+        ctk.CTkButton(rodape, text="Salvar", height=40, width=110, corner_radius=20, **SECUNDARIO,
+                      command=self.salvar).pack(side="right", padx=6, pady=12)
+
+    def _garantir_pagina(self, nome: str):
+        """Monta a pagina na primeira vez (sob demanda) e guarda: nas proximas vezes so troca."""
+        frame, descricao = self.paginas[nome]
+        if frame is None:
+            frame = ctk.CTkScrollableFrame(self._conteudo, fg_color="transparent")
+            PAGINAS[nome][2](self, frame)
+            self.paginas[nome] = (frame, descricao)
+            self._montadas.append(nome)
+        return frame
+
+    def montar_todas(self):
+        """Monta todas as paginas (o teste automatico usa para conferir todos os textos)."""
+        for nome in PAGINAS:
+            self._garantir_pagina(nome)
 
     def mostrar_pagina(self, nome: str):
-        for n, (frame, _) in self.paginas.items():
-            frame.grid_forget()
-            self.botoes_menu[n].configure(fg_color="transparent", text_color=tema.TEXTO, font=tema.fonte(14))
-            self._marcas_menu[n].configure(fg_color="transparent")
-        frame, descricao = self.paginas[nome]
-        frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(4, 8))
-        self.botoes_menu[nome].configure(fg_color=tema.ROSA_FUNDO, text_color=tema.ROSA, font=tema.fonte(14, True))
-        self._marcas_menu[nome].configure(fg_color=tema.ROSA)
-        self.titulo_pagina.configure(text=f"{PAGINAS[nome][0]}  {nome}")
+        anterior = getattr(self, "pagina_atual", None)
+        if anterior and anterior != nome:
+            self._marcar_item(anterior, False)
+        if self.paginas[nome][0] is None and hasattr(self, "titulo_pagina"):
+            # 1a vez: o menu e o titulo respondem ja; a pagina e montada logo em seguida
+            self._marcar_item(nome, True)
+            self._por(self.titulo_pagina, text=nome)
+            self._por(self.subtitulo_pagina, text="Abrindo...")
+            self.update_idletasks()
+        frame = self._garantir_pagina(nome)
+        # as paginas ja montadas ficam todas no mesmo lugar, uma em cima da outra: trocar e so trazer a
+        # escolhida para a frente (esconder/mostrar faria o customtkinter redesenhar a pagina inteira)
+        if not frame.grid_info():
+            frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
+        frame.lift()
+        self._marcar_item(nome, True)
+        self.pagina_atual = nome
+        icone, descricao = PAGINAS[nome][0], PAGINAS[nome][1]
+        self._por(self.icone_pagina, image=icones.ctk_icone(icone, tema.ROSA, 22))
+        self._por(self.titulo_pagina, text=nome)
+        self._por(self.subtitulo_pagina, text=descricao)
         if nome == "Sugestões de melhoria" and hasattr(self, "_sug_linhas"):
             self._sug_recarregar()
-        self.subtitulo_pagina.configure(text=descricao)
-        self.pagina_atual = nome
 
     def _sec(self, nome: str) -> dict:
         return self.cfg.get(nome) or {}
 
     # -----------------------------------------------------------------
+    #  Inicio: cartoes (status + avatar, fila do pensando, atalhos, ultimos comandos)
+    # -----------------------------------------------------------------
     def _aba_inicio(self, pagina):
-        f = pagina   # (cada secao abaixo troca f pelo cartao dela)
-        cartao = ctk.CTkFrame(f, fg_color=tema.CARTAO, corner_radius=16, border_width=1, border_color=tema.BORDA)
-        cartao.pack(fill="x", padx=(4, 10), pady=(8, 7))
-        self.status_mestre = ctk.CTkLabel(cartao, text="", anchor="w",
-                                          font=tema.fonte(18, True))
-        self.status_mestre.pack(fill="x", padx=20, pady=(18, 2))
-        self.status_detalhe = ctk.CTkLabel(cartao, text="", anchor="w", text_color=tema.TEXTO_FRACO)
-        self.status_detalhe.pack(fill="x", padx=20)
-        botoes = ctk.CTkFrame(cartao, fg_color="transparent")
-        botoes.pack(fill="x", padx=20, pady=(12, 6))
-        grande = dict(height=44, width=150, corner_radius=12, font=tema.fonte(14, True))
-        self.bt_ligar = ctk.CTkButton(botoes, text="▶  Ligar", command=self._ligar_mestre, **grande)
-        self.bt_ligar.pack(side="left")
-        ctk.CTkButton(botoes, text="↻  Reiniciar", **SECUNDARIO, **grande,
-                      command=self._reiniciar_mestre).pack(side="left", padx=(8, 0))
-        self.bt_pausa = ctk.CTkButton(botoes, text="", **SECUNDARIO, **grande, command=self._alternar_pausa)
-        self.bt_pausa.pack(side="left", padx=(8, 0))
-        ctk.CTkButton(botoes, text="■  Desligar", **PERIGO, **grande,
-                      command=self._desligar_mestre).pack(side="left", padx=(8, 0))
-        extras = ctk.CTkFrame(cartao, fg_color="transparent")
-        extras.pack(fill="x", padx=20, pady=(4, 6))
-        for texto, cmd in (("⌨  Testar digitando", self._testar_por_texto),
-                           ("⚕  Teste automático", self._teste_automatico),
-                           (f"⤓  Atualizar o {self.nome} (.zip)", self._atualizar_por_zip)):
-            ctk.CTkButton(extras, text=texto, height=34, **SECUNDARIO, command=cmd).pack(side="left", padx=(0, 8))
-        from .versao import DATA
-        ctk.CTkLabel(extras, text=f"Você está na versão {self.versao} ({DATA})", text_color=tema.TEXTO_FRACO,
-                     font=tema.fonte(12)).pack(side="left", padx=8)
-        self.var_ligar_ao_abrir = tk.BooleanVar(value=bool(self._sec("central").get("ligar_mestre_ao_abrir", True)))
-        ctk.CTkSwitch(cartao, text=f"Ligar o {self.nome} sozinho quando eu abrir a Central (atalho da área de trabalho)",
-                      variable=self.var_ligar_ao_abrir).pack(anchor="w", padx=20, pady=(6, 4))
-        ctk.CTkLabel(cartao, text=f"Mudou alguma configuração? Clique em “Salvar e reiniciar o {self.nome}” (embaixo). "
-                                  "O config.yaml é atualizado sozinho, com cópia de segurança (config.yaml.bak).",
-                     anchor="w", justify="left", wraplength=780, text_color=tema.TEXTO_FRACO).pack(fill="x", padx=20, pady=(0, 16))
+        grade = ctk.CTkFrame(pagina, fg_color="transparent")
+        grade.pack(fill="x", padx=(4, 10), pady=(4, 0))
+        grade.grid_columnconfigure((0, 1), weight=1, uniform="inicio")
+        self._cartao_status(grade).grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 7))
+        self._cartao_fila(grade).grid(row=1, column=0, sticky="nsew", padx=(0, 7), pady=7)
+        self._cartao_atalhos(grade).grid(row=1, column=1, sticky="nsew", padx=(7, 0), pady=7)
+        self._cartao_comandos(grade).grid(row=2, column=0, columnspan=2, sticky="nsew", pady=7)
+        self._inicio_novidades(pagina)
+        self._inicio_jeitos_de_chamar(pagina)
+        self._inicio_atalhos_uteis(pagina)
+        self._aplicar_inicio(self._coletar_inicio())   # (a 1a vez aqui mesmo: a pagina ja abre preenchida)
 
-        f = secao(pagina, f"Novidades da versão {self.versao}", "Frases que você pode usar agora:")
-        w = self.palavra
-        dicas = [("“toca Agentes da Shield na Disney”", "digita na busca, clica no título e em “continuar assistindo”"),
-                 ("“abre o segundo vídeo do monitor 2”", "YouTube em duas telas: escolhe a certa (ou pergunta qual)"),
-                 ("“clica em continuar assistindo”", "clica na janela que tem esse botão"),
-                 (f"“{w}, desliga”", "desliga na hora (também “pode desligar”)"),
-                 ("Mensagem no Telegram", "aparece um aviso azul no indicador e ele fala “Mensagem do Telegram”"),
-                 ("A IA terminou de pensar", "ele já fala a resposta; só pergunta quando precisa de você"),
-                 (f"“{w}, pode descansar”", "fica quieto até você dizer “bora voltar a trabalhar”"),
-                 ("“junta o YouTube com a Disney”", "a aba vai para a janela da outra, em qualquer monitor"),
-                 (f"“{w}, isso tá errado, era …”", "guarda o erro e o áudio para o Claude Code corrigir")]
+    def _cartao_status(self, master):
+        c = ctk.CTkFrame(master, fg_color=tema.CARTAO, corner_radius=16, border_width=1, border_color=tema.BORDA)
+        linha = ctk.CTkFrame(c, fg_color="transparent")
+        linha.pack(fill="x", padx=20, pady=(18, 6))
+        # lugar do avatar: por enquanto um desenho parado (o robo animado entra aqui depois)
+        self.avatar_area = ctk.CTkFrame(linha, width=150, height=150, fg_color="transparent")
+        self.avatar_area.pack(side="left", anchor="n")
+        self.avatar_area.pack_propagate(False)
+        self._avatar_img = ctk.CTkImage(icones.avatar(tema.ROSA), size=(140, 140))
+        ctk.CTkLabel(self.avatar_area, text="", image=self._avatar_img).pack(expand=True)
+        lado = ctk.CTkFrame(linha, fg_color="transparent")
+        lado.pack(side="left", fill="both", expand=True, padx=(20, 0))
+        self.status_mestre = ctk.CTkLabel(lado, text="", anchor="w", font=tema.fonte(26, True))
+        self.status_mestre.pack(fill="x", pady=(8, 0))
+        self.status_detalhe = ctk.CTkLabel(lado, text="", anchor="w", justify="left", wraplength=600,
+                                           text_color=tema.TEXTO_FRACO)
+        self.status_detalhe.pack(fill="x")
+        botoes = ctk.CTkFrame(lado, fg_color="transparent")
+        botoes.pack(fill="x", pady=(14, 4))
+        grande = dict(height=42, width=140, corner_radius=12, font=tema.fonte(14, True), compound="left")
+        self.bt_ligar = ctk.CTkButton(botoes, text=" Ligar", image=icones.ctk_icone("play", tema.TEXTO_NO_ROSA, 16),
+                                      command=self._ligar_mestre, **grande)
+        self.bt_ligar.pack(side="left")
+        ctk.CTkButton(botoes, text=" Desligar", image=icones.ctk_icone("parar", tema.TEXTO, 16), **PERIGO, **grande,
+                      command=self._desligar_mestre).pack(side="left", padx=(8, 0))
+        from .versao import DATA
+        ctk.CTkLabel(botoes, text=f"Versão {self.versao} ({DATA})", text_color=tema.TEXTO_FRACO,
+                     font=tema.fonte(12)).pack(side="left", padx=14)
+        self.var_ligar_ao_abrir = tk.BooleanVar(value=bool(self._sec("central").get("ligar_mestre_ao_abrir", True)))
+        ctk.CTkSwitch(lado, text=f"Ligar o {self.nome} sozinho quando eu abrir a Central (atalho da área de trabalho)",
+                      variable=self.var_ligar_ao_abrir).pack(anchor="w", pady=(6, 0))
+        ctk.CTkLabel(c, text=f"Mudou alguma configuração? Clique em “Salvar e reiniciar o {self.nome}” (embaixo). "
+                             "O config.yaml é atualizado sozinho, com cópia de segurança (config.yaml.bak).",
+                     anchor="w", justify="left", wraplength=820, text_color=tema.TEXTO_FRACO,
+                     font=tema.fonte(12)).pack(fill="x", padx=20, pady=(4, 16))
+        return c
+
+    def _cartao_fila(self, master):
+        c = cartao(master, "Fila do pensando", "brilho", "Pedidos que a IA está resolvendo em segundo plano.")
+        self._fila_linhas = []
+        for _ in range(4):   # (no maximo 4 na tela; o resto vira "+ N na fila")
+            fr = ctk.CTkFrame(c.corpo, fg_color="transparent")
+            topo = ctk.CTkFrame(fr, fg_color="transparent")
+            topo.pack(fill="x")
+            chip = ctk.CTkLabel(topo, text="", width=78, height=22, corner_radius=11, font=tema.fonte(11, True))
+            chip.pack(side="right", padx=(8, 0))
+            texto = ctk.CTkLabel(topo, text="", anchor="w", justify="left", wraplength=300)
+            texto.pack(side="left", fill="x", expand=True)
+            barra = ctk.CTkProgressBar(fr, height=5, progress_color=LILAS)
+            barra.pack(fill="x", pady=(5, 8))
+            self._fila_linhas.append({"frame": fr, "texto": texto, "chip": chip, "barra": barra})
+        self.rot_fila_vazia = ctk.CTkLabel(c.corpo, text="Nada na fila agora. Quando a IA demorar, o pedido aparece aqui.",
+                                           anchor="w", justify="left", wraplength=380, text_color=tema.TEXTO_FRACO)
+        self.rot_fila_mais = ctk.CTkLabel(c.corpo, text="", anchor="w", text_color=tema.TEXTO_FRACO, font=tema.fonte(12))
+        return c
+
+    def _cartao_atalhos(self, master):
+        c = cartao(master, "Atalhos rápidos", "atalho")
+        grade = ctk.CTkFrame(c.corpo, fg_color="transparent")
+        grade.pack(fill="both", expand=True)
+        grade.grid_columnconfigure((0, 1, 2), weight=1, uniform="atalho")
+        estilo = dict(height=70, corner_radius=14, compound="top", fg_color=tema.CAMPO, border_width=1,
+                      border_color=tema.BORDA, hover_color=tema.SECUNDARIO_HOVER, text_color=tema.TEXTO,
+                      font=tema.fonte(12))
+        itens = [("Reiniciar", "reiniciar", self._reiniciar_mestre),
+                 ("Pausar", "pausa", self._alternar_pausa),
+                 ("Validar atualização", "check", lambda: self.mostrar_pagina("Validar atualização")),
+                 ("Sugestões", "brilho", lambda: self.mostrar_pagina("Sugestões de melhoria")),
+                 ("Testar digitando", "teclado", self._testar_por_texto),
+                 ("Teste automático", "chip", self._teste_automatico),
+                 ("Atualizar (.zip)", "baixar", self._atualizar_por_zip),
+                 ("Ouvir a voz", "alto", lambda: self.mostrar_pagina("Voz")),
+                 ("Microfone", "mic", lambda: self.mostrar_pagina("Áudio"))]
+        for i, (texto, icone, cmd) in enumerate(itens):
+            b = ctk.CTkButton(grade, text=texto, image=icones.ctk_icone(icone, tema.ROSA, 22), command=cmd, **estilo)
+            b.grid(row=i // 3, column=i % 3, sticky="nsew", padx=4, pady=4)
+            if icone == "pausa":
+                self.bt_pausa = b
+        return c
+
+    def _cartao_comandos(self, master):
+        c = cartao(master, "Últimos comandos", "historico", "O que ele ouviu, entendeu e fez (os mais novos em cima).")
+        self._cmd_linhas = []
+        for i in range(5):   # (5 linhas fixas: so o texto muda)
+            fr = ctk.CTkFrame(c.corpo, fg_color="transparent")
+            if i:
+                ctk.CTkFrame(fr, height=1, fg_color=tema.BORDA).pack(fill="x", pady=(0, 8))
+            hora = ctk.CTkLabel(fr, text="", width=52, anchor="ne", text_color=tema.TEXTO_FRACO, font=tema.fonte(12))
+            hora.pack(side="right", anchor="n")
+            textos = {}
+            for rotulo, fundo, cor in ROTULOS_COMANDO:
+                l = ctk.CTkFrame(fr, fg_color="transparent")
+                l.pack(fill="x", pady=1)
+                ctk.CTkLabel(l, text=rotulo, width=70, height=20, corner_radius=6, fg_color=fundo, text_color=cor,
+                             font=tema.fonte(10, True)).pack(side="left", anchor="n", pady=1)
+                t = ctk.CTkLabel(l, text="", anchor="w", justify="left", wraplength=720)
+                t.pack(side="left", fill="x", expand=True, padx=(10, 0))
+                textos[rotulo] = t
+            self._cmd_linhas.append({"frame": fr, "hora": hora, **textos})
+        self.rot_cmd_vazio = ctk.CTkLabel(c.corpo, text="Ainda não tem comandos. Fale com ele e eles aparecem aqui.",
+                                          anchor="w", text_color=tema.TEXTO_FRACO)
+        ctk.CTkButton(c.corpo, text="Ver o histórico completo", width=190, height=30, **SECUNDARIO,
+                      command=lambda: self.mostrar_pagina("Histórico")).pack(side="bottom", anchor="w", pady=(10, 0))
+        return c
+
+    def _inicio_novidades(self, pagina):
+        f = secao(pagina, f"Novidades da versão {self.versao}", "O que mudou no painel:")
+        dicas = [("Menu com ícones", "passe o mouse na barra da esquerda: ela abre mostrando os nomes"),
+                 ("Início em cartões", "o que ele está fazendo agora, a fila do pensando e os últimos comandos"),
+                 ("Últimos comandos", "OUVI / ENTENDI / FIZ de cada pedido, atualizando sozinho"),
+                 ("Voz em abas", "uma aba por voz: Ativar esta voz, Testar e Usar como reserva"),
+                 ("Voz reserva", "se a voz ativa falhar, ele fala com a reserva que você escolheu"),
+                 ("Painel mais leve", "cada página só é montada quando você abre; trocar de página é na hora")]
         for frase, explica in dicas:
             linha = ctk.CTkFrame(f, fg_color="transparent")
             linha.pack(fill="x", padx=(32, 18), pady=2)
-            ctk.CTkLabel(linha, text=frase, anchor="w", width=300, text_color=tema.ROSA,
+            ctk.CTkLabel(linha, text=frase, anchor="w", width=200, text_color=tema.ROSA,
                          font=tema.fonte(13, True)).pack(side="left")
             ctk.CTkLabel(linha, text=explica, anchor="w", text_color=tema.TEXTO_FRACO).pack(side="left")
 
+    def _inicio_jeitos_de_chamar(self, pagina):
+        w = self.palavra
         f = secao(pagina, "Jeitos de chamar", "Todos funcionam. Os da direita também tiram do modo descanso "
-                                      f"(“{w}, pode descansar”).")
+                                              f"(“{w}, pode descansar”).")
         chamar = [f"{w}", f"E aí, {w}", f"Fala, {w}", f"Ô {w}", f"Oi, {w}", f"Meu {w}", f"Fala, meu {w}",
                   f"E aí, meu {w}, tá por aí?", f"{w}, tá aí?", f"{w}, tá me ouvindo?", f"Salve, {w}", f"Opa, {w}",
                   f"Beleza, {w}?", f"{w}, na escuta?", f"{w}, presente?", f"{w}, bora", f"{w}, preciso de você",
@@ -577,6 +875,7 @@ class Painel(ctk.CTk):
             ctk.CTkLabel(grade, text=f"{len(chamar) + j + 1}. {frase}", anchor="w", text_color=tema.ROSA).grid(
                 row=j, column=2, sticky="w")
 
+    def _inicio_atalhos_uteis(self, pagina):
         f = secao(pagina, "Atalhos úteis")
         util = ctk.CTkFrame(f, fg_color="transparent")
         util.pack(fill="x", padx=(32, 18))
@@ -588,31 +887,129 @@ class Painel(ctk.CTk):
             ctk.CTkButton(util, text=texto, **SECUNDARIO,
                           command=lambda a=alvo: sistema.abrir_arquivo(a) if Path(a).exists()
                           else messagebox.showinfo(self.nome, "Ainda não existe.")).pack(side="left", padx=(0, 8))
-        self._status()
 
-    def _status(self):
+    # --- status: le em segundo plano, aplica na tela sem recriar nada -------------
+    def _coletar_inicio(self) -> dict:
+        """Roda FORA da linha do tkinter (menos a 1a vez): arquivos do Assessor, nada de widget aqui."""
+        from . import memoria, validacao
+
         rodando = sistema.mestre_ligado()
         pausado = estado.pausado()
-        nome = self.nome
-        if rodando and pausado:
-            texto, cor, curto = f"❚❚ O {nome} está ligado, com a escuta PAUSADA", tema.AVISO, "❚❚ escuta pausada"
-        elif rodando:
-            texto, cor, curto = f"● O {nome} está LIGADO e ouvindo", tema.SUCESSO, "● ligado e ouvindo"
-        else:
-            texto, cor, curto = f"○ O {nome} está desligado", tema.TEXTO_FRACO, "○ desligado"
-        if hasattr(self, "status_lateral"):
-            self.status_lateral.configure(text=curto, text_color=cor)
-        self.status_mestre.configure(text=texto, text_color=cor)
-        self.status_detalhe.configure(text=(
-            "Ele também aparece perto do relógio do Windows: clique no ícone para abrir esta Central."
-            if rodando else "Clique em “Ligar” para ele começar a ouvir."))
-        self.bt_ligar.configure(state="disabled" if rodando else "normal")
-        self.bt_pausa.configure(text="▶  Retomar escuta" if pausado else "❚❚  Pausar escuta",
-                                state="normal" if rodando else "disabled")
+        agora = estado.ler_de_fora() if rodando else {}
 
-    def _vigiar_status(self):
-        self._status()
-        self.after(2000, self._vigiar_status)
+        def mudou_em(arquivo):
+            try:
+                return arquivo.stat().st_mtime
+            except OSError:
+                return 0.0
+        marca = (mudou_em(memoria.ARQUIVO_HISTORICO), mudou_em(memoria.ARQUIVO_OUVIDO))
+        if marca != self._marca_hist:   # so rele o historico quando ele muda
+            self._comandos_cache = validacao.ultimos_comandos(5)
+            self._marca_hist = marca
+        return {"rodando": rodando, "pausado": pausado, "agora": agora, "comandos": self._comandos_cache,
+                "situacao": estado.situacao(agora, rodando, pausado)}
+
+    def _coletar_em_fundo(self):
+        try:
+            self._inicio_novo = self._coletar_inicio()
+        except Exception:
+            pass
+        finally:
+            self._coletando = False
+
+    def _aplicar_se_novo(self):
+        novo, self._inicio_novo = self._inicio_novo, None
+        if novo is not None:
+            self._aplicar_inicio(novo)
+
+    def _status(self):
+        """Pede uma leitura agora (depois de ligar, pausar...) e mostra em seguida."""
+        if not self._coletando:
+            self._coletando = True
+            threading.Thread(target=self._coletar_em_fundo, daemon=True).start()
+        self.after(200, self._aplicar_se_novo)
+
+    def _tique_status(self):
+        """A cada ~1 s: o Inicio e a bolinha do topo acompanham o Assessor sozinhos."""
+        try:
+            self._aplicar_se_novo()
+            self._status()
+        finally:
+            self.after(1000, self._tique_status)
+
+    def _aplicar_inicio(self, d: dict):
+        situacao, rodando, pausado = d["situacao"], d["rodando"], d["pausado"]
+        titulo, detalhe = estado.SITUACOES[situacao]
+        cor = COR_SITUACAO[situacao]
+        self._por(self.status_lateral, text=f"●  {titulo}", text_color=cor)
+        if not hasattr(self, "status_mestre"):
+            return   # (o Inicio ainda nao foi montado)
+        agora = d["agora"]
+        lista = list(agora.get("pensamentos_lista") or [])
+        if situacao == "ouvindo":
+            detalhe = f"Pode falar: diga “{self.palavra}” e o pedido."
+        elif situacao == "pensando":
+            n = sum(1 for p in lista if p.get("estado") == "pensando") or 1
+            detalhe = f"A IA está trabalhando em {n} pedido{'s' if n > 1 else ''} (fila abaixo)."
+        elif situacao == "falando" and agora.get("ultima_resposta"):
+            detalhe = f"“{str(agora['ultima_resposta'])[:140]}”"
+        elif situacao == "desligado":
+            detalhe = ("Clique em “Ligar” para ele começar a ouvir. Ligado, ele também aparece perto do relógio "
+                       "do Windows.")
+        self._por(self.status_mestre, text=titulo, text_color=cor)
+        self._por(self.status_detalhe, text=detalhe)
+        self._por(self.bt_ligar, state="disabled" if rodando else "normal")
+        self._por(self.bt_pausa, text="Retomar" if pausado else "Pausar", state="normal" if rodando else "disabled",
+                  image=icones.ctk_icone("play" if pausado else "pausa", tema.ROSA, 22))
+        self._aplicar_fila(lista)
+        self._aplicar_comandos(d["comandos"])
+
+    def _aplicar_fila(self, lista: list[dict]):
+        agora = time.time()
+        for i, linha in enumerate(self._fila_linhas):
+            if i < len(lista):
+                p = lista[i]
+                pensando = p.get("estado") == "pensando"
+                segundos = max(0, int(agora - float(p.get("inicio") or agora)))
+                self._por(linha["texto"], text=f"“{str(p.get('pergunta') or '')[:120]}”")
+                self._por(linha["chip"], text=f"pensando {segundos}s" if pensando else "pronto",
+                          fg_color=tema.ROSA_FUNDO if pensando else "#1a2a24",
+                          text_color=LILAS if pensando else tema.SUCESSO)
+                self._por(linha["barra"], progress_color=LILAS if pensando else tema.SUCESSO)
+                linha["barra"].set(min(0.95, segundos / 120) if pensando else 1.0)
+                if not linha["frame"].winfo_manager():
+                    depois = [w for w in (self.rot_fila_vazia, self.rot_fila_mais) if w.winfo_manager()]
+                    linha["frame"].pack(fill="x", **({"before": depois[0]} if depois else {}))
+            elif linha["frame"].winfo_manager():
+                linha["frame"].pack_forget()
+        vazia = not lista
+        if vazia and not self.rot_fila_vazia.winfo_manager():
+            self.rot_fila_vazia.pack(fill="x")
+        elif not vazia and self.rot_fila_vazia.winfo_manager():
+            self.rot_fila_vazia.pack_forget()
+        mais = len(lista) - len(self._fila_linhas)
+        self._por(self.rot_fila_mais, text=f"+ {mais} na fila" if mais > 0 else "")
+        if mais > 0 and not self.rot_fila_mais.winfo_manager():
+            self.rot_fila_mais.pack(fill="x")
+        elif mais <= 0 and self.rot_fila_mais.winfo_manager():
+            self.rot_fila_mais.pack_forget()
+
+    def _aplicar_comandos(self, comandos: list[dict]):
+        for i, linha in enumerate(self._cmd_linhas):
+            if i < len(comandos):
+                c = comandos[i]
+                self._por(linha["hora"], text=c["hora"])
+                for rotulo, chave in (("OUVI", "ouvi"), ("ENTENDI", "entendi"), ("FIZ", "fiz")):
+                    self._por(linha[rotulo], text=str(c[chave])[:200])
+                if not linha["frame"].winfo_manager():
+                    linha["frame"].pack(fill="x", pady=(0, 8),
+                                        **({"before": self.rot_cmd_vazio} if self.rot_cmd_vazio.winfo_manager() else {}))
+            elif linha["frame"].winfo_manager():
+                linha["frame"].pack_forget()
+        if comandos and self.rot_cmd_vazio.winfo_manager():
+            self.rot_cmd_vazio.pack_forget()
+        elif not comandos and not self.rot_cmd_vazio.winfo_manager():
+            self.rot_cmd_vazio.pack(fill="x")
 
     def _ligar_mestre(self):
         if not sistema.mestre_ligado():
@@ -861,6 +1258,8 @@ class Painel(ctk.CTk):
         self.bt_teste.configure(text="■ Desligar teste")
 
     def _parar_teste(self):
+        if not hasattr(self, "bt_teste"):
+            return   # (a pagina Audio nem foi aberta: nenhum teste ligado)
         if self._stream:
             self._stream.stop()
             self._stream.close()
@@ -870,6 +1269,9 @@ class Painel(ctk.CTk):
         self.rotulo_nivel.configure(text="Teste desligado")
 
     def _atualizar_medidor(self):
+        if "Áudio" not in self._montadas:   # (pagina ainda fechada: nada para medir nem desenhar)
+            self.after(250, self._atualizar_medidor)
+            return
         blocos = []
         while not self._fila_audio.empty():
             blocos.append(aplicar_ganho(self._fila_audio.get_nowait(), self.var_ganho.get()))
@@ -889,8 +1291,12 @@ class Painel(ctk.CTk):
                         entregar, self._ao_gravar = self._ao_gravar, None
                         entregar(self._gravacao)
         self._niveis = self._niveis[-60:]
+        if getattr(self, "pagina_atual", None) != "Áudio":   # escondida: nao redesenha (o painel fica leve)
+            self.after(120, self._atualizar_medidor)
+            return
         self._desenhar_nivel()
-        self.rotulo_valores.configure(
+        self._por(
+            self.rotulo_valores,
             text=f"Limite: {'automático' if self.var_auto.get() else round(self.var_limiar.get())} · "
                  f"Ganho: {self.var_ganho.get():.1f}x · Pausa: {self.var_silencio.get():.1f}s · "
                  f"Frase até {self.var_max.get()}s · Ditado fecha após {self.var_espera_ditado.get()}s de silêncio")
@@ -1116,48 +1522,217 @@ class Painel(ctk.CTk):
         self.resultado_teste.insert("1.0", texto)
 
     # -----------------------------------------------------------------
-    # nome: (titulo, selo, texto curto)
+    #  Voz: uma aba por motor (so o essencial dele) + "Ativar", "Testar" e "Usar como reserva"
+    # -----------------------------------------------------------------
+    # chave: (titulo, selo, texto curto, icone)
     MOTORES_INFO = {
-        "kokoro": ("Kokoro", "GRÁTIS · NO SEU PC", "Rápida e natural. Funciona sem internet."),
-        "natural": ("Natural", "GRÁTIS · PLACA DE VÍDEO", "A mais humana das grátis. Pesada (6 GB)."),
-        "edge": ("Edge", "GRÁTIS · INTERNET", "A voz de antes. Precisa de internet."),
-        "azure": ("Azure", "GRÁTIS ATÉ 8 H/MÊS · CHAVE", "Vozes da Microsoft, mais estáveis."),
-        "elevenlabs": ("ElevenLabs", "PAGA · TEM PLANO GRÁTIS", "A mais natural de todas."),
-        "windows": ("Windows", "RESERVA", "Sem internet. Robótica."),
+        "kokoro": ("Kokoro", "GRÁTIS · NO SEU PC", "Rápida e natural. Funciona sem internet.", "pc"),
+        "natural": ("Natural", "GRÁTIS · PLACA DE VÍDEO", "A mais humana das grátis. Pesada (6 GB).", "chip"),
+        "edge": ("Edge", "GRÁTIS · INTERNET", "Vozes da Microsoft pela internet. A voz de antes.", "nuvem"),
+        "azure": ("Azure", "GRÁTIS ATÉ 8 H/MÊS · CHAVE", "Vozes da Microsoft, mais estáveis.", "chave"),
+        "elevenlabs": ("ElevenLabs", "PAGA · TEM PLANO GRÁTIS", "A mais natural de todas.", "estrela"),
+        "windows": ("Windows", "SEMPRE FUNCIONA", "A voz que já vem no Windows. Sem internet, robótica.", "pc"),
     }
 
+    class _AbaMotor:
+        """O que o resto do painel (e o teste) usa de cada aba: esta aberta? / abrir."""
+
+        def __init__(self, painel, chave):
+            self.painel, self.chave = painel, chave
+
+        def esta_aberta(self) -> bool:
+            return getattr(self.painel, "_aba_voz_atual", None) == self.chave
+
+        def alternar(self, _=None):
+            self.painel._mostrar_aba_motor(self.chave)
+
     def _aba_voz(self, pagina):
-        f = pagina   # (cada secao abaixo troca f pelo cartao dela)
         v = self._sec("voz")
-        pref = self.vocab.preferencia
-        from . import voz_azure, voz_elevenlabs, voz_kokoro, voz_natural
         motor = str(v.get("motor", "kokoro"))
+        motor = motor if motor in self.MOTORES_INFO else "kokoro"
         self.MOTORES = {k: info[0] for k, info in self.MOTORES_INFO.items()}
-        self.var_motor = tk.StringVar(value=self.MOTORES.get(motor, self.MOTORES["kokoro"]))
+        self.var_motor = tk.StringVar(value=self.MOTORES[motor])
+        reserva = str(v.get("reserva") or "kokoro")
+        if reserva not in self.MOTORES_INFO or reserva == motor:
+            reserva = "edge" if motor != "edge" else "kokoro"
+        self.var_reserva = tk.StringVar(value=reserva)
+        self._voz_resumo(pagina)
+        self._voz_barra_abas(pagina)
+        self._voz_area = ctk.CTkFrame(pagina, fg_color="transparent")
+        self._voz_area.pack(fill="x", padx=(4, 10))
+        self.secoes_motor, self._cartoes_motor, self._rot_teste_motor = {}, {}, {}
+        for chave in self.MOTORES_INFO:
+            corpo = self._voz_cartao_motor(chave)
+            getattr(self, f"_voz_campos_{chave}")(corpo, v)
+            self.secoes_motor[chave] = self._AbaMotor(self, chave)
+        self._voz_ajustes(pagina, v)
+        self._aba_voz_atual = None
+        self._mostrar_aba_motor(motor)
+        self._voz_atualizar_marcas()
 
-        f = secao(pagina, "Qual voz ele usa", "Clique para escolher. Se a escolhida falhar, ele fala com a Kokoro "
-                                              "e depois com a Edge, sozinho.")
-        grade = ctk.CTkFrame(f, fg_color="transparent")
-        grade.pack(fill="x", padx=(28, 16), pady=(0, 4))
-        self._tiles_motor = {}
-        for i, (chave, (nome, selo, texto)) in enumerate(self.MOTORES_INFO.items()):
-            grade.grid_columnconfigure(i % 3, weight=1, uniform="motor")
-            t = ctk.CTkFrame(grade, fg_color=tema.CAMPO, corner_radius=12, border_width=2, border_color=tema.CAMPO)
-            t.grid(row=i // 3, column=i % 3, sticky="nsew", padx=4, pady=4)
-            partes = [ctk.CTkLabel(t, text=nome, anchor="w", font=tema.fonte(15, True)),
-                      ctk.CTkLabel(t, text=selo, anchor="w", text_color=tema.ROSA if chave in ("elevenlabs", "azure")
-                                   else tema.SUCESSO, font=tema.fonte(10, True)),
-                      ctk.CTkLabel(t, text=texto, anchor="w", justify="left", text_color=tema.TEXTO_FRACO,
-                                   font=tema.fonte(12), wraplength=230)]
-            for k, w in enumerate(partes):
-                w.pack(fill="x", padx=14, pady=((10 if k == 0 else 0), (10 if k == 2 else 0)))
-            for w in [t] + partes:
-                w.configure(cursor="hand2")
-                w.bind("<Button-1>", lambda e, c=chave: self._escolher_motor(c))
-            self._tiles_motor[chave] = t
+    def _voz_resumo(self, pagina):
+        faixa = ctk.CTkFrame(pagina, fg_color=tema.ROSA_FUNDO, corner_radius=16, border_width=1,
+                             border_color=tema.misturar(tema.ROSA_FUNDO, tema.ROSA, 0.25))
+        faixa.pack(fill="x", padx=(4, 10), pady=(4, 10))
+        ctk.CTkLabel(faixa, text="", image=icones.ctk_icone("alto", tema.ROSA, 20)).pack(side="left", padx=(16, 8), pady=12)
+        self.rot_voz_resumo = ctk.CTkLabel(faixa, text="", anchor="w", font=tema.fonte(14, True))
+        self.rot_voz_resumo.pack(side="left")
+        ctk.CTkLabel(faixa, text="Se a ativa falhar, ele usa a reserva sozinho", height=24, corner_radius=12,
+                     fg_color=tema.CAMPO, text_color=tema.TEXTO_FRACO, font=tema.fonte(11)).pack(side="right", padx=14)
 
-        f = secao(pagina, "Ouvir e ajustar", "Escreva uma frase e clique em Ouvir. Ele mostra em quantos segundos "
-                                             "a voz começou a falar.")
+    def _voz_barra_abas(self, pagina):
+        barra = ctk.CTkFrame(pagina, fg_color=tema.CAMPO, corner_radius=14, border_width=1, border_color=tema.BORDA)
+        barra.pack(fill="x", padx=(4, 10), pady=(0, 10))
+        self._botoes_aba_motor = {}
+        for chave, (nome, *_) in self.MOTORES_INFO.items():
+            b = ctk.CTkButton(barra, text=nome, width=96, height=34, corner_radius=10, compound="left",
+                              image=icones.ctk_icone("vazio", "#000000", 9), fg_color="transparent",
+                              hover_color=tema.SECUNDARIO_HOVER, text_color=tema.TEXTO_FRACO, font=tema.fonte(13),
+                              command=lambda c=chave: self._mostrar_aba_motor(c))
+            b.pack(side="left", padx=(4 if not self._botoes_aba_motor else 2, 2), pady=4)
+            self._botoes_aba_motor[chave] = b
+
+    def _voz_cartao_motor(self, chave: str):
+        """O cartao da aba: cabecalho, situacao, campos (devolvidos) e os 3 botoes."""
+        nome, selo, texto, icone = self.MOTORES_INFO[chave]
+        c = ctk.CTkFrame(self._voz_area, fg_color=tema.CARTAO, corner_radius=16, border_width=1, border_color=tema.BORDA)
+        topo = ctk.CTkFrame(c, fg_color="transparent")
+        topo.pack(fill="x", padx=18, pady=(16, 2))
+        ctk.CTkLabel(topo, text="", image=icones.ctk_icone(icone, tema.ROSA, 20)).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(topo, text=nome, anchor="w", font=tema.fonte(16, True)).pack(side="left")
+        ctk.CTkLabel(topo, text=selo, text_color=tema.ROSA if chave in ("elevenlabs", "azure") else tema.SUCESSO,
+                     font=tema.fonte(10, True)).pack(side="left", padx=12)
+        situacao = ctk.CTkLabel(topo, text="", height=22, corner_radius=11, font=tema.fonte(11, True))
+        situacao.pack(side="right")
+        ctk.CTkLabel(c, text=texto, anchor="w", justify="left", wraplength=780, text_color=tema.TEXTO_FRACO,
+                     font=tema.fonte(12)).pack(fill="x", padx=18, pady=(0, 8))
+        corpo = ctk.CTkFrame(c, fg_color="transparent")
+        corpo.pack(fill="x", padx=3)
+        botoes = ctk.CTkFrame(c, fg_color="transparent")
+        botoes.pack(fill="x", padx=18, pady=(10, 4))
+        ativar = ctk.CTkButton(botoes, text=" Ativar esta voz", image=icones.ctk_icone("check", tema.TEXTO_NO_ROSA, 16),
+                               compound="left", width=170, command=lambda: self._escolher_motor(chave))
+        ativar.pack(side="left")
+        ctk.CTkButton(botoes, text=" Testar", image=icones.ctk_icone("play", tema.TEXTO, 14), compound="left", width=110,
+                      **SECUNDARIO, command=lambda: self._ouvir_voz(chave)).pack(side="left", padx=8)
+        reserva = ctk.CTkButton(botoes, text="Usar como reserva", width=160, **SECUNDARIO,
+                                command=lambda: self._usar_reserva(chave))
+        reserva.pack(side="left")
+        rot = ctk.CTkLabel(c, text="", anchor="w", justify="left", wraplength=780, text_color=tema.TEXTO_FRACO)
+        rot.pack(fill="x", padx=18, pady=(2, 14))
+        self._rot_teste_motor[chave] = rot
+        self._cartoes_motor[chave] = {"cartao": c, "situacao": situacao, "ativar": ativar, "reserva": reserva}
+        return corpo
+
+    def _voz_campos_kokoro(self, f, v):
+        from . import voz_kokoro
+        self.var_voz_kokoro = tk.StringVar(value=voz_kokoro.VOZES.get(str(v.get("voz_kokoro", "pm_alex")),
+                                                                      voz_kokoro.VOZES["pm_alex"]))
+        linha_campo(f, "Voz Kokoro", lambda p: ctk.CTkSegmentedButton(
+            p, values=list(voz_kokoro.VOZES.values()), variable=self.var_voz_kokoro))
+        linha_k = ctk.CTkFrame(f, fg_color="transparent")
+        linha_k.pack(fill="x", padx=(32, 18), pady=4)
+        self.bt_kokoro = ctk.CTkButton(linha_k, text="⇩  Baixar a voz Kokoro (330 MB)", width=260,
+                                       command=self._baixar_kokoro)
+        self.bt_kokoro.pack(side="left")
+        self.rot_kokoro = ctk.CTkLabel(linha_k, text="", anchor="w", text_color=tema.TEXTO_FRACO)
+        self.rot_kokoro.pack(side="left", padx=10)
+        self._estado_kokoro()
+
+    def _voz_campos_natural(self, f, v):
+        from . import voz_natural
+        ctk.CTkLabel(f, text="Chatterbox, que fala português: imita o timbre de um áudio de uns 10 segundos (a voz da "
+                             "Microsoft ou um áudio seu). Precisa de placa NVIDIA para ficar rápida e instala num canto "
+                             f"separado (uns 6 GB), sem mexer no resto do {self.nome}. Enquanto ela carrega, ele fala "
+                             "com a reserva.", anchor="w", justify="left", wraplength=760, text_color=tema.TEXTO_FRACO,
+                     font=tema.fonte(12)).pack(fill="x", padx=(32, 18), pady=(0, 6))
+        self.var_voz_natural = tk.StringVar(value=voz_natural.VOZES.get(str(v.get("voz_natural", "antonio")),
+                                                                        voz_natural.VOZES["antonio"]))
+        linha_campo(f, "Timbre", lambda p: ctk.CTkOptionMenu(p, values=list(voz_natural.VOZES.values()),
+                                                             variable=self.var_voz_natural, width=360))
+        linha_n = ctk.CTkFrame(f, fg_color="transparent")
+        linha_n.pack(fill="x", padx=(32, 18), pady=4)
+        self.bt_natural = ctk.CTkButton(linha_n, text="⇩  Instalar a voz natural", width=220, command=self._instalar_natural)
+        self.bt_natural.pack(side="left")
+        ctk.CTkButton(linha_n, text="Usar um áudio meu...", **SECUNDARIO, command=self._audio_natural).pack(side="left", padx=8)
+        self.rot_natural = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=760, text_color=tema.TEXTO_FRACO)
+        self.rot_natural.pack(fill="x", padx=(32, 18))
+        self._estado_natural()
+
+    def _voz_campos_edge(self, f, v):
+        pref = self.vocab.preferencia
+        ctk.CTkLabel(f, text="As marcadas com ★ são “Multilingual”: mais expressivas (com um leve sotaque).", anchor="w",
+                     text_color=tema.TEXTO_FRACO, font=tema.fonte(12)).pack(fill="x", padx=(32, 18), pady=(0, 6))
+        todas = list(dict.fromkeys(list(v.get("vozes_favoritas") or []) + VOZES_BASICAS))
+        self.vozes = sorted(todas, key=lambda n: ("Multilingual" not in n, n))
+        self.var_voz = tk.StringVar(value=pref("voz") or v.get("voz_edge", "pt-BR-AntonioNeural"))
+        self.menu_voz = linha_campo(f, "Voz Edge", lambda p: ctk.CTkOptionMenu(
+            p, values=[self._rotulo_voz(n) for n in self.vozes], width=420,
+            command=lambda r: self.var_voz.set(r.replace("★ ", "").split(" · ")[0])))
+        self.menu_voz.set(self._rotulo_voz(self.var_voz.get()))
+        linha_v = ctk.CTkFrame(f, fg_color="transparent")
+        linha_v.pack(fill="x", padx=(32, 18), pady=4)
+        ctk.CTkButton(linha_v, text="Carregar todas as vozes da Microsoft", **SECUNDARIO,
+                      command=self._carregar_vozes).pack(side="left")
+
+    def _voz_campos_azure(self, f, v):
+        from . import voz_azure
+        ctk.CTkLabel(f, text="Crie um recurso “Speech” no portal da Azure (plano grátis F0) e cole a chave e a região. "
+                             "A chave fica no seu usuário do Windows, fora do projeto. Passo a passo no guia (Etapa 30).",
+                     anchor="w", justify="left", wraplength=760, text_color=tema.TEXTO_FRACO,
+                     font=tema.fonte(12)).pack(fill="x", padx=(32, 18), pady=(0, 6))
+        self.var_voz_azure = tk.StringVar(value=str(v.get("voz_azure", "pt-BR-AntonioNeural")))
+        linha_campo(f, "Voz Azure", lambda p: ctk.CTkComboBox(p, values=voz_azure.VOZES, variable=self.var_voz_azure,
+                                                              width=420))
+        self.ent_azure_chave = linha_campo(f, "Chave (KEY 1)", lambda p: ctk.CTkEntry(p, height=36, show="•"))
+        self.ent_azure_chave.insert(0, segredos.ler("azure_chave"))
+        self.ent_azure_regiao = linha_campo(f, "Região", lambda p: ctk.CTkEntry(p, height=36))
+        self.ent_azure_regiao.insert(0, segredos.ler("azure_regiao", "brazilsouth"))
+        linha_a = ctk.CTkFrame(f, fg_color="transparent")
+        linha_a.pack(fill="x", padx=(32, 18), pady=4)
+        ctk.CTkButton(linha_a, text="Salvar chave e testar", width=200, command=self._testar_azure).pack(side="left")
+        ctk.CTkButton(linha_a, text="Abrir o portal da Azure", **SECUNDARIO,
+                      command=lambda: webbrowser.open("https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices")
+                      ).pack(side="left", padx=8)
+        self.rot_azure = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=760, text_color=tema.TEXTO_FRACO)
+        self.rot_azure.pack(fill="x", padx=(32, 18))
+
+    def _voz_campos_elevenlabs(self, f, v):
+        from . import voz_elevenlabs
+        ctk.CTkLabel(f, text="Crie uma conta em elevenlabs.io, vá em Developers > API Keys, crie uma chave e cole aqui. "
+                             "O plano grátis dá uns 10 mil caracteres por mês; as frases fixas ficam guardadas (só gastam "
+                             "na primeira vez). A chave fica no seu usuário do Windows, fora do projeto.",
+                     anchor="w", justify="left", wraplength=760, text_color=tema.TEXTO_FRACO,
+                     font=tema.fonte(12)).pack(fill="x", padx=(32, 18), pady=(0, 6))
+        self.ent_eleven_chave = linha_campo(f, "Chave da API", lambda p: ctk.CTkEntry(p, height=36, show="•"))
+        self.ent_eleven_chave.insert(0, segredos.ler("elevenlabs_chave"))
+        self.vozes_eleven = dict(voz_elevenlabs.VOZES)
+        atual = str(v.get("voz_elevenlabs", voz_elevenlabs.VOZ_PADRAO))
+        self.vozes_eleven.setdefault(atual, atual)
+        self.var_voz_eleven = tk.StringVar(value=self.vozes_eleven[atual])
+        self.menu_eleven = linha_campo(f, "Voz", lambda p: ctk.CTkOptionMenu(
+            p, values=list(self.vozes_eleven.values()), variable=self.var_voz_eleven, width=360))
+        self.var_modelo_eleven = tk.StringVar(value=voz_elevenlabs.MODELOS.get(
+            str(v.get("modelo_elevenlabs", voz_elevenlabs.MODELO_PADRAO)), voz_elevenlabs.MODELOS[voz_elevenlabs.MODELO_PADRAO]))
+        linha_campo(f, "Modelo", lambda p: ctk.CTkSegmentedButton(p, values=list(voz_elevenlabs.MODELOS.values()),
+                                                                  variable=self.var_modelo_eleven))
+        linha_e = ctk.CTkFrame(f, fg_color="transparent")
+        linha_e.pack(fill="x", padx=(32, 18), pady=4)
+        ctk.CTkButton(linha_e, text="Salvar chave e testar", width=200, command=self._testar_eleven).pack(side="left")
+        ctk.CTkButton(linha_e, text="Abrir o site", **SECUNDARIO,
+                      command=lambda: webbrowser.open("https://elevenlabs.io/app/developers/api-keys")).pack(side="left", padx=8)
+        self.rot_eleven = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=760, text_color=tema.TEXTO_FRACO)
+        self.rot_eleven.pack(fill="x", padx=(32, 18))
+
+    def _voz_campos_windows(self, f, v):
+        ctk.CTkLabel(f, text="Não tem nada para configurar: é a voz instalada no Windows. Boa como última reserva "
+                             "(funciona sem internet e sem baixar nada).", anchor="w", justify="left", wraplength=760,
+                     text_color=tema.TEXTO_FRACO, font=tema.fonte(12)).pack(fill="x", padx=(32, 18), pady=(0, 4))
+
+    def _voz_ajustes(self, pagina, v):
+        pref = self.vocab.preferencia
+        f = secao(pagina, "Frase de teste e ajustes", "Valem para todas as vozes. “Ouvir” fala com a voz ativa e mostra "
+                                                      "em quantos segundos ela começou a falar.")
         self.texto_voz = ctk.CTkEntry(f, height=36)
         self.texto_voz.insert(0, "Fala, chefe! Beleza, já abri o YouTube, e o clima hoje, olha, tá ótimo.")
         self.texto_voz.pack(fill="x", padx=(32, 18), pady=4)
@@ -1176,120 +1751,60 @@ class Painel(ctk.CTk):
         self.rot_ajustes = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO, font=tema.fonte(12))
         self.rot_ajustes.pack(fill="x", padx=(32, 18))
 
-        self.secoes_motor = {}
-        f = secao(pagina, "Kokoro (no seu PC)", "Três vozes em português. Depois de baixar, funciona até sem internet.",
-                  recolhida=motor != "kokoro")
-        self.secoes_motor["kokoro"] = f
-        self.var_voz_kokoro = tk.StringVar(value=voz_kokoro.VOZES.get(str(v.get("voz_kokoro", "pm_alex")),
-                                                                      voz_kokoro.VOZES["pm_alex"]))
-        linha_campo(f, "Voz Kokoro", lambda p: ctk.CTkSegmentedButton(
-            p, values=list(voz_kokoro.VOZES.values()), variable=self.var_voz_kokoro))
-        linha_k = ctk.CTkFrame(f, fg_color="transparent")
-        linha_k.pack(fill="x", padx=(32, 18), pady=4)
-        self.bt_kokoro = ctk.CTkButton(linha_k, text="⇩  Baixar a voz Kokoro (330 MB)", width=260,
-                                       command=self._baixar_kokoro)
-        self.bt_kokoro.pack(side="left")
-        self.rot_kokoro = ctk.CTkLabel(linha_k, text="", anchor="w", text_color=tema.TEXTO_FRACO)
-        self.rot_kokoro.pack(side="left", padx=10)
-        self._estado_kokoro()
-
-        f = secao(pagina, "Voz natural (placa de vídeo)",
-                  "Grátis e a mais humana das grátis (Chatterbox, que fala português). Ela imita o timbre de um áudio "
-                  "de referência de uns 10 segundos: a voz da Microsoft (Antônio ou Francisca) ou um áudio seu. "
-                  "Precisa de uma placa NVIDIA para ficar rápida. Instala num canto separado (uns 6 GB), sem mexer "
-                  f"no resto do {self.nome}. Enquanto ela carrega, ele fala com a Kokoro.", recolhida=motor != "natural")
-        self.secoes_motor["natural"] = f
-        self.var_voz_natural = tk.StringVar(value=voz_natural.VOZES.get(str(v.get("voz_natural", "antonio")),
-                                                                        voz_natural.VOZES["antonio"]))
-        linha_campo(f, "Timbre", lambda p: ctk.CTkOptionMenu(p, values=list(voz_natural.VOZES.values()),
-                                                             variable=self.var_voz_natural, width=360))
-        linha_n = ctk.CTkFrame(f, fg_color="transparent")
-        linha_n.pack(fill="x", padx=(32, 18), pady=4)
-        self.bt_natural = ctk.CTkButton(linha_n, text="⇩  Instalar a voz natural", width=220, command=self._instalar_natural)
-        self.bt_natural.pack(side="left")
-        ctk.CTkButton(linha_n, text="Usar um áudio meu...", **SECUNDARIO, command=self._audio_natural).pack(side="left", padx=8)
-        self.rot_natural = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=780, text_color=tema.TEXTO_FRACO)
-        self.rot_natural.pack(fill="x", padx=(32, 18))
-        self._estado_natural()
-
-        f = secao(pagina, "ElevenLabs (paga)",
-                  "A voz mais natural que existe hoje. Crie uma conta em elevenlabs.io, vá em Developers > API Keys, "
-                  "crie uma chave e cole aqui. O plano grátis dá uns 10 mil caracteres por mês. As frases fixas ficam "
-                  "guardadas: cada uma só gasta na primeira vez. A chave fica no seu usuário do Windows, fora do projeto.",
-                  recolhida=motor != "elevenlabs")
-        self.secoes_motor["elevenlabs"] = f
-        self.ent_eleven_chave = linha_campo(f, "Chave da API", lambda p: ctk.CTkEntry(p, height=36, show="•"))
-        self.ent_eleven_chave.insert(0, segredos.ler("elevenlabs_chave"))
-        self.vozes_eleven = dict(voz_elevenlabs.VOZES)
-        atual = str(v.get("voz_elevenlabs", voz_elevenlabs.VOZ_PADRAO))
-        self.vozes_eleven.setdefault(atual, atual)
-        self.var_voz_eleven = tk.StringVar(value=self.vozes_eleven[atual])
-        self.menu_eleven = linha_campo(f, "Voz", lambda p: ctk.CTkOptionMenu(
-            p, values=list(self.vozes_eleven.values()), variable=self.var_voz_eleven, width=360))
-        self.var_modelo_eleven = tk.StringVar(value=voz_elevenlabs.MODELOS.get(
-            str(v.get("modelo_elevenlabs", voz_elevenlabs.MODELO_PADRAO)), voz_elevenlabs.MODELOS[voz_elevenlabs.MODELO_PADRAO]))
-        linha_campo(f, "Modelo", lambda p: ctk.CTkSegmentedButton(p, values=list(voz_elevenlabs.MODELOS.values()),
-                                                                  variable=self.var_modelo_eleven))
-        linha_e = ctk.CTkFrame(f, fg_color="transparent")
-        linha_e.pack(fill="x", padx=(32, 18), pady=4)
-        ctk.CTkButton(linha_e, text="Salvar chave e testar", width=200, command=self._testar_eleven).pack(side="left")
-        ctk.CTkButton(linha_e, text="Abrir o site", **SECUNDARIO,
-                      command=lambda: webbrowser.open("https://elevenlabs.io/app/developers/api-keys")).pack(side="left", padx=8)
-        self.rot_eleven = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=780, text_color=tema.TEXTO_FRACO)
-        self.rot_eleven.pack(fill="x", padx=(32, 18))
-
-        f = secao(pagina, "Azure (Microsoft)", "Crie um recurso “Speech” no portal da Azure (plano grátis F0) e cole a chave e a "
-                                               "região aqui. A chave fica guardada no seu usuário do Windows, fora da pasta do "
-                                               "projeto. Passo a passo no guia (Etapa 30).", recolhida=motor != "azure")
-        self.secoes_motor["azure"] = f
-        self.var_voz_azure = tk.StringVar(value=str(v.get("voz_azure", "pt-BR-AntonioNeural")))
-        linha_campo(f, "Voz Azure", lambda p: ctk.CTkComboBox(p, values=voz_azure.VOZES, variable=self.var_voz_azure,
-                                                              width=420))
-        self.ent_azure_chave = linha_campo(f, "Chave (KEY 1)", lambda p: ctk.CTkEntry(p, height=36, show="•"))
-        self.ent_azure_chave.insert(0, segredos.ler("azure_chave"))
-        self.ent_azure_regiao = linha_campo(f, "Região", lambda p: ctk.CTkEntry(p, height=36))
-        self.ent_azure_regiao.insert(0, segredos.ler("azure_regiao", "brazilsouth"))
-        linha_a = ctk.CTkFrame(f, fg_color="transparent")
-        linha_a.pack(fill="x", padx=(32, 18), pady=4)
-        ctk.CTkButton(linha_a, text="Salvar chave e testar", width=200, command=self._testar_azure).pack(side="left")
-        ctk.CTkButton(linha_a, text="Abrir o portal da Azure", **SECUNDARIO,
-                      command=lambda: webbrowser.open("https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices")
-                      ).pack(side="left", padx=8)
-        self.rot_azure = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=780, text_color=tema.TEXTO_FRACO)
-        self.rot_azure.pack(fill="x", padx=(32, 18))
-
-        f = secao(pagina, "Edge (Microsoft, pela internet)", "As marcadas com ★ são “Multilingual”: mais expressivas "
-                                                             "(com um leve sotaque).", recolhida=motor != "edge")
-        self.secoes_motor["edge"] = f
-        todas = list(dict.fromkeys(list(v.get("vozes_favoritas") or []) + VOZES_BASICAS))
-        self.vozes = sorted(todas, key=lambda n: ("Multilingual" not in n, n))
-        self.var_voz = tk.StringVar(value=pref("voz") or v.get("voz_edge", "pt-BR-AntonioNeural"))
-        self.menu_voz = linha_campo(f, "Voz Edge", lambda p: ctk.CTkOptionMenu(
-            p, values=[self._rotulo_voz(n) for n in self.vozes], width=420,
-            command=lambda r: self.var_voz.set(r.replace("★ ", "").split(" · ")[0])))
-        self.menu_voz.set(self._rotulo_voz(self.var_voz.get()))
-        linha_v = ctk.CTkFrame(f, fg_color="transparent")
-        linha_v.pack(fill="x", padx=(32, 18), pady=4)
-        ctk.CTkButton(linha_v, text="Carregar todas as vozes da Microsoft", **SECUNDARIO,
-                      command=self._carregar_vozes).pack(side="left")
-
         def mostrar(*_):
             self.rot_ajustes.configure(text=f"Velocidade {self.var_vel.get():+d}% · Tom {self.var_tom.get():+d}Hz "
                                             "(o tom só vale para Edge e Azure)")
         self.var_vel.trace_add("write", mostrar)
         self.var_tom.trace_add("write", mostrar)
         mostrar()
-        self._escolher_motor(motor, abrir=False)
+
+    def _mostrar_aba_motor(self, chave: str):
+        """Troca a aba (so esconde uma e mostra a outra: nada e recriado)."""
+        if chave == getattr(self, "_aba_voz_atual", None):
+            return
+        anterior = self._aba_voz_atual
+        if anterior:
+            self._cartoes_motor[anterior]["cartao"].pack_forget()
+            self._por(self._botoes_aba_motor[anterior], fg_color="transparent", text_color=tema.TEXTO_FRACO)
+        self._cartoes_motor[chave]["cartao"].pack(fill="x", pady=(0, 7))
+        self._por(self._botoes_aba_motor[chave], fg_color=tema.CARTAO, text_color=tema.TEXTO)
+        self._aba_voz_atual = chave
+
+    def _voz_atualizar_marcas(self):
+        """Resumo do topo, bolinhas das abas (verde = ativa, amarela = reserva) e os botoes de cada aba."""
+        ativa, reserva = self._motor_escolhido(), self.var_reserva.get()
+        self.rot_voz_resumo.configure(text=f"Voz ativa: {self.MOTORES[ativa]}   ·   Reserva: {self.MOTORES.get(reserva, reserva)}")
+        for chave, b in self._botoes_aba_motor.items():
+            cor = tema.SUCESSO if chave == ativa else tema.AVISO if chave == reserva else None
+            self._por(b, image=icones.ctk_icone("ponto", cor, 9) if cor else icones.ctk_icone("vazio", "#000000", 9))
+            partes = self._cartoes_motor[chave]
+            if chave == ativa:
+                self._por(partes["situacao"], text="  ✓ Voz ativa  ", fg_color="#1a2a24", text_color=tema.SUCESSO)
+            elif chave == reserva:
+                self._por(partes["situacao"], text="  Reserva  ", fg_color="#2a2419", text_color=tema.AVISO)
+            else:
+                self._por(partes["situacao"], text="", fg_color="transparent", text_color=tema.TEXTO_FRACO)
+            self._por(partes["ativar"], state="disabled" if chave == ativa else "normal",
+                      text=" Esta é a voz ativa" if chave == ativa else " Ativar esta voz")
+            self._por(partes["reserva"], state="disabled" if chave in (ativa, reserva) else "normal",
+                      text="É a reserva" if chave == reserva else "Usar como reserva")
 
     def _escolher_motor(self, chave: str, abrir: bool = True):
-        """Clique num cartao de voz: marca ele e abre a secao de configuracao dessa voz."""
+        """“Ativar esta voz”: ela passa a ser a voz ativa (e a aba dela aparece)."""
         self.var_motor.set(self.MOTORES.get(chave, self.MOTORES["kokoro"]))
-        for c, t in self._tiles_motor.items():
-            t.configure(border_color=tema.ROSA if c == chave else tema.CAMPO,
-                        fg_color=tema.ROSA_FUNDO if c == chave else tema.CAMPO)
-        corpo = getattr(self, "secoes_motor", {}).get(chave)
-        if abrir and corpo is not None and not corpo.esta_aberta():
-            corpo.alternar()
+        if self.var_reserva.get() == chave:   # a reserva nunca e a propria ativa
+            self.var_reserva.set("edge" if chave != "edge" else "kokoro")
+        self._voz_atualizar_marcas()
+        if abrir:
+            self._mostrar_aba_motor(chave)
+
+    def _usar_reserva(self, chave: str):
+        if chave == self._motor_escolhido():
+            return
+        self.var_reserva.set(chave)
+        self._voz_atualizar_marcas()
+        self._rot_teste_motor[chave].configure(text=f"✓ {self.MOTORES[chave]} é a reserva agora (salve para valer).",
+                                               text_color=tema.SUCESSO)
 
     @staticmethod
     def _rotulo_voz(nome: str) -> str:
@@ -1393,13 +1908,17 @@ class Painel(ctk.CTk):
                 pass
         threading.Thread(target=trabalho, daemon=True).start()
 
-    def _ouvir_voz(self):
+    def _ouvir_voz(self, motor: str | None = None):
+        """Fala a frase de teste: com a voz ativa (botao "Ouvir") ou com a da aba ("Testar")."""
         from .voz import Voz
         from .voz_natural import pronta as voz_natural_pronta
+        rotulo = self._rot_teste_motor[motor] if motor else self.rot_voz
+        motor = motor or self._motor_escolhido()
+        rotulo.configure(text="Falando...", text_color=tema.TEXTO_FRACO)
 
         def falar():
             inicio = time.time()
-            voz = Voz({"voz": {"motor": self._motor_escolhido(), "voz_edge": self.var_voz.get(),
+            voz = Voz({"voz": {"motor": motor, "reserva": self.var_reserva.get(), "voz_edge": self.var_voz.get(),
                                "voz_kokoro": self._voz_kokoro_escolhida(), "voz_azure": self.var_voz_azure.get(),
                                "voz_natural": self._voz_natural_escolhida(), "voz_elevenlabs": self._voz_eleven_escolhida(),
                                "modelo_elevenlabs": self._modelo_eleven_escolhido(),
@@ -1411,11 +1930,13 @@ class Painel(ctk.CTk):
             voz.falar(self.texto_voz.get())
             voz.esperar(120)   # (a fala toca em segundo plano: espera terminar para medir)
             usada = next(iter(voz._motores()), "windows")
-            if self._motor_escolhido() == "natural" and not voz_natural_pronta():
+            if motor == "natural" and not voz_natural_pronta():
                 usada = f"{voz._motores()[1] if len(voz._motores()) > 1 else 'edge'} (a natural ainda está carregando)"
+            elif usada != motor and motor != "windows":
+                usada = f"{usada} (a {self.MOTORES.get(motor, motor)} não está pronta: falou a reserva)"
             texto = f"Voz {usada}: começou a falar em {primeira[0]:.1f} s." if primeira else "Não consegui falar."
             try:
-                self.after(0, lambda: self.rot_voz.configure(text=texto))
+                self.after(0, lambda: rotulo.configure(text=texto))
             except RuntimeError:
                 pass
         threading.Thread(target=falar, daemon=True).start()
@@ -2987,155 +3508,30 @@ class Painel(ctk.CTk):
     # =================================================================
     #  Salvar
     # =================================================================
+    # -----------------------------------------------------------------
+    #  Salvar: cada pagina grava so o que e dela (e so se ja foi aberta; as outras ficam como estao)
+    # -----------------------------------------------------------------
+    SALVAR_PAGINA = {
+        "Início": "_salvar_inicio", "Personalidade": "_salvar_personalidade", "Voz": "_salvar_voz",
+        "Áudio": "_salvar_audio", "Conversa": "_salvar_conversa", "IPM e projetos": "_salvar_ipm",
+        "YouTube": "_salvar_youtube", "Programas e sites": "_salvar_programas", "Spotify": "_salvar_spotify",
+        "Celular": "_salvar_celular", "Histórico": "_salvar_historico", "Aparência": "_salvar_aparencia",
+        "Sugestões de melhoria": "_salvar_sugestoes",
+    }
+
     def salvar(self, reiniciar: bool = False):
         try:
-            self._guardar_editor()
+            self.vocab.recarregar()   # (o Assessor pode ter aprendido algo por voz com o painel aberto)
             c = self.cfg
-            o = configuracao.secao(c, "ouvido")
-            o["microfone"] = self._mic_escolhido()
-            o["modo_ativacao"] = "vosk" if self.var_modo.get().startswith("Leve") else "whisper"
-            o["modelo_whisper"] = configuracao.aspas(next(k for k, v in MODELOS_WHISPER.items() if v == self.var_modelo.get()))
-            o["precisao"] = self.var_precisao.get()
-            o["limiar_volume"] = 0 if self.var_auto.get() else int(self.var_limiar.get())
-            o["ganho"] = round(self.var_ganho.get(), 1)
-            o["silencio_fim"] = round(self.var_silencio.get(), 1)
-            o["espera_apos_palavra"] = round(float(self.var_espera_palavra.get()), 1)
-            o["espera_continuacao"] = round(float(self.var_espera_cont.get()), 2)
-            o["gravar_diagnostico"] = bool(self.var_diag.get())
-            o["so_minha_voz"] = bool(self.var_so_minha_voz.get())
-            o["exigencia_voz"] = round(float(self.var_exig_voz.get()), 2)
-            o["max_frase"] = int(self.var_max.get())
-            o["ditado_silencio_max"] = int(self.var_espera_ditado.get())
-            configuracao.secao(c, "ditado")["revisar_na_janela"] = bool(self.var_revisar.get())
-            o["palavras_conhecidas"] = configuracao.lista_em_linha(
-                [x.strip() for x in self.ent_palavras.get().split(",") if x.strip()])
-            o["dispositivo"] = configuracao.aspas(self._dispositivo())
-
-            v = configuracao.secao(c, "voz")
-            v["motor"] = configuracao.aspas(self._motor_escolhido())
-            v["fluida"] = bool(self.var_fluida.get())
-            v["fala_em_segundo_plano"] = bool(self.var_fala_fundo.get())
-            v["interromper_com_palavra"] = bool(self.var_interromper.get())
-            v["frase_a_frase"] = bool(self.var_frase_a_frase.get())
-            v["voz_edge"] = configuracao.aspas(str(self.var_voz.get()))
-            v["voz_kokoro"] = configuracao.aspas(self._voz_kokoro_escolhida())
-            v["voz_azure"] = configuracao.aspas(str(self.var_voz_azure.get()).strip() or "pt-BR-AntonioNeural")
-            v["voz_natural"] = configuracao.aspas(self._voz_natural_escolhida())
-            v["voz_elevenlabs"] = configuracao.aspas(self._voz_eleven_escolhida())
-            v["modelo_elevenlabs"] = configuracao.aspas(self._modelo_eleven_escolhido())
-            if self.ent_eleven_chave.get().strip():
-                segredos.salvar(elevenlabs_chave=self.ent_eleven_chave.get())
-            if self.ent_azure_chave.get().strip():
-                segredos.salvar(azure_chave=self.ent_azure_chave.get(), azure_regiao=self.ent_azure_regiao.get() or "brazilsouth")
-            v["velocidade"] = configuracao.aspas(f"{self.var_vel.get():+d}%")
-            v["tom"] = configuracao.aspas(f"{self.var_tom.get():+d}Hz")
-            for campo, valor in (("voz", v["voz_edge"]), ("velocidade", v["velocidade"]), ("tom", v["tom"])):  # noqa
-                self.vocab.salvar_preferencia(campo, str(valor))   # a voz escolhida por voz tambem muda
-
-            configuracao.secao(c, "conversa")["janela_segundos"] = int(self.var_janela.get())
-            cb = configuracao.secao(c, "cerebro")
-            cb["segundo_plano_seg"] = int(self.var_fundo.get())
-            cb["tempo_maximo"] = int(self.var_maximo.get())
-            cb["aviso_som"] = configuracao.aspas(next((k for k, v in self.SONS_AVISO.items() if v == self.var_bipe.get()), "nenhum"))
-            cb["aviso_ao_terminar"] = configuracao.aspas(
-                next(k for k, v in self.AVISOS.items() if v == self.var_aviso.get()))
-            cb["ollama_modelo"] = configuracao.aspas(self.var_modelo_ia.get().strip() or "qwen2.5:7b")
-            pm = configuracao.secao(c, "projeto_mestre")
-            pm["link"] = configuracao.aspas(self.ent_link_projeto.get().strip())
-            pm["segundos_para_carregar"] = int(self.var_seg_projeto.get())
-            pm["enviar_automaticamente"] = bool(self.var_enviar_projeto.get())
-            pm["modo"] = configuracao.aspas(next(k for k, v in self.MODOS_PROJETO.items() if v == self.var_modo_projeto.get()))
-            pm["altura_caixa"] = int(self.var_altura_caixa.get())
-            pj = configuracao.secao(c, "projetos")
-            pj["pasta"] = configuracao.aspas(self.ent_pasta_projetos.get().strip())
-            pj["abrir_pesquisas"] = bool(self.var_pesquisas.get())
-            pj["pesquisar_internet"] = bool(self.var_pesquisar_web.get())
-            sp = configuracao.secao(c, "spotify")
-            sp["apertar_play"] = bool(self.var_play.get())
-            sp["tocar_musica_em"] = configuracao.aspas("youtube" if self.var_tocar_em.get() == "YouTube" else "spotify")
-            rc = configuracao.secao(c, "recebidos")
-            rc["pasta"] = configuracao.aspas(self.ent_pasta_audios.get().strip())
-            rc["pasta_ligada"] = bool(self.var_pasta_audios.get())
-            rc["telegram_ligado"] = bool(self.var_telegram.get())
-            rc["destino"] = configuracao.aspas(next(k for k, v in self.DESTINOS_CELULAR.items() if v == self.var_destino_cel.get()))
-            rc["aviso"] = configuracao.aspas(next((k for k, v in self.AVISOS_CELULAR.items() if v == self.var_aviso_cel.get()),
-                                                  "tela_e_voz"))
-            rc["frase_telegram"] = configuracao.aspas(self.ent_frase_telegram.get().strip())
-            rc["frase_pasta"] = configuracao.aspas(self.ent_frase_pasta.get().strip())
-            configuracao.trocar_mapa(sp, "playlists", self.tab_playlists.valores())
-            from . import memoria
-            novos_fatos = [x.strip() for x in self.txt_fatos.get("1.0", "end").splitlines()
-                           if x.strip() and not x.startswith("#")]
-            if novos_fatos != self._fatos_iniciais:   # so grava se voce mexeu (o Mestre tambem grava)
-                memoria.salvar_fatos(novos_fatos)
-                self._fatos_iniciais = novos_fatos
-            ap = configuracao.secao(c, "aparencia")
-            for chave, var in self.vars_aparencia.items():
-                ap[chave] = configuracao.aspas(var.get())
-            configuracao.secao(c, "central")["ligar_mestre_ao_abrir"] = bool(self.var_ligar_ao_abrir.get())
-            from . import sugestoes
-            sg = configuracao.secao(c, "sugestoes")
-            sg["ligado"] = bool(self.var_sug_ligado.get())
-            sg["hora"] = configuracao.aspas(sugestoes.hora_texto(self.ent_sug_hora.get()))
-            configuracao.secao(c, "assistente")["cidade"] = configuracao.aspas(self.ent_cidade.get().strip() or "São Paulo")
-            from .config import gerar_variacoes
-            from .texto import normalizar
-            assist = configuracao.secao(c, "assistente")
-            palavra = (normalizar(self.ent_palavra.get()).split() or ["mestre"])[-1]
-            assist["nome"] = configuracao.aspas(self.ent_nome.get().strip() or "Mestre")
-            assist["apelido_usuario"] = configuracao.aspas(self.ent_apelido.get().strip() or "chefe")
-            assist["palavra_ativacao"] = configuracao.aspas(palavra)
-            assist["variacoes_aceitas"] = configuracao.lista_em_linha(gerar_variacoes(palavra))
-            p = configuracao.secao(c, "personalidade")
-            p["estilo"] = configuracao.aspas(self.var_estilo.get())
-            p["descricao"] = configuracao.aspas(self.txt_desc.get("1.0", "end").strip())
-            falas = configuracao.secao(p, "falas")
-            for chave, caixa in self.txt_falas.items():
-                linhas = [x.strip() for x in caixa.get("1.0", "end").splitlines() if x.strip()]
-                if linhas:
-                    falas[chave] = configuracao.lista_em_linha(linhas)
-
-            ipm = configuracao.secao(c, "agente_ipm")
-            ipm["modo"] = self.var_ipm_modo.get()
-            ipm["link_projeto"] = configuracao.aspas(self.ent_link.get().strip())
-            ipm["segundos_para_carregar"] = int(self.var_seg.get())
-            ipm["enviar_automaticamente"] = bool(self.var_enviar.get())
-
-            ytc = configuracao.secao(c, "youtube")
-            ytc["navegador_mestre"] = bool(self.var_yt_nav.get())
-            ytc["navegador"] = configuracao.aspas(next(k for k, v in self.NAVEGADORES.items() if v == self.var_yt_canal.get()))
-            ytc["modo"] = configuracao.aspas(next(k for k, v in self.MODOS_YT.items() if v == self.var_yt_modo.get()))
-            jn = configuracao.secao(c, "janelas")
-            jn["sempre_no_principal"] = bool(self.var_principal.get())
-            jn["navegador_sites"] = configuracao.aspas("brave" if self.var_sites_brave.get() else "padrao")
-            jn["perfil_brave"] = configuracao.aspas(self.ent_perfil_brave.get().strip())
-            configuracao.trocar_mapa(jn, "nomes_monitores",
-                                     {str(n): e.get().strip() for n, e in self.ent_monitores.items() if e.get().strip()})
-            if self._posicao_caixa is not None:
-                configuracao.secao(c, "projeto_mestre")["posicao_caixa"] = configuracao.lista_em_linha(self._posicao_caixa)
-            configuracao.trocar_mapa(c, "canais_youtube", self.tab_canais.valores())
-            configuracao.trocar_mapa(c, "programas", self.tab_prog.valores())
-            configuracao.trocar_mapa(c, "sites", self.tab_sites.valores())
-            rotinas = []
-            for r in self.rotinas:
-                item = configuracao.aspas({"nome": r["nome"], "acoes": r["acoes"]})
-                item.insert(1, "frases", configuracao.lista_em_linha(r["frases"]))
-                rotinas.append(item)
-            # releia o disco: uma rotina ensinada por voz enquanto o painel estava aberto nao pode
-            # se perder quando o painel salva por cima do que tinha em memoria
-            rotinas_no_disco = configuracao.carregar().get("rotinas") or []
-            c["rotinas"] = configuracao.mesclar_novas_por_nome(rotinas_no_disco, self._rotinas_iniciais, rotinas)
+            for nome in PAGINAS:
+                if nome in self._montadas and nome in self.SALVAR_PAGINA:
+                    getattr(self, self.SALVAR_PAGINA[nome])(c)
+            self._salvar_rotinas(c)
             configuracao.salvar(c)
-
-            atalhos_editados = {str(k): str(x) for k, x in self.tab_atalhos.valores().items()}
-            # releia o disco: um atalho ensinado por voz enquanto o painel estava aberto nao pode
-            # se perder quando o painel salva por cima do que tinha em memoria
-            chaves_editadas = {k.strip().lower() for k in atalhos_editados}
-            novos = {k: v for k, v in atalhos_no_disco().items()
-                     if k.strip().lower() not in self._atalhos_iniciais and k.strip().lower() not in chaves_editadas}
-            self.vocab.aprendido["atalhos"] = {**atalhos_editados, **novos}
-            self.vocab.salvar_aprendido()
-            self._salvar_melhorias()
+            if "Atalhos" in self._montadas:
+                self._salvar_atalhos()
+            if "Melhorias" in self._montadas:
+                self._salvar_melhorias()
         except Exception as erro:
             messagebox.showerror(self.nome, f"Não consegui salvar:\n{erro}")
             return False
@@ -3144,6 +3540,181 @@ class Painel(ctk.CTk):
             self._reiniciar_mestre()
             self.aviso.configure(text=f"Salvo! O {self.nome} está reiniciando com as novidades.")
         return True
+
+    def _salvar_inicio(self, c):
+        configuracao.secao(c, "central")["ligar_mestre_ao_abrir"] = bool(self.var_ligar_ao_abrir.get())
+
+    def _salvar_audio(self, c):
+        o = configuracao.secao(c, "ouvido")
+        o["microfone"] = self._mic_escolhido()
+        o["modo_ativacao"] = "vosk" if self.var_modo.get().startswith("Leve") else "whisper"
+        o["modelo_whisper"] = configuracao.aspas(next(k for k, v in MODELOS_WHISPER.items() if v == self.var_modelo.get()))
+        o["precisao"] = self.var_precisao.get()
+        o["limiar_volume"] = 0 if self.var_auto.get() else int(self.var_limiar.get())
+        o["ganho"] = round(self.var_ganho.get(), 1)
+        o["silencio_fim"] = round(self.var_silencio.get(), 1)
+        o["espera_apos_palavra"] = round(float(self.var_espera_palavra.get()), 1)
+        o["espera_continuacao"] = round(float(self.var_espera_cont.get()), 2)
+        o["gravar_diagnostico"] = bool(self.var_diag.get())
+        o["so_minha_voz"] = bool(self.var_so_minha_voz.get())
+        o["exigencia_voz"] = round(float(self.var_exig_voz.get()), 2)
+        o["max_frase"] = int(self.var_max.get())
+        o["ditado_silencio_max"] = int(self.var_espera_ditado.get())
+        configuracao.secao(c, "ditado")["revisar_na_janela"] = bool(self.var_revisar.get())
+        o["palavras_conhecidas"] = configuracao.lista_em_linha(
+            [x.strip() for x in self.ent_palavras.get().split(",") if x.strip()])
+        o["dispositivo"] = configuracao.aspas(self._dispositivo())
+        v = configuracao.secao(c, "voz")   # (estas chaves da voz ficam na pagina Audio)
+        v["fala_em_segundo_plano"] = bool(self.var_fala_fundo.get())
+        v["interromper_com_palavra"] = bool(self.var_interromper.get())
+        v["frase_a_frase"] = bool(self.var_frase_a_frase.get())
+
+    def _salvar_voz(self, c):
+        v = configuracao.secao(c, "voz")
+        v["motor"] = configuracao.aspas(self._motor_escolhido())
+        v["reserva"] = configuracao.aspas(self.var_reserva.get())
+        v["fluida"] = bool(self.var_fluida.get())
+        v["voz_edge"] = configuracao.aspas(str(self.var_voz.get()))
+        v["voz_kokoro"] = configuracao.aspas(self._voz_kokoro_escolhida())
+        v["voz_azure"] = configuracao.aspas(str(self.var_voz_azure.get()).strip() or "pt-BR-AntonioNeural")
+        v["voz_natural"] = configuracao.aspas(self._voz_natural_escolhida())
+        v["voz_elevenlabs"] = configuracao.aspas(self._voz_eleven_escolhida())
+        v["modelo_elevenlabs"] = configuracao.aspas(self._modelo_eleven_escolhido())
+        if self.ent_eleven_chave.get().strip():
+            segredos.salvar(elevenlabs_chave=self.ent_eleven_chave.get())
+        if self.ent_azure_chave.get().strip():
+            segredos.salvar(azure_chave=self.ent_azure_chave.get(), azure_regiao=self.ent_azure_regiao.get() or "brazilsouth")
+        v["velocidade"] = configuracao.aspas(f"{self.var_vel.get():+d}%")
+        v["tom"] = configuracao.aspas(f"{self.var_tom.get():+d}Hz")
+        for campo, valor in (("voz", v["voz_edge"]), ("velocidade", v["velocidade"]), ("tom", v["tom"])):  # noqa
+            self.vocab.salvar_preferencia(campo, str(valor))   # a voz escolhida por voz tambem muda
+
+    def _salvar_conversa(self, c):
+        configuracao.secao(c, "conversa")["janela_segundos"] = int(self.var_janela.get())
+        cb = configuracao.secao(c, "cerebro")
+        cb["segundo_plano_seg"] = int(self.var_fundo.get())
+        cb["tempo_maximo"] = int(self.var_maximo.get())
+        cb["aviso_som"] = configuracao.aspas(next((k for k, v in self.SONS_AVISO.items() if v == self.var_bipe.get()), "nenhum"))
+        cb["aviso_ao_terminar"] = configuracao.aspas(
+            next(k for k, v in self.AVISOS.items() if v == self.var_aviso.get()))
+        cb["ollama_modelo"] = configuracao.aspas(self.var_modelo_ia.get().strip() or "qwen2.5:7b")
+        configuracao.secao(c, "assistente")["cidade"] = configuracao.aspas(self.ent_cidade.get().strip() or "São Paulo")
+
+    def _salvar_ipm(self, c):
+        pm = configuracao.secao(c, "projeto_mestre")
+        pm["link"] = configuracao.aspas(self.ent_link_projeto.get().strip())
+        pm["segundos_para_carregar"] = int(self.var_seg_projeto.get())
+        pm["enviar_automaticamente"] = bool(self.var_enviar_projeto.get())
+        pm["modo"] = configuracao.aspas(next(k for k, v in self.MODOS_PROJETO.items() if v == self.var_modo_projeto.get()))
+        pm["altura_caixa"] = int(self.var_altura_caixa.get())
+        if self._posicao_caixa is not None:
+            pm["posicao_caixa"] = configuracao.lista_em_linha(self._posicao_caixa)
+        pj = configuracao.secao(c, "projetos")
+        pj["pasta"] = configuracao.aspas(self.ent_pasta_projetos.get().strip())
+        pj["abrir_pesquisas"] = bool(self.var_pesquisas.get())
+        pj["pesquisar_internet"] = bool(self.var_pesquisar_web.get())
+        ipm = configuracao.secao(c, "agente_ipm")
+        ipm["modo"] = self.var_ipm_modo.get()
+        ipm["link_projeto"] = configuracao.aspas(self.ent_link.get().strip())
+        ipm["segundos_para_carregar"] = int(self.var_seg.get())
+        ipm["enviar_automaticamente"] = bool(self.var_enviar.get())
+
+    def _salvar_spotify(self, c):
+        sp = configuracao.secao(c, "spotify")
+        sp["apertar_play"] = bool(self.var_play.get())
+        sp["tocar_musica_em"] = configuracao.aspas("youtube" if self.var_tocar_em.get() == "YouTube" else "spotify")
+        configuracao.trocar_mapa(sp, "playlists", self.tab_playlists.valores())
+
+    def _salvar_celular(self, c):
+        rc = configuracao.secao(c, "recebidos")
+        rc["pasta"] = configuracao.aspas(self.ent_pasta_audios.get().strip())
+        rc["pasta_ligada"] = bool(self.var_pasta_audios.get())
+        rc["telegram_ligado"] = bool(self.var_telegram.get())
+        rc["destino"] = configuracao.aspas(next(k for k, v in self.DESTINOS_CELULAR.items() if v == self.var_destino_cel.get()))
+        rc["aviso"] = configuracao.aspas(next((k for k, v in self.AVISOS_CELULAR.items() if v == self.var_aviso_cel.get()),
+                                              "tela_e_voz"))
+        rc["frase_telegram"] = configuracao.aspas(self.ent_frase_telegram.get().strip())
+        rc["frase_pasta"] = configuracao.aspas(self.ent_frase_pasta.get().strip())
+
+    def _salvar_historico(self, c):
+        from . import memoria
+        novos_fatos = [x.strip() for x in self.txt_fatos.get("1.0", "end").splitlines()
+                       if x.strip() and not x.startswith("#")]
+        if novos_fatos != self._fatos_iniciais:   # so grava se voce mexeu (o Mestre tambem grava)
+            memoria.salvar_fatos(novos_fatos)
+            self._fatos_iniciais = novos_fatos
+
+    def _salvar_aparencia(self, c):
+        ap = configuracao.secao(c, "aparencia")
+        for chave, var in self.vars_aparencia.items():
+            ap[chave] = configuracao.aspas(var.get())
+
+    def _salvar_sugestoes(self, c):
+        from . import sugestoes
+        sg = configuracao.secao(c, "sugestoes")
+        sg["ligado"] = bool(self.var_sug_ligado.get())
+        sg["hora"] = configuracao.aspas(sugestoes.hora_texto(self.ent_sug_hora.get()))
+
+    def _salvar_personalidade(self, c):
+        from .config import gerar_variacoes
+        from .texto import normalizar
+        assist = configuracao.secao(c, "assistente")
+        palavra = (normalizar(self.ent_palavra.get()).split() or ["mestre"])[-1]
+        assist["nome"] = configuracao.aspas(self.ent_nome.get().strip() or "Mestre")
+        assist["apelido_usuario"] = configuracao.aspas(self.ent_apelido.get().strip() or "chefe")
+        assist["palavra_ativacao"] = configuracao.aspas(palavra)
+        assist["variacoes_aceitas"] = configuracao.lista_em_linha(gerar_variacoes(palavra))
+        p = configuracao.secao(c, "personalidade")
+        p["estilo"] = configuracao.aspas(self.var_estilo.get())
+        p["descricao"] = configuracao.aspas(self.txt_desc.get("1.0", "end").strip())
+        falas = configuracao.secao(p, "falas")
+        for chave, caixa in self.txt_falas.items():
+            linhas = [x.strip() for x in caixa.get("1.0", "end").splitlines() if x.strip()]
+            if linhas:
+                falas[chave] = configuracao.lista_em_linha(linhas)
+
+    def _salvar_youtube(self, c):
+        ytc = configuracao.secao(c, "youtube")
+        ytc["navegador_mestre"] = bool(self.var_yt_nav.get())
+        ytc["navegador"] = configuracao.aspas(next(k for k, v in self.NAVEGADORES.items() if v == self.var_yt_canal.get()))
+        ytc["modo"] = configuracao.aspas(next(k for k, v in self.MODOS_YT.items() if v == self.var_yt_modo.get()))
+        configuracao.trocar_mapa(c, "canais_youtube", self.tab_canais.valores())
+
+    def _salvar_programas(self, c):
+        jn = configuracao.secao(c, "janelas")
+        jn["sempre_no_principal"] = bool(self.var_principal.get())
+        jn["navegador_sites"] = configuracao.aspas("brave" if self.var_sites_brave.get() else "padrao")
+        jn["perfil_brave"] = configuracao.aspas(self.ent_perfil_brave.get().strip())
+        configuracao.trocar_mapa(jn, "nomes_monitores",
+                                 {str(n): e.get().strip() for n, e in self.ent_monitores.items() if e.get().strip()})
+        configuracao.trocar_mapa(c, "programas", self.tab_prog.valores())
+        configuracao.trocar_mapa(c, "sites", self.tab_sites.valores())
+
+    def _salvar_rotinas(self, c):
+        """Sempre (mesmo com a pagina Rotinas fechada): a rotina ensinada por voz com o painel aberto nao se perde."""
+        if "Rotinas" in self._montadas:
+            self._guardar_editor()
+            rotinas = []
+            for r in self.rotinas:
+                item = configuracao.aspas({"nome": r["nome"], "acoes": r["acoes"]})
+                item.insert(1, "frases", configuracao.lista_em_linha(r["frases"]))
+                rotinas.append(item)
+        else:
+            rotinas = list(c.get("rotinas") or [])
+        # releia o disco: uma rotina ensinada por voz enquanto o painel estava aberto nao pode
+        # se perder quando o painel salva por cima do que tinha em memoria
+        rotinas_no_disco = configuracao.carregar().get("rotinas") or []
+        c["rotinas"] = configuracao.mesclar_novas_por_nome(rotinas_no_disco, self._rotinas_iniciais, rotinas)
+
+    def _salvar_atalhos(self):
+        atalhos_editados = {str(k): str(x) for k, x in self.tab_atalhos.valores().items()}
+        # releia o disco: um atalho ensinado por voz enquanto o painel estava aberto nao pode
+        # se perder quando o painel salva por cima do que tinha em memoria
+        chaves_editadas = {k.strip().lower() for k in atalhos_editados}
+        novos = {k: v for k, v in atalhos_no_disco().items()
+                 if k.strip().lower() not in self._atalhos_iniciais and k.strip().lower() not in chaves_editadas}
+        self.vocab.aprendido["atalhos"] = {**atalhos_editados, **novos}
+        self.vocab.salvar_aprendido()
 
     def _fechar(self):
         self._parar_teste()
@@ -3187,25 +3758,25 @@ def escutar_chamados(janela) -> None:
 
 
 PAGINAS = {
-    #  nome:              (icone, descricao, montar)
-    "Início":            ("⌂", "Ligar, desligar, pausar, testar e atualizar.", Painel._aba_inicio),
-    "Personalidade":     ("☺", "Nome, como ele te chama, palavra de ativação, estilo e frases.", Painel._aba_personalidade),
-    "Voz":               ("♪", "Qual voz, velocidade, tom e fala fluida.", Painel._aba_voz),
-    "Áudio":             ("◉", "Microfone, calibração, reconhecimento de voz e frases longas.", Painel._aba_audio),
-    "Conversa":          ("⇄", "Modo conversa, IA que demora (segundo plano) e sua cidade.", Painel._aba_conversa),
-    "IPM e projetos":    ("✦", "Agente IPM, projeto Mestre (Claude) e projetos guiados.", Painel._aba_ipm),
-    "YouTube":           ("▶", "Canais e importação das suas inscrições.", Painel._aba_youtube),
-    "Programas e sites": ("▦", "O que ele abre quando você pede e em qual monitor.", Painel._aba_programas),
-    "Spotify":           ("♫", "Playlists para tocar por voz.", Painel._aba_spotify),
-    "Rotinas":           ("↻", "Uma frase, várias ações em sequência.", Painel._aba_rotinas),
-    "Atalhos":           ("⌘", "Frases curtas que você ensinou.", Painel._aba_atalhos),
-    "Celular":           ("✉", "Áudios do celular: pasta sincronizada e Telegram.", Painel._aba_celular),
-    "Histórico":         ("☰", "Pedidos, respostas e o que ele lembra de você.", Painel._aba_historico),
-    "Aparência":         ("◐", "Cores, fonte e tamanho do texto.", Painel._aba_aparencia),
-    "Melhorias":         ("✎", "Ideias e feedbacks para o Claude Code implementar.", Painel._aba_melhorias),
-    "Validar atualização": ("✔", "Fale as frases do roteiro e confira o que ele ouviu, entendeu e fez.",
+    #  nome:              (icone de app/icones.py, descricao, montar)
+    "Início":            ("casa", "Ligar, desligar, pausar, testar e atualizar.", Painel._aba_inicio),
+    "Personalidade":     ("rosto", "Nome, como ele te chama, palavra de ativação, estilo e frases.", Painel._aba_personalidade),
+    "Voz":               ("voz", "Qual voz, velocidade, tom e fala fluida.", Painel._aba_voz),
+    "Áudio":             ("mic", "Microfone, calibração, reconhecimento de voz e frases longas.", Painel._aba_audio),
+    "Conversa":          ("conversa", "Modo conversa, IA que demora (segundo plano) e sua cidade.", Painel._aba_conversa),
+    "IPM e projetos":    ("maleta", "Agente IPM, projeto Mestre (Claude) e projetos guiados.", Painel._aba_ipm),
+    "YouTube":           ("youtube", "Canais e importação das suas inscrições.", Painel._aba_youtube),
+    "Programas e sites": ("janelas", "O que ele abre quando você pede e em qual monitor.", Painel._aba_programas),
+    "Spotify":           ("musica", "Playlists para tocar por voz.", Painel._aba_spotify),
+    "Rotinas":           ("rotina", "Uma frase, várias ações em sequência.", Painel._aba_rotinas),
+    "Atalhos":           ("atalho", "Frases curtas que você ensinou.", Painel._aba_atalhos),
+    "Celular":           ("celular", "Áudios do celular: pasta sincronizada e Telegram.", Painel._aba_celular),
+    "Histórico":         ("historico", "Pedidos, respostas e o que ele lembra de você.", Painel._aba_historico),
+    "Aparência":         ("paleta", "Cores, fonte e tamanho do texto.", Painel._aba_aparencia),
+    "Melhorias":         ("lampada", "Ideias e feedbacks para o Claude Code implementar.", Painel._aba_melhorias),
+    "Validar atualização": ("check", "Fale as frases do roteiro e confira o que ele ouviu, entendeu e fez.",
                             Painel._aba_validacao),
-    "Sugestões de melhoria": ("✧", "Todo dia ele olha o que deu errado e sugere melhorias para o Claude.",
+    "Sugestões de melhoria": ("brilho", "Todo dia ele olha o que deu errado e sugere melhorias para o Claude.",
                               Painel._aba_sugestoes),
 }
 

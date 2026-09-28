@@ -14,6 +14,23 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Painel 2.5: menu de ícones, Início em cartões e Voz em abas
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Abra a Central pelo atalho | Abre rápido, no Início; a barra da esquerda mostra só ícones e a versão "2.5" | (painel) |
+| (painel) Passe o mouse na barra de ícones da esquerda | Ela abre suave (sem travar) mostrando os nomes e os grupos; tire o mouse e ela fecha | (painel) |
+| (painel) Pare o mouse em cima de um ícone | Aparece um balãozinho com o nome e o que tem na página | (painel) |
+| (painel) Clique em várias páginas e volte a elas | A página aberta fica destacada em rosa; voltar a uma página já aberta é na hora | (painel) |
+| (painel) Início, com o Assessor ligado: fale `Mestre, que horas são` | O cartão de status muda (Ouvindo → Pensando/Falando) e o comando aparece em "Últimos comandos" com OUVI / ENTENDI / FIZ, sem clicar em nada | (painel) |
+| (painel) Início: `Mestre, me explica a teoria da relatividade` | A pergunta aparece em "Fila do pensando" com o tempo contando; some quando termina | (painel) |
+| (painel) Início > Atalhos rápidos: Pausar, depois Retomar | O status vira "Pausado" e volta para "Ouvindo" | (painel) |
+| (painel) Início > Atalhos rápidos: Validar atualização e Sugestões | Abrem as páginas certas | (painel) |
+| (painel) Voz: clique nas abas Kokoro, Natural, Edge, Azure, ElevenLabs e Windows | Cada aba mostra só o daquela voz; bolinha verde = ativa, amarela = reserva | (painel) |
+| (painel) Voz: numa aba, "Testar" | Fala a frase de teste com aquela voz e mostra em quantos segundos começou | (painel) |
+| (painel) Voz: "Ativar esta voz" numa aba e "Usar como reserva" em outra, depois "Salvar e reiniciar" | O resumo do topo mostra "Voz ativa: X · Reserva: Y" e ele passa a falar com a ativa | (painel) |
+| (painel) Aparência: troque a cor e salve | Menu, ícones e cartões usam a cor nova depois de reabrir | (painel) |
+
 ### Conversa fluida: ouvir enquanto fala, interromper e frase pela metade
 
 | Frase | O que deve acontecer | Comando esperado |

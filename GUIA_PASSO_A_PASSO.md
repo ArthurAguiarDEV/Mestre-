@@ -41,10 +41,11 @@
 32. **Etapa 29** (versão 11): [Assessor x Mestre, pensando em silêncio, YouTube direto, janelas e abas nos monitores, exportar o histórico](#etapa-29--versão-11)
 33. **Etapa 30** (versão 12): [Voz Kokoro e Azure, modo descanso, streamings, juntar janelas, áudios do celular](#etapa-30--versão-12)
 34. **Etapa 31** (versão 13): [Painel novo, streamings digitando na busca, tela certa do YouTube, IA sem "pode falar", vozes Natural e ElevenLabs, aviso do Telegram, desligar na hora, validar a atualização no painel](#etapa-31--versão-13)
-35. [Personalizar: canais, programas, sites e rotinas](#personalizar)
-36. [Lista de todos os comandos de voz](#lista-de-comandos)
-37. [Problemas comuns e soluções](#problemas-comuns)
-38. [Próximos passos: levar para o celular](#próximos-passos)
+35. **Etapa 32** (versão 2.5): [Painel repaginado: menu de ícones, Início em cartões, voz em abas com reserva](#etapa-32--versão-25)
+36. [Personalizar: canais, programas, sites e rotinas](#personalizar)
+37. [Lista de todos os comandos de voz](#lista-de-comandos)
+38. [Problemas comuns e soluções](#problemas-comuns)
+39. [Próximos passos: levar para o celular](#próximos-passos)
 
 ---
 
@@ -576,6 +577,8 @@ Chega de editar YAML no Bloco de Notas. Abra o painel de um destes jeitos:
 | **Rotinas** | Criar e editar rotinas: frases, ações numa lista com ↑ ↓ ✕ (Etapa 20) |
 | **Atalhos** | Ver, editar e apagar os atalhos que você ensinou por voz |
 | **Melhorias** | Ver e escrever a lista de ideias; botão **"Refinar e aplicar com o Claude Code"** |
+
+> Na versão 2.5 o menu virou uma barra de ícones (passe o mouse para ver os nomes). Onde fica cada página: veja a [Etapa 32](#etapa-32--versão-25).
 
 Depois de mudar, clique em **"Salvar e reiniciar o Mestre"** (canto de baixo).
 - O painel guarda uma cópia do arquivo antigo (`config.yaml.bak`) e **mantém seus comentários**.
@@ -1430,6 +1433,44 @@ O assistente olha sozinho, uma vez por dia, o que aconteceu desde a última olha
 - Marque as que valem a pena e clique **🛠 Mandar marcadas para o Claude**: o painel salva o pedido em `exportacoes/pedido_sugestoes_*.md` e abre o **Claude Code** no terminal já com ele (igual ao botão da validação; você acompanha e aprova tudo).
 - Com a IA ligada, a análise automática ainda ganha um **resumo da IA** no topo da lista (feito em segundo plano, nunca atrapalha).
 
+## Etapa 32: Versão 2.5
+
+A partir daqui a versão tem ponto: depois da 13 vem a **2.5** (o painel mostra "2.5" embaixo da barra de ícones e no selo **v2.5** do canto).
+
+### 32.1 Menu de ícones (barra da esquerda)
+- A barra da esquerda mostra **só os ícones**. **Passe o mouse** em cima: ela abre por cima da página mostrando os nomes e os grupos; tire o mouse e ela fecha.
+- Parou o mouse num ícone? Aparece um balãozinho com o nome e o que tem na página.
+- A página aberta fica com o ícone **rosa** (na cor que você escolheu em Aparência).
+- Onde fica cada coisa (de cima para baixo):
+
+| Grupo | Ícone → página |
+|---|---|
+| **Assistente** | 🏠 casa → **Início** · 🙂 rosto → **Personalidade** · 💬 balão → **Conversa** |
+| **Voz e ouvido** | ondas → **Voz** · 🎤 microfone → **Áudio** |
+| **Apps e sites** | ▶ tela com play → **YouTube** · ♫ nota → **Spotify** · 🖥 janela → **Programas e sites** · 🔁 relógio com seta → **Rotinas** · ⚡ raio → **Atalhos** |
+| **Integrações** | 💼 maleta → **IPM e projetos** · 📱 celular → **Celular** |
+| **Sistema** | ☰ linhas → **Histórico** · 💡 lâmpada → **Melhorias** · ✔ círculo com check → **Validar atualização** · ✨ brilho → **Sugestões de melhoria** · 🎨 paleta → **Aparência** |
+
+- Cada página só é montada na primeira vez que você abre (por isso o painel abre mais rápido). Depois, voltar a ela é na hora.
+
+### 32.2 Início em cartões
+- **Status** (em cima): o que ele está fazendo agora — **Ouvindo**, **Pensando**, **Falando**, **Descansando**, **Pausado** ou **Desligado** — com os botões **Ligar** e **Desligar** e a chave "Ligar sozinho quando eu abrir a Central". O rostinho à esquerda é o lugar do avatar (na próxima versão ele se mexe conforme o estado).
+- **Fila do pensando**: as perguntas que a IA está resolvendo em segundo plano, com o tempo contando.
+- **Atalhos rápidos**: Reiniciar, Pausar/Retomar, Validar atualização, Sugestões, Testar digitando, Teste automático, Atualizar (.zip), Ouvir a voz e Microfone.
+- **Últimos comandos**: os 5 últimos pedidos com **OUVI** (o que o microfone entendeu), **ENTENDI** (a frase depois do vocabulário e qual comando atendeu) e **FIZ** (o que ele respondeu).
+- Tudo se atualiza sozinho a cada segundo, sem você clicar.
+- Mais abaixo continuam: Novidades da versão, Jeitos de chamar e Atalhos úteis.
+
+### 32.3 Voz em abas (com reserva)
+- No topo: **"Voz ativa: X · Reserva: Y"**.
+- Uma aba por voz: **Kokoro**, **Natural**, **Edge**, **Azure**, **ElevenLabs** e **Windows**. Bolinha **verde** = a ativa; **amarela** = a reserva.
+- Em cada aba só o que é daquela voz (qual voz, chave, baixar/instalar) e três botões:
+  - **Ativar esta voz**: ele passa a falar com ela.
+  - **Testar**: fala a frase de teste com essa voz (sem precisar ativar) e mostra em quantos segundos começou.
+  - **Usar como reserva**: se a voz ativa falhar (sem internet, sem chave, ainda carregando), ele fala com a reserva. Se a reserva também falhar, ainda tenta a Kokoro e a Edge.
+- Embaixo, **Frase de teste e ajustes**: a frase, **▶ Ouvir** (com a voz ativa), velocidade, tom e fala fluida (valem para todas).
+- Mudou? **Salvar e reiniciar**.
+
 ---
 
 ## Personalizar
@@ -1475,7 +1516,7 @@ Copie um bloco de rotina existente e mude. Exemplo, uma rotina de estudos:
 Ações possíveis: `acordar_tela`, `falar`, `abrir_programa`, `abrir_site`, `youtube_ultimo_video`, `youtube_canal`, `esperar`, `volume`, `bloquear`, `desligar_tela`, `comando` (qualquer frase que você falaria, ex.: `comando: "toca lofi no youtube"`). Também dá para criar uma rotina **falando** (veja a Etapa 20).
 
 ### Trocar a voz
-Veja a [Etapa 13](#etapa-13--voz-e-personalidade): dá para trocar falando.
+Veja a [Etapa 13](#etapa-13--voz-e-personalidade): dá para trocar falando. No painel: **Voz** > aba da voz > **Ativar esta voz** (e **Usar como reserva** em outra; Etapa 32).
 
 ---
 

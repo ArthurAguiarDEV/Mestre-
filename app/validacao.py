@@ -240,6 +240,37 @@ def capturar(desde: float, historico: list[dict] | None = None, ouvidas: list[di
             "ts": max(_ts(pedido) if pedido else 0.0, _ts(ouvido) if ouvido else 0.0)}
 
 
+def ultimos_comandos(quantos: int = 5, historico: list[dict] | None = None,
+                     ouvidas: list[dict] | None = None) -> list[dict]:
+    """Os ultimos pedidos com OUVI/ENTENDI/FIZ (painel > Inicio), mais recente primeiro.
+
+    Mesmo casamento da validacao: a frase ouvida e a ultima transcricao ate o pedido.
+    Devolve [{"hora", "ouvi", "entendi", "fiz", "ts"}].
+    """
+    if historico is None or ouvidas is None:
+        from . import memoria
+        historico = memoria.historico(120) if historico is None else historico
+        ouvidas = memoria.ouvidas(200) if ouvidas is None else ouvidas
+    pedidos = [h for h in historico if (h.get("tipo") in TIPOS_PEDIDO or "comando" in str(h.get("tipo") or ""))
+               and h.get("tipo") != "ia virou comando"]
+    ouvidos = [o for o in ouvidas if o.get("chamou") or o.get("conversa") or o.get("junto_da_palavra")]
+    saida = []
+    for i in range(len(pedidos) - 1, max(-1, len(pedidos) - 1 - quantos), -1):
+        pedido = pedidos[i]
+        quando = _ts(pedido)
+        antes = _ts(pedidos[i - 1]) if i > 0 else 0.0
+        candidatos = [o for o in ouvidos if antes < _ts(o) <= quando + 1]
+        ouvi = str(candidatos[-1].get("texto") or "") if candidatos else ""
+        entendi = str(pedido.get("entendi") or "")
+        rota = str(pedido.get("rota") or "")
+        if rota and rota not in entendi:
+            entendi = f"{entendi}  ({rota})" if entendi else rota
+        saida.append({"hora": time.strftime("%H:%M", time.localtime(quando)) if quando else "",
+                      "ouvi": ouvi or str(pedido.get("pedido") or ""), "entendi": entendi or "—",
+                      "fiz": str(pedido.get("resposta") or "").strip() or "(não falou nada)", "ts": quando})
+    return saida
+
+
 def fala_nova(desde: float, ouvidas: list[dict] | None = None) -> str:
     """A ultima frase transcrita depois de `desde` (para o "o certo era..." falado)."""
     if ouvidas is None:

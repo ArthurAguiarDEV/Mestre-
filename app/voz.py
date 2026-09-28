@@ -66,6 +66,7 @@ class Voz:
         c = cfg.get("voz", {})
         # kokoro (no PC) | natural (placa de video) | edge (internet, gratis) | azure | elevenlabs | windows
         self.motor = c.get("motor", "kokoro")
+        self.reserva = str(c.get("reserva") or "kokoro")   # se o escolhido falhar (painel > Voz > "Usar como reserva")
         self.voz_edge = c.get("voz_edge", "pt-BR-AntonioNeural")
         self.voz_kokoro = c.get("voz_kokoro", "pm_alex")
         self.voz_azure = c.get("voz_azure", "pt-BR-AntonioNeural")
@@ -293,8 +294,9 @@ class Voz:
         return motor == "edge"
 
     def _motores(self) -> list[str]:
-        """O escolhido e, se ele nao estiver pronto ou falhar: a Kokoro (no PC) e depois a Edge."""
-        return [m for m in dict.fromkeys([self.motor, "kokoro", "edge"]) if self._motor_pronto(m)]
+        """O escolhido e, se ele nao estiver pronto ou falhar: a reserva, a Kokoro (no PC) e depois a Edge."""
+        return [m for m in dict.fromkeys([self.motor, getattr(self, "reserva", "kokoro"), "kokoro", "edge"])
+                if self._motor_pronto(m)]
 
     def _voz_do_motor(self, motor: str) -> str:
         return {"kokoro": self.voz_kokoro, "azure": self.voz_azure, "natural": self.voz_natural,

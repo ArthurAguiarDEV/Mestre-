@@ -21,7 +21,17 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 PROJETO = Path(__file__).resolve().parent.parent
-VERSAO_ATUAL = re.search(r'VERSAO = "(\d+)"', (PROJETO / "app" / "versao.py").read_text(encoding="utf-8")).group(1)
+VERSAO_ATUAL = re.search(r'VERSAO = "(\d+(?:\.\d+)*)"', (PROJETO / "app" / "versao.py").read_text(encoding="utf-8")).group(1)
+
+
+def versao_anterior(versao: str) -> str:
+    """Uma versao "falsa" um pouco mais velha (para o teste da atualizacao): "2.5" -> "2.4", "14" -> "13"."""
+    partes = versao.split(".")
+    partes[-1] = str(max(0, int(partes[-1]) - 1))
+    return ".".join(partes)
+
+
+VERSAO_ANTERIOR = versao_anterior(VERSAO_ATUAL)
 IGNORAR = shutil.ignore_patterns("venv", "modelos", "logs", "*.zip", "__pycache__", ".git", "mestre.pid",
                                  "notas", "respostas")
 resultados: list[tuple[bool, str, str]] = []
@@ -879,10 +889,16 @@ pn.ent_eleven_chave.insert(0, "chave-de-teste")
 pn.var_voz_eleven.set(pn.vozes_eleven["onwK4e9ZLuTAKqWW03F9"])
 pn._escolher_motor("natural"); pn.update()
 pn.var_voz_natural.set("Francisca (timbre da voz da Microsoft)")
+pn._usar_reserva("natural"); pn._usar_reserva("azure"); pn.update()   # (a ativa nao vira reserva)
+print("ABA_RESERVA", pn.var_reserva.get(), "Reserva: Azure" in pn.rot_voz_resumo.cget("text"),
+      pn._cartoes_motor["natural"]["ativar"].cget("state"))
 pn.salvar(); pn.update()
 v = configuracao.carregar()["voz"]
 print("SALVOU_VOZ", v["motor"], v["voz_natural"], v["voz_elevenlabs"], v["modelo_elevenlabs"], segredos.ler("elevenlabs_chave"))
+print("SALVOU_RESERVA", v.get("reserva"))
 print("RESERVA", Voz({"voz": {"motor": "natural"}})._motores())
+vr = Voz({"voz": {"motor": "natural", "reserva": "azure"}}); vr._motor_pronto = lambda m: True
+print("ORDEM_RESERVA", vr._motores())
 v["motor"] = configuracao.aspas("kokoro"); d = configuracao.carregar(); d["voz"]["motor"] = configuracao.aspas("kokoro")
 configuracao.salvar(d)
 print("ERROS_TELA", len(erros))
@@ -978,8 +994,11 @@ a["nome"] = configuracao.aspas("Jarvis"); a["palavra_ativacao"] = configuracao.a
 a["variacoes_aceitas"] = configuracao.lista_em_linha(["jarvis", "jarvis"]); configuracao.salvar(d)
 import app.painel as p
 pn = p.Painel(); pn.update()
+pn.montar_todas(); pn.update()   # (as paginas sao montadas sob demanda: aqui todas, para conferir os textos)
+dados = {str(l["frame"]) for l in pn._cmd_linhas}   # (Ultimos comandos: o que VOCE falou, nao texto fixo da tela)
 def textos(w):
     for filho in w.winfo_children():
+        if str(filho) in dados: continue
         for opcao in ("text", "label"):
             try:
                 t = filho.cget(opcao)
@@ -1518,6 +1537,7 @@ tk.Tk.report_callback_exception = lambda self, e, vv, tb: erros.append("".join(t
 from app import memoria
 import app.painel as p
 pn = p.Painel(); pn.update()
+pn.mostrar_pagina("Melhorias"); pn.update()   # (caixa da Melhorias aberta: o FEEDBACK tem de entrar nela)
 pn.mostrar_pagina("Validar atualização"); pn.update()
 pn.var_val_escolha.set("Só sempre testar")
 pn.var_val_continuo.set(False)   # o modo de antes (com clique) continua existindo
@@ -1754,6 +1774,81 @@ print("FIM_SUGESTOES")
 """
 
 
+PAINEL_25 = r"""
+# Painel 2.5: menu de icones, paginas sob demanda, Inicio em cartoes (status, fila, ultimos comandos)
+import json, os, time, traceback, tkinter as tk
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+from app import estado, icones, memoria, validacao
+# o Assessor (outro processo) publica o estado num arquivo; o painel le
+estado.definir("ouvindo")
+ok(estado.ler_de_fora().get("nome") == "ouvindo", "Estado publicado para o painel (logs/estado_agora.json)")
+ok(estado.situacao({"nome": "falando"}, True, False) == "falando" and estado.situacao({}, False, False) == "desligado"
+   and estado.situacao({"nome": "ouvindo"}, True, True) == "pausado"
+   and estado.situacao({"nome": "ouvindo", "descanso": True}, True, False) == "descansando"
+   and estado.situacao({"nome": "ouvindo", "pensamento": "pensando"}, True, False) == "pensando",
+   "Situação do Início: ouvindo/pensando/falando/descansando/pausado/desligado")
+agora = time.time()
+hist = [{"pedido": "Mestre, abre o YouTube", "entendi": "abre o youtube", "rota": "_cmd_abrir", "resposta": "Abrindo o YouTube.",
+         "tipo": "comando", "ts": agora - 20},
+        {"pedido": "Mestre, que horas são", "entendi": "que horas sao", "rota": "_cmd_hora_data", "resposta": "São 10h.",
+         "tipo": "comando", "ts": agora - 5}]
+ouv = [{"texto": "Mestre abre o iutube", "chamou": True, "ts": agora - 21}, {"texto": "blá", "ts": agora - 10},
+       {"texto": "Mestre, que horas são?", "chamou": True, "ts": agora - 6}]
+u = validacao.ultimos_comandos(5, hist, ouv)
+ok(len(u) == 2 and u[0]["ouvi"] == "Mestre, que horas são?" and u[1]["ouvi"] == "Mestre abre o iutube"
+   and "_cmd_abrir" in u[1]["entendi"] and u[1]["fiz"] == "Abrindo o YouTube.",
+   f"Últimos comandos: OUVI/ENTENDI/FIZ casados, mais novo primeiro {u}")
+ok(all(icones.imagem(n, "#F5A6C8").getbbox() for n in icones.DESENHOS if n != "vazio"),
+   "Ícones do menu desenhados (nenhum em branco)")
+
+erros = []
+tk.Tk.report_callback_exception = lambda self, e, v, tb: erros.append("".join(traceback.format_exception(e, v, tb)))
+for h in hist:
+    memoria.registrar(h["pedido"], h["resposta"], "comando", {"entendi": h["entendi"], "rota": h["rota"]})
+import app.painel as p
+pn = p.Painel(); pn.update()
+ok(pn._montadas == ["Início"], f"Páginas sob demanda: só o Início montado ao abrir {pn._montadas}")
+ok(pn.status_mestre.cget("text") == "Desligado" and pn._cmd_linhas[0]["frame"].winfo_manager()
+   and pn._cmd_linhas[0]["FIZ"].cget("text") == "São 10h.",
+   "Início: status e últimos comandos (OUVI/ENTENDI/FIZ) na tela")
+widgets = len(list(p._descendentes(pn)))
+# o Assessor "liga" e comeca a pensar: o Inicio acompanha sem recriar widgets
+p.sistema.mestre_ligado = lambda: True
+estado.atualizar(pensamento="pensando", pensamentos_fila=1,
+                 pensamentos_lista=[{"pergunta": "me explica a relatividade", "inicio": time.time() - 3, "estado": "pensando"}])
+pn._aplicar_inicio(pn._coletar_inicio()); pn.update()
+ok(pn.status_mestre.cget("text") == "Pensando" and pn._fila_linhas[0]["frame"].winfo_manager()
+   and "relatividade" in pn._fila_linhas[0]["texto"].cget("text") and not pn.rot_fila_vazia.winfo_manager(),
+   "Início: fila do pensando aparece e o status vira “Pensando”")
+estado.atualizar(pensamento="", pensamentos_fila=0, pensamentos_lista=[])
+estado.definir("falando")
+pn._status(); fim = time.time() + 5
+while time.time() < fim and pn.status_mestre.cget("text") != "Falando":
+    pn.update(); time.sleep(0.05)
+ok(pn.status_mestre.cget("text") == "Falando" and not pn._fila_linhas[0]["frame"].winfo_manager(),
+   "Início: atualiza sozinho (leitura em segundo plano)")
+ok(len(list(p._descendentes(pn))) == widgets, "Início: atualizar não cria widgets novos")
+# troca de pagina: a 2a vez e so trazer para a frente
+pn.mostrar_pagina("Voz"); pn.update(); pn.mostrar_pagina("Início"); pn.update()
+t0 = time.time(); pn.mostrar_pagina("Voz"); pn.update(); tempo = time.time() - t0
+ok(pn._montadas == ["Início", "Voz"] and tempo < 0.3, f"Voltar a uma página já aberta é rápido ({tempo:.3f}s)")
+ok(pn.botoes_menu["Voz"].cget("fg_color") == p.tema.ROSA_FUNDO and pn.titulo_pagina.cget("text") == "Voz",
+   "Menu: item ativo destacado e título da página")
+pn._rail_ir(pn._rail_aberto); fim = time.time() + 2
+while time.time() < fim and pn._rail_largura != pn._rail_aberto:
+    pn.update(); time.sleep(0.01)
+ok(pn._rail_largura == pn._rail_aberto, "Menu de ícones abre (mostrando os nomes)")
+pn._rail_ir(pn._rail_fechado); fim = time.time() + 2
+while time.time() < fim and pn._rail_largura != pn._rail_fechado:
+    pn.update(); time.sleep(0.01)
+ok(pn._rail_largura == pn._rail_fechado, "Menu de ícones fecha de novo")
+ok(pn.salvar() and set(pn._montadas) == {"Início", "Voz"}, "Salvar com só algumas páginas abertas")
+ok(not erros, "Painel 2.5 sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
+pn._fechar()
+print("FIM_PAINEL_25")
+"""
+
+
 def main() -> int:
     print("\nTESTE AUTOMATICO DO MESTRE (numa copia; seu config nao e tocado)\n")
     with tempfile.TemporaryDirectory(prefix="mestre_teste_") as tmp:
@@ -1844,10 +1939,14 @@ def main() -> int:
         print("\n[Painel novo: versão e vozes]")
         cod, saida = rodar(pasta, VOZES_PAINEL)
         conferir(f"VERSAO_TELA Versão {VERSAO_ATUAL}" in saida, "Painel mostra a versão do projeto (menu lateral)", saida[-600:])
-        conferir("ABRIU_SECAO True elevenlabs" in saida, "Clicar no cartão da voz escolhe e abre a configuração dela",
+        conferir("ABRIU_SECAO True elevenlabs" in saida, "“Ativar esta voz” escolhe a voz e mostra a aba dela",
                  saida[-600:])
         conferir("SALVOU_VOZ natural francisca onwK4e9ZLuTAKqWW03F9 eleven_flash_v2_5 chave-de-teste" in saida,
                  "Voz natural e ElevenLabs salvam (chave fora do projeto)", saida[-600:])
+        conferir("ABA_RESERVA azure True disabled" in saida and "SALVOU_RESERVA azure" in saida,
+                 "Voz em abas: “Usar como reserva” (a ativa não vira reserva) e salva", saida[-600:])
+        conferir("ORDEM_RESERVA ['natural', 'azure', 'kokoro', 'edge']" in saida,
+                 "Se a voz ativa falhar, ele tenta primeiro a reserva escolhida", saida[-600:])
         conferir("RESERVA ['edge']" in saida or "RESERVA ['kokoro', 'edge']" in saida,
                  "Voz natural não instalada: ele fala com a Kokoro/Edge", saida[-600:])
         conferir("ERROS_TELA 0" in saida, "Página Voz nova sem erros na tela", saida[-1500:])
@@ -1912,6 +2011,14 @@ def main() -> int:
         if "FIM_SUGESTOES" not in saida:
             conferir(False, "Sugestões: o teste rodou até o fim", saida[-1500:])
 
+        print("\n[Painel 2.5: menu de ícones e Início em cartões]")
+        cod, saida = rodar(pasta, PAINEL_25, espera=120)
+        for linha in saida.splitlines():
+            if linha.startswith(("OK ", "FALHOU ")):
+                conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+        if "FIM_PAINEL_25" not in saida:
+            conferir(False, "Painel 2.5: o teste rodou até o fim", saida[-1500:])
+
         print("\n[Atualização por .zip]")
         destino = copiar_projeto(Path(tmp) / "outra")
         (destino / "config.yaml").write_text("# MEU CONFIG\n", encoding="utf-8")
@@ -1922,7 +2029,7 @@ def main() -> int:
                 z.write(arq, "mestre/" + arq.relative_to(pasta).as_posix())
             z.writestr("mestre/config.yaml", "sobrescrito!")
             z.writestr("mestre/OBSOLETOS.txt", "ANTIGO.bat\nconfig.yaml\n")
-        (destino / "app" / "versao.py").write_text(f'VERSAO = "{int(VERSAO_ATUAL) - 1}"\n', encoding="utf-8")
+        (destino / "app" / "versao.py").write_text(f'VERSAO = "{VERSAO_ANTERIOR}"\n', encoding="utf-8")
         cod, saida = rodar(destino, f"""
             from pathlib import Path
             from app import atualizar
@@ -1930,7 +2037,7 @@ def main() -> int:
             print(atualizar.aplicar(r"{pacote}", Path.cwd(), instalar_bibliotecas=False))
         """)
         conferir("VERIFICAR ''" in saida and "Atualizado" in saida, "Atualização aplicada", saida[-500:])
-        conferir(f"da versão {int(VERSAO_ATUAL) - 1} para a {VERSAO_ATUAL}" in saida, "Atualização diz de qual versão para qual foi", saida[-500:])
+        conferir(f"da versão {VERSAO_ANTERIOR} para a {VERSAO_ATUAL}" in saida, "Atualização diz de qual versão para qual foi", saida[-500:])
         conferir((destino / "config.yaml").read_text(encoding="utf-8") == "# MEU CONFIG\n",
                  "Atualização NÃO mexe no seu config.yaml")
         conferir(not (destino / "ANTIGO.bat").exists(), "Atualização retira arquivos antigos")

@@ -646,11 +646,13 @@ class Executor:
         with self._trava_pensamento:
             fundo = [x for x in self._pensamentos if x["fundo"]]
         pensando = [x for x in fundo if x["estado"] == "pensando"]
+        lista = [{"pergunta": str(x["pergunta"])[:160], "inicio": x["inicio"], "estado": x["estado"]} for x in fundo]
         if pensando:
             estado.atualizar(pensamento="pensando", pensamento_pergunta=pensando[0]["pergunta"],
-                             pensamento_desde=pensando[0]["inicio"], pensamentos_fila=len(pensando))
+                             pensamento_desde=pensando[0]["inicio"], pensamentos_fila=len(pensando),
+                             pensamentos_lista=lista)
         else:
-            estado.atualizar(pensamento="pronto" if fundo else "", pensamentos_fila=0)
+            estado.atualizar(pensamento="pronto" if fundo else "", pensamentos_fila=0, pensamentos_lista=lista)
 
     def _achar_pensamento(self, meu: int) -> dict | None:
         return next((x for x in self._pensamentos if x["id"] == meu), None)
@@ -744,7 +746,7 @@ class Executor:
         """Descarta tudo que esta na fila da IA (o que ja esta rodando termina e e ignorado)."""
         with self._trava_pensamento:
             self._pensamentos.clear()
-        estado.atualizar(pensamento="", pensamentos_fila=0)
+        estado.atualizar(pensamento="", pensamentos_fila=0, pensamentos_lista=[])
 
     def _responder_aviso_pensamento(self, resposta: str) -> None:
         n = normalizar(resposta)

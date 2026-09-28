@@ -2149,6 +2149,8 @@ voz:
   # "edge"    = voz natural da Microsoft, gratis, precisa de internet.
   # "windows" = voz do proprio Windows, funciona sem internet (mais robotica).
   motor: "kokoro"
+  # Se a voz escolhida falhar, ele fala com esta (painel > Voz > "Usar como reserva").
+  reserva: "edge"
   # Voz inicial. Para OUVIR e escolher, rode "9_escolher_voz.bat"
   # ou fale: "Mestre, apresenta as vozes".
   voz_edge: "en-US-BrianMultilingualNeural"
