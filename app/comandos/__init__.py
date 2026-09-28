@@ -302,15 +302,11 @@ class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixi
         sistema.SITES_NO_BRAVE = (self.cfg.get("janelas") or {}).get("navegador_sites", "brave") == "brave"
         from .. import navegador as _nav
         _nav.PERFIL_BRAVE = str((self.cfg.get("janelas") or {}).get("perfil_brave") or "")
-        achado = re.search(r"\s*\b(?:no|na|pro|pra|para o|para a|ao)\s+(?:meu\s+|minha\s+)?(?:monitor|tela|janela)\s+(?:numero\s+)?(.+?)$", t)
-        if not achado:
-            return t
-        falado = achado.group(1).strip()
-        for numero, nomes in self._nomes_monitores().items():
-            if falado in nomes or any(n and falado.endswith(n) for n in nomes):
-                sistema.MONITOR_ALVO = numero
-                log.info("Pedido para o monitor %d", numero)
-                return t[:achado.start()].strip()
+        resto, numero = self._extrair_monitor(t)
+        if numero:
+            sistema.MONITOR_ALVO = numero
+            log.info("Pedido para o monitor %d", numero)
+            return resto
         return t
 
     def _tentar_comandos(self, t: str) -> bool:

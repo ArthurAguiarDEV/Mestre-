@@ -14,6 +14,26 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Conserto: "mover janela" pro monitor (quando falava e não acontecia nada)
+
+Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"pro" no meio
+(ex.: "mover YouTube monitor 2"), ou dizia o número/nome ANTES da palavra "monitor" (ex.:
+"...para o segundo monitor"), o Assessor não reconhecia o pedido de mover e às vezes a
+"YouTube" respondia só "já estava aberto" sem trocar de monitor. Também faltava o verbo
+"transfere"/"transferir".
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, mover YouTube monitor 2` (sem "pro" no meio) | Manda a janela/aba do YouTube pro monitor 2 | `_cmd_mover` |
+| `Mestre, joga o YouTube monitor 2` | Mesma coisa | `_cmd_mover` |
+| `Mestre, transfere a janela do YouTube pro monitor secundário` | Manda pro monitor 2 | `_cmd_mover` |
+| `Mestre, transfere a tela do YouTube para o segundo monitor` (número ANTES de "monitor") | Manda pro monitor 2 | `_cmd_mover` |
+| `Mestre, passa a janela do YouTube pro monitor secundário` | Manda pro monitor 2 | `_cmd_mover` |
+| `Mestre, manda a Netflix pro terceiro monitor` | Manda pro monitor 3 | `_cmd_mover` |
+| Se o YouTube já estiver no monitor pedido | Fala que já está lá (não fica mudo) | `_cmd_mover` / `_cmd_youtube` |
+| `Mestre, abre o YouTube no monitor 2` (continua sendo ABRIR, não mover) | Abre/leva o YouTube pro monitor 2 (comportamento de sempre) | `_cmd_youtube` |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Novos casos de "mover janela" sem preposição e com o nome antes de "monitor" OK | (automático) |
+
 ### Saída de som: trocar a caixinha de som pelo fone (e vice-versa)
 
 | Frase | O que deve acontecer | Comando esperado |

@@ -90,8 +90,10 @@ class JanelasMixin:
     #  "separa a Netflix pro monitor 2 e deixa o YouTube no principal"
     # =================================================================
     VERBOS_MOVER = (r"(joga|jogar|jogue|move|mover|mova|manda|mandar|mande|leva|levar|leve|passa|passar|passe|"
-                    r"coloca|colocar|coloque|bota|botar|poe|por|ponha|separa|separar|separe|tira|tirar|tire|"
+                    r"transfere|transferir|transfira|coloca|colocar|coloque|bota|botar|poe|por|ponha|"
+                    r"separa|separar|separe|tira|tirar|tire|"
                     r"deixa|deixar|deixe|arrasta|arrastar|arraste)")
+    _PREP_MONITOR = r"(?:no|na|pro|pra|para o|para a|para|ao|pro lado do|em)"
     ESTA_JANELA = {"", "janela", "essa janela", "esta janela", "ela", "isso", "essa", "esta", "aqui", "ai"}
 
     def _extensao(self):
@@ -120,24 +122,58 @@ class JanelasMixin:
                 return numero
         return None
 
+    def _extrair_monitor(self, texto: str) -> tuple[str, int | None]:
+        """Tira a parte do monitor do FIM da frase: "(no) monitor 2", "(no) monitor secundario",
+        "(no) segundo monitor", "pro terciario" (o numero/nome pode vir ANTES ou DEPOIS da palavra
+        "monitor", ou nem precisar dela se o nome ja for inconfundivel, tipo "secundario"/"terciario").
+        A preposicao ("no"/"pro"/"para o"...) so e OPCIONAL quando a palavra "monitor" esta escrita
+        (sem ambiguidade): "joga o youtube monitor 2" (fala corrida, sem "no"/"pro" no meio) vale;
+        sem a palavra "monitor" a preposicao continua obrigatoria (senao "a TELA do YouTube" ou
+        qualquer ultima palavra da frase virariam monitor por engano).
+        Devolve (frase sem essa parte, numero) ou (frase original, None) se nao achou monitor nenhum."""
+        padroes = [
+            # a palavra (qualquer) vem ANTES do nome, com preposicao: "no monitor 2", "pra tela 3"
+            (rf"^(.*?)\s*\b{self._PREP_MONITOR}\s+(?:meu\s+|minha\s+)?(?:monitor|tela|janela)\s+"
+             r"(?:numero\s+)?(.+)$", True),
+            # a palavra (qualquer) vem DEPOIS do nome, com preposicao: "pro segundo monitor"
+            (rf"^(.*?)\s*\b{self._PREP_MONITOR}\s+(?:meu\s+|minha\s+)?([a-z]+)\s+(?:monitor|tela|janela)\s*$", True),
+            # so "monitor" (sem ambiguidade), mesmo SEM preposicao, nome ANTES: "youtube monitor 2"
+            (r"^(.*?)\s*\bmonitor\s+(?:numero\s+)?(.+)$", True),
+            # so "monitor" (sem ambiguidade), mesmo SEM preposicao, nome DEPOIS: "youtube segundo monitor"
+            (r"^(.*?)\s*\b([a-z]+)\s+monitor\s*$", True),
+            # com preposicao mas SEM a palavra "monitor" nenhuma: "pro terciario", "no principal"
+            # (nomes ambiguos como numeros/ordinais soltos exigem a palavra "monitor" acima; so nomes
+            # inconfundiveis, como "secundario"/"terciario"/"aoc"/"da tv", passam por aqui)
+            (rf"^(.*?)\s*\b{self._PREP_MONITOR}\s+(?:meu\s+|minha\s+)?(.+)$", False),
+        ]
+        for padrao, com_a_palavra_monitor in padroes:
+            achado = re.match(padrao, texto)
+            if not achado:
+                continue
+            resto, falado = achado.groups()
+            numero = self._monitor_falado(falado.strip(), com_a_palavra_monitor)
+            if numero:
+                return resto.strip(), numero
+        return texto, None
+
     def _clausula_de_mover(self, parte: str) -> dict | None:
         """Uma ordem: {"verbo", "alvo", "monitor", "separar"} ou None."""
         artigo = r"(?:(?:a|o|as|os|essa|esse|esta|este|aquela|aquele|minha|meu)\s+)?"
         tipo = r"(?:(?:aba|janela|site|programa|app|aplicativo|guia)\s+)?"
         de = r"(?:(?:do|da|de|com o|com a)\s+)?"
-        prep = r"\s+(?:no|na|pro|pra|para o|para a|para|ao|pro lado do|em)\s+"
-        mon = r"(monitor\s+|tela\s+|janela\s+)?(.+)"
-        m = re.match(rf"^{self.VERBOS_MOVER}\s+{artigo}{tipo}{de}(.*?){prep}{mon}$", parte)
+        m = re.match(rf"^{self.VERBOS_MOVER}\s+{artigo}{tipo}{de}(.+)$", parte)
         if m:
-            verbo, alvo, palavra_mon, falado = m.groups()
+            verbo, resto = m.groups()
+            alvo, numero = self._extrair_monitor(resto)
         else:   # "o YouTube deixa no principal", "a Netflix joga pro monitor 2"
-            m = re.match(rf"^{artigo}{tipo}{de}(.+?)\s+{self.VERBOS_MOVER}{prep}{mon}$", parte)
+            m = re.match(rf"^{artigo}{tipo}{de}(.+?)\s+{self.VERBOS_MOVER}\s+(.+)$", parte)
             if not m:
                 return None
-            alvo, verbo, palavra_mon, falado = m.groups()
-        numero = self._monitor_falado(falado, bool(palavra_mon))
+            alvo, verbo, resto = m.groups()
+            _, numero = self._extrair_monitor(resto)
         if not numero:
             return None
+        alvo = alvo.strip()
         separar = bool(re.match(r"(separa|tira|destaca)", verbo))
         sozinha = r"\s+(desse|deste|do|da|dessa|desta) (navegador|janela|brave|chrome)$|\s+sozinh[ao]$"
         if re.search(sozinha, alvo) or re.match(r"(so|somente|apenas) ", alvo):

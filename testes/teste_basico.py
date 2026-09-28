@@ -572,6 +572,21 @@ ped, mov = mover("Manda o Spotify pro monitor AOC")
 ok(mov == [2], f"“Manda o Spotify pro monitor AOC”: janela de programa pelo nome ({mov})")
 ped, mov = mover("Coloca o Spotify no máximo")
 ok(not mov, "“Coloca o Spotify no máximo” continua sendo volume (não é monitor)")
+# --- N2: "mover janela" sem preposição antes do "monitor" (fala corrida) e com o número/nome ANTES da palavra "monitor"
+ped, mov = mover("Joga o YouTube monitor 2")
+ok(("focar", 2) in ped and mov == [2], f"“Joga o YouTube monitor 2” (sem “pro” no meio) ({ped} {mov})")
+ped, mov = mover("Mover YouTube monitor 2")
+ok(("focar", 2) in ped and mov == [2], f"“Mover YouTube monitor 2” (sem “pro” no meio) ({ped} {mov})")
+ped, mov = mover("Transfere a janela do YouTube pro monitor secundário")
+ok(("focar", 2) in ped and mov == [2], f"“Transfere a janela do YouTube pro monitor secundário” ({ped} {mov})")
+ped, mov = mover("Transfere a tela do YouTube para o segundo monitor")
+ok(("focar", 2) in ped and mov == [2], f"“...para o segundo monitor” (nome ANTES da palavra “monitor”) ({ped} {mov})")
+ped, mov = mover("Passa a janela do YouTube pro monitor secundário")
+ok(("focar", 2) in ped and mov == [2], f"“Passa a janela do YouTube pro monitor secundário” ({ped} {mov})")
+ped, mov = mover("Joga o YouTube pro segundo monitor")
+ok(("focar", 2) in ped and mov == [2], f"“...pro segundo monitor” (nome ANTES da palavra “monitor”) ({ped} {mov})")
+ped, mov = mover("Manda a Netflix pro terceiro monitor")
+ok(("focar", 1) in ped and mov == [3], f"“Manda a Netflix pro terceiro monitor” ({ped} {mov})")
 del ex.ponte
 
 # --- YouTube: o video certo da tela pelo canal ou pelo titulo -------------------------------

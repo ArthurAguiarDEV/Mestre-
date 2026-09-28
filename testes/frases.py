@@ -151,6 +151,18 @@ FRASES = [
     ("Mestre, quero que você jogue a Netflix desse navegador para o monitor 2 e o YouTube deixe no meu principal",
      "_cmd_mover"),
     ("Mestre, coloca o Spotify no monitor principal", "_cmd_mover"),
+    # --- mover janela: sem preposição antes do "monitor" (fala corrida) ---
+    ("Mestre, joga o YouTube monitor 2", "_cmd_mover"),
+    ("Mestre, mover YouTube monitor 2", "_cmd_mover"),
+    ("Mestre, transfere a janela do YouTube pro monitor secundário", "_cmd_mover"),
+    ("Mestre, transfere a tela do YouTube para o segundo monitor", "_cmd_mover"),
+    ("Mestre, passa a janela do YouTube pro monitor secundário", "_cmd_mover"),
+    # --- mover janela: "segundo/terceiro monitor" (o número/nome vem ANTES da palavra monitor) ---
+    ("Mestre, joga o YouTube pro segundo monitor", "_cmd_mover"),
+    ("Mestre, manda a Netflix pro terceiro monitor", "_cmd_mover"),
+    # --- armadilha: "abre" com monitor continua ABRINDO, não movendo ---
+    ("Mestre, abre o YouTube no monitor 2", "_cmd_youtube"),
+    ("Mestre, abre a Netflix no monitor 3", "_cmd_abrir"),
     # --- YouTube (controle) ---
     ("Mestre, tela cheia", "_cmd_youtube_controle"),
     ("Mestre, coloca em tela cheia", "_cmd_youtube_controle"),
