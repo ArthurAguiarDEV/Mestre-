@@ -54,11 +54,19 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | Toque um vídeo/podcast com alguém dizendo "Mestre, ..." perto do microfone | NÃO executa (a voz não é a sua) | (ignorado, sem comando) |
 | Fale você mesmo o mesmo comando logo depois | Executa normalmente | (o comando falado) |
 
+### Voz natural: um servidor só
+
+| Frase / ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| Com o Assessor ligado e a voz "Natural" escolhida, abra o painel > Voz e clique "Testar" | Não sobe um segundo processo do servidor da voz natural (confira no Gerenciador de Tarefas: só um `python.exe` de `modelos/voz_natural`) | (painel) |
+| `Mestre, reinicia` com a voz "Natural" escolhida | Assim que liga, fala com a Kokoro/Edge enquanto a Natural carrega (uns 60 s na 1ª vez); depois que ela fica pronta (painel > Voz mostra "ligada"), as falas seguintes já saem na voz Natural | (o comando falado) |
+| (painel) Voz > Natural > "Reinstalar" | Encerra sozinho o servidor antigo antes de baixar de novo (não trava em "Failed to remove ~orch") | (painel) |
+
 ### Outras novidades
 
 | Frase / ação | O que deve acontecer | Comando esperado |
 |---|---|---|
-| (automático) `venv\Scripts\python -m testes.teste_basico` | Linha "Nenhum erro escondido nos botões" fecha OK, teste completo 177 de 177 | (teste automático) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Linha "Nenhum erro escondido nos botões" fecha OK, teste completo 228 de 228 | (teste automático) |
 | (visual) olhe o ícone perto do relógio (bandeja) | Ícone novo, na cor escolhida em Aparência | (bandeja) |
 | (painel) abra o painel, ensine uma rotina nova por voz SEM fechar o painel, depois clique Salvar no painel | A rotina nova continua no config.yaml; uma rotina que você apagar no painel continua apagada | (painel) |
 | (painel) Sistema > Validar atualização → "Só novidades" → Começar; fale a frase que aparece; marque ✅/❌ (no ❌ diga "o certo era") → Parar | Mostra OUVI / ENTENDI (com o comando) / FIZ de cada frase e sugere ✅/❌; no fim cria `exportacoes/validacao_AAAA-MM-DD_HHMM.md` e cada ❌ vira FEEDBACK no MELHORIAS.md | (painel) |

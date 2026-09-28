@@ -30,6 +30,9 @@ VENV = PASTA / "venv"
 REFERENCIAS = PASTA / "referencias"
 MARCA = PASTA / "instalado.ok"
 PORTA = 47633
+PASTA_LOGS = PASTA_PROJETO / "logs"
+ARQUIVO_PID = PASTA_LOGS / "voz_natural.pid"   # pid de quem esta rodando (usado ao reinstalar)
+PASTA_TRAVA = PASTA_LOGS / "voz_natural.trava"   # mutex entre PROCESSOS (painel e Assessor); mkdir e atomico
 VOZES = {"antonio": "Antônio (timbre da voz da Microsoft)", "francisca": "Francisca (timbre da voz da Microsoft)",
          "meu_audio": "Um áudio meu (10 segundos)", "padrao": "Padrão do modelo (sotaque de fora)"}
 VOZ_PADRAO = "antonio"
@@ -77,6 +80,9 @@ def instalar(progresso=None) -> str:
     PASTA.mkdir(parents=True, exist_ok=True)
     diario = PASTA_PROJETO / "logs" / "voz_natural_instalacao.log"
     diario.parent.mkdir(exist_ok=True)
+    if instalado():   # reinstalando: encerra o servidor antigo antes (senao o torch fica preso)
+        progresso("Encerrando o servidor antigo...")
+        parar(matar_todos=True)
     py = str(python_do_ambiente())
     indice = "https://download.pytorch.org/whl/" + ("cu124" if tem_placa_nvidia() else "cpu")
     passos = [("Criando o ambiente separado...", [_python_base(), "-m", "venv", str(VENV)]),
@@ -121,28 +127,89 @@ def instalar(progresso=None) -> str:
     return "O modelo demorou demais para baixar. Tente de novo mais tarde (o que já baixou fica)."
 
 
+def _adquirir_trava(tempo: float = 10.0) -> bool:
+    """Mutex entre PROCESSOS (painel e Assessor podem chamar iniciar() ao mesmo tempo):
+    criar uma pasta e atomico no Windows, entao so quem consegue criar "ganha" a vez."""
+    PASTA_LOGS.mkdir(parents=True, exist_ok=True)
+    fim = time.time() + tempo
+    while True:
+        try:
+            PASTA_TRAVA.mkdir()
+            return True
+        except FileExistsError:
+            try:
+                if time.time() - PASTA_TRAVA.stat().st_mtime > 15:
+                    PASTA_TRAVA.rmdir()   # trava presa (o processo que a criou morreu): destrava sozinho
+                    continue
+            except OSError:
+                pass
+            if time.time() > fim:
+                return False
+            time.sleep(0.1)
+
+
+def _soltar_trava() -> None:
+    try:
+        PASTA_TRAVA.rmdir()
+    except OSError:
+        pass
+
+
 def iniciar() -> bool:
-    """Liga o servidor da voz (se instalado e ainda desligado)."""
+    """Liga o servidor da voz (se instalado e ainda desligado). So um por vez, mesmo com o painel
+    e o Assessor chamando ao mesmo tempo: a trava de pasta (`_adquirir_trava`) serializa a
+    checagem-e-ligacao entre processos, e so solta depois que a porta ja responde (assim quem
+    estava esperando a trava encontra o servidor pronto e nao sobe outro)."""
     global _servidor
     if not instalado():
         return False
     with _trava:
         if _servidor and _servidor.poll() is None:
             return True
-        if estado(forcar=True).get("placa"):   # ja tem um rodando (ex.: de outro Mestre)
+    if not _adquirir_trava():
+        return bool(estado(forcar=True))   # alguem mais esta cuidando disso: confere pela porta mesmo assim
+    try:
+        if estado(forcar=True):   # ja tem um rodando (deste processo ou de outro: painel, Assessor...)
             return True
-        ambiente = dict(os.environ, HF_HOME=str(PASTA / "hf"), PYTHONIOENCODING="utf-8")
-        diario = open(PASTA_PROJETO / "logs" / "voz_natural_servidor.log", "a", encoding="utf-8")
-        _servidor = subprocess.Popen([str(python_do_ambiente()), str(PASTA_PROJETO / "app" / "voz_natural_servidor.py"),
-                                      str(PORTA), str(os.getpid())], cwd=str(PASTA), env=ambiente,
-                                     stdout=diario, stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
+        with _trava:
+            ambiente = dict(os.environ, HF_HOME=str(PASTA / "hf"), PYTHONIOENCODING="utf-8")
+            diario = open(PASTA_PROJETO / "logs" / "voz_natural_servidor.log", "a", encoding="utf-8")
+            _servidor = subprocess.Popen([str(python_do_ambiente()), str(PASTA_PROJETO / "app" / "voz_natural_servidor.py"),
+                                          str(PORTA), str(os.getpid())], cwd=str(PASTA), env=ambiente,
+                                         stdout=diario, stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
+            ARQUIVO_PID.write_text(str(_servidor.pid))
         log.info("Voz natural: servidor ligado (carregando o modelo)")
+        fim = time.time() + 10
+        while time.time() < fim and not estado(forcar=True):
+            time.sleep(0.2)
         return True
+    finally:
+        _soltar_trava()
 
 
-def parar() -> None:
+def parar(matar_todos: bool = False) -> None:
+    """Desliga o servidor. matar_todos=True (antes de reinstalar): tambem mata um servidor ligado
+    por OUTRO processo (painel ou Assessor), lendo o pid em logs/voz_natural.pid — senao os
+    arquivos do torch ficam presos e o pip nao consegue trocar ("Failed to remove ~orch")."""
+    global _servidor
     if _servidor and _servidor.poll() is None:
         _servidor.kill()
+    _servidor = None
+    if not matar_todos:
+        return
+    if ARQUIVO_PID.exists():
+        try:
+            pid = int(ARQUIVO_PID.read_text().strip())
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, creationflags=NO_WINDOW)
+            else:
+                os.kill(pid, 9)
+        except Exception:
+            pass
+        ARQUIVO_PID.unlink(missing_ok=True)
+    fim = time.time() + 10
+    while time.time() < fim and estado(forcar=True):
+        time.sleep(0.3)
 
 
 def estado(forcar: bool = False) -> dict:

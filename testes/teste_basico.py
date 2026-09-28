@@ -786,6 +786,68 @@ for e in erros: print(e)
 pn._fechar()
 """
 
+VOZ_NATURAL_SERVIDOR = r"""
+import subprocess
+from app import voz_natural as vn
+
+vn.instalado = lambda: True   # simula "ja instalada" sem precisar do venv separado de verdade
+
+ligado = {"v": False}
+def estado_falso(forcar=False):
+    return {"pronto": False, "placa": "", "erro": ""} if ligado["v"] else {}
+vn.estado = estado_falso
+
+chamadas_popen = []
+class ProcessoFalso:
+    pid = 4242
+    def poll(self):
+        return None
+
+def popen_falso(*a, **k):
+    chamadas_popen.append(1)
+    ligado["v"] = True   # simula o servidor abrindo a porta assim que "liga"
+    return ProcessoFalso()
+subprocess.Popen = popen_falso
+
+r1 = vn.iniciar()   # nada rodando ainda: sobe UM servidor
+print("PRIMEIRA", r1, len(chamadas_popen))
+
+r2 = vn.iniciar()   # mesmo processo chamando de novo: reusa, nao sobe outro
+print("SEGUNDA", r2, len(chamadas_popen))
+
+vn._servidor = None   # simula um SEGUNDO processo (so tem a variavel em memoria zerada; a "porta" continua no ar)
+r3 = vn.iniciar()
+print("TERCEIRO_PROCESSO", r3, len(chamadas_popen))
+
+print("VOZ_NATURAL_SERVIDOR_OK", r1 and r2 and r3 and len(chamadas_popen) == 1)
+"""
+
+VOZ_NATURAL_RESERVA = r"""
+from pathlib import Path
+from app.voz import Voz
+from app import voz_natural as vn
+
+vn.instalado = lambda: True
+vn.pronta = lambda: False   # ainda carregando (nao aquecida)
+vn.iniciar = lambda: True   # (nao sobe nada de verdade neste teste)
+
+voz = Voz({"voz": {"motor": "natural"}}, mudo=True)
+voz._motor_pronto = lambda m: m in ("natural", "kokoro", "edge")
+
+tentados = []
+def gerar_stub(parte, motor=None):
+    motor = motor or voz.motor
+    tentados.append(motor)
+    if motor == "natural":
+        raise RuntimeError("voz natural ainda carregando")   # e o que voz_natural.gerar() faria de verdade
+    return Path("fake.wav"), True
+voz._gerar = gerar_stub
+
+arquivo, temporario = voz._gerar_com_reserva("Oi, tudo bem?")
+print("MOTORES_TENTADOS", tentados)
+print("VOZ_NATURAL_RESERVA_OK", tentados == ["natural", "kokoro"] and str(arquivo) == "fake.wav")
+"""
+
 MIGRACAO_NOMES = r"""
 from app import configuracao
 d = configuracao.carregar()
@@ -1316,6 +1378,14 @@ def main() -> int:
         conferir("RESERVA ['edge']" in saida or "RESERVA ['kokoro', 'edge']" in saida,
                  "Voz natural não instalada: ele fala com a Kokoro/Edge", saida[-600:])
         conferir("ERROS_TELA 0" in saida, "Página Voz nova sem erros na tela", saida[-1500:])
+
+        print("\n[Voz natural: um servidor só]")
+        cod, saida = rodar(pasta, VOZ_NATURAL_SERVIDOR)
+        conferir("VOZ_NATURAL_SERVIDOR_OK True" in saida,
+                 "Painel e Assessor chamando ao mesmo tempo não sobem dois servidores", saida[-800:])
+        cod, saida = rodar(pasta, VOZ_NATURAL_RESERVA)
+        conferir("VOZ_NATURAL_RESERVA_OK True" in saida,
+                 "Enquanto a voz natural ainda carrega, fala com a Kokoro/Edge (sem esperar)", saida[-800:])
 
         print("\n[Nome e palavra novos em todo lugar]")
         cod, saida = rodar(pasta, NOMES)
