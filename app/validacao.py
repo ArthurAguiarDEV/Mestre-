@@ -448,6 +448,16 @@ def salvar_pedido_correcao(pedido: str, agora: datetime | None = None, pasta: Pa
     return arquivo
 
 
+def prompt_curto(arquivo: Path) -> str:
+    """Frase curta para o terminal: so letras, espaco, ponto e barra (o Windows Terminal quebra o
+    comando em ';' e o cmd se atrapalha com aspas). O pedido completo fica no arquivo."""
+    try:
+        caminho = Path(arquivo).relative_to(PASTA_PROJETO).as_posix()
+    except ValueError:
+        caminho = Path(arquivo).as_posix()
+    return f"Leia o arquivo {caminho} e faca o que ele pede"
+
+
 def localizar_claude() -> str | None:
     """O executavel do Claude Code: no PATH (claude/claude.exe) ou em ~/.local/bin/claude.exe. None = nao achou."""
     exe = shutil.which("claude") or shutil.which("claude.exe")

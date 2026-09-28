@@ -1090,7 +1090,8 @@ ok(texto_pedido.startswith("Corrija as falhas do relatório de validação expor
    f"Validação: pedido de correção no texto certo ({texto_pedido[:90]!r})")
 cmd = pn._val_ultimo_comando_claude
 ok(cmd is not None and "-p" not in cmd
-   and not any("--dangerously" in c or "--permission" in c for c in cmd) and texto_pedido.strip() in cmd,
+   and not any("--dangerously" in c or "--permission" in c for c in cmd)
+   and cmd[-1].startswith("Leia o arquivo exportacoes/pedido_correcao_") and not any(ch in cmd[-1] for ch in ';"&|'),
    f"Validação: comando do Claude interativo, sem -p/flags de permissão ({cmd})")
 
 avisos = []

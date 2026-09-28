@@ -2516,8 +2516,8 @@ class Painel(ctk.CTk):
         if not validacao.relatorio_tem_falhas(relatorio):
             return
         pedido = validacao.pedido_de_correcao(relatorio)
-        validacao.salvar_pedido_correcao(pedido)
-        comando = validacao.comando_para_abrir_claude(pedido)
+        arquivo = validacao.salvar_pedido_correcao(pedido)
+        comando = validacao.comando_para_abrir_claude(validacao.prompt_curto(arquivo))
         self._val_ultimo_comando_claude = comando   # para o teste automatico conferir
         if sistema.abrir_com_comando(comando, PASTA_PROJETO):
             return
