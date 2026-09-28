@@ -59,8 +59,10 @@ modelo_whisper = (cfg.get("ouvido") or {}).get("modelo_whisper", "small")
 
 try:
     from app.audio import Transcritor
-    Transcritor(modelo=modelo_whisper, dispositivo="cpu")
+    transcritor = Transcritor(modelo=modelo_whisper, dispositivo="cpu")
     print("OK Whisper liga so com o cache local (sem internet)")
+    gasto = transcritor.aquecer()
+    print("OK Whisper aquece ao ligar (1 s de silencio)" if gasto > 0 else "FALHOU Whisper aquece ao ligar::aquecer devolveu 0")
 except Exception as erro:
     print(f"FALHOU Whisper liga so com o cache local (sem internet)::{erro!r}")
 
@@ -1182,6 +1184,170 @@ print("FIM_CAPTACAO")
 """
 
 
+FALA_FLUIDA = r"""
+# Fala em segundo plano, interromper com a palavra, frase pela metade e frase a frase.
+# A voz e a de verdade (fila, linha separada, parar), mas "gerar" e "tocar" sao simulados: tocar = esperar N s.
+import os, sys, tempfile, threading, time
+os.environ["MESTRE_SEGREDOS"] = tempfile.mkdtemp()
+from pathlib import Path
+import numpy as np
+from app import estado, locutor, memoria
+from app.audio import TAXA, BLOCO, Segmentador
+from app.ouvido import Ouvido, termina_no_meio, espera_continuacao, ESPERA_CONTINUACAO
+from app.voz import Voz
+
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+def tom(seg, freq=150):
+    t = np.arange(int(seg * TAXA)) / TAXA
+    return (np.sin(2 * np.pi * freq * t) * 8000).astype(np.int16).tobytes()
+def silencio(seg): return bytes(2 * int(seg * TAXA))
+def ouvidas(desde): return [x for x in memoria.ouvidas(300) if x.get("ts", 0) >= desde - 0.01]
+
+class Falso:   # "Whisper": devolve as frases do roteiro, na ordem
+    def __init__(self, frases): self.frases = list(frases)
+    def transcrever(self, audio, **k): return self.frases.pop(0) if self.frases else ""
+
+def voz_simulada(segundos=3.0, geracao_lenta=0.0):
+    # Voz de verdade (fila + linha separada + parar), sem som: "tocar" espera `segundos` (ou ate parar()).
+    voz = Voz({"voz": {"motor": "kokoro"}}, mudo=False)
+    voz.gerados, voz.tocados, voz.cortes = [], [], []
+    def gerar(parte):
+        time.sleep(geracao_lenta); voz.gerados.append((parte, time.time())); return Path("falso.wav"), False
+    def tocar(arquivo):
+        g = voz._geracao; voz.tocados.append(time.time()); fim = time.time() + segundos
+        while time.time() < fim:
+            if g != voz._geracao:
+                voz.cortes.append(time.time()); return
+            time.sleep(0.01)
+    voz._gerar_com_reserva, voz._tocar = gerar, tocar
+    return voz
+
+def novo(frases, voz=None, falas=()):
+    o = object.__new__(Ouvido)
+    o.ganho, o.acordar_tela, o._vigia, o.diagnostico = 1.0, False, None, False
+    o.variacoes, o.espera_palavra = ["assessor"], 2.5
+    o.verificador = locutor.Verificador(False)
+    o.transcritor = Falso(frases)
+    o.voz = voz
+    o._preparar_laco()
+    falas, chamadas = list(falas), []
+    def executar(comando, frase, seguimento=False):
+        chamadas.append((comando, frase, seguimento))
+        if voz is not None and falas:
+            voz.falar(falas.pop(0))
+        return 8
+    seg = Segmentador(500, 0.7)
+    def tocar(audio, eco=None):   # (eco=None: como o microfone de verdade, "eco" = ele estava falando)
+        for i in range(0, len(audio), BLOCO * 2):
+            e = eco if eco is not None else bool(voz is not None and voz.falando.is_set())
+            o._bloco(audio[i:i + BLOCO * 2], e, seg, executar)
+    estado.atualizar(conversa_ate=0.0, ditado_desde=0.0, descanso=False)
+    return o, tocar, chamadas
+
+# --- 1) Fala em segundo plano: o comando volta na hora e a escuta continua -------------------------
+inicio = time.time()
+voz = voz_simulada(3.0)
+o, tocar, ch = novo(["Assessor, que horas são?", "Então tá bom, vou almoçar.", "Assessor, abre o Spotify."],
+                    voz=voz, falas=["São dez horas e trinta minutos. Hora de um café."])
+t0 = time.time(); tocar(tom(1.0)); tocar(silencio(1.0)); gasto = time.time() - t0
+time.sleep(0.2)
+ok(len(ch) == 1 and gasto < 1.0 and voz.falando.is_set() and voz.tocados,
+   f"Fala em segundo plano: o comando volta na hora e a fala continua tocando ({gasto:.2f}s)")
+tocar(tom(1.0), eco=True); tocar(silencio(0.8), eco=True)
+reg = ouvidas(inicio)
+ok(len(ch) == 1 and voz.falando.is_set() and any(r.get("motivo") == "falando" and r.get("texto", "").startswith("Então")
+                                                 for r in reg),
+   "Durante a fala: frase sem a palavra é descartada com o motivo 'falando' (e a escuta continua)")
+# --- 2) Palavra de ativacao durante a fala: corta o som e executa ----------------------------------
+t0 = time.time(); tocar(tom(1.0), eco=True); tocar(silencio(0.8), eco=True)
+ok(voz.cortes and not voz.falando.is_set() and voz.cortes[0] - t0 < 0.5,
+   "Interromper: 'Assessor, abre o Spotify' durante a fala corta o som na hora")
+ok(len(ch) == 2 and ch[1][0] == "abre o spotify" and ch[1][2] is False, f"Interromper: e depois executa o comando {ch}")
+
+inicio = time.time()
+voz = voz_simulada(3.0)
+o, tocar, ch = novo(["Assessor, que horas são?", "Assessor, para."], voz=voz, falas=["São dez horas. Bom trabalho."])
+tocar(tom(1.0)); tocar(silencio(1.0)); time.sleep(0.2)
+tocar(tom(0.8), eco=True); tocar(silencio(0.8), eco=True)
+ok(voz.cortes and not voz.falando.is_set() and len(ch) == 1
+   and any(r.get("motivo") == "interrompeu a fala" for r in ouvidas(inicio)),
+   f"Interromper: 'Assessor, para' só para de falar (não vira comando) {ch}")
+# a janela de conversa conta do FIM da fala (ele falou 3 s, a janela de 8 s nao pode ter corrido)
+voz = voz_simulada(0.6)
+o, tocar, ch = novo(["Assessor, que horas são?"], voz=voz, falas=["São dez horas."])
+tocar(tom(1.0)); tocar(silencio(1.0)); resto_antes = o._conversa_ate - time.time()
+time.sleep(0.4); tocar(silencio(0.2), eco=True)
+ok(o._conversa_ate - time.time() >= resto_antes - 0.15, "Janela de conversa não corre enquanto ele fala")
+voz.esperar(3)
+
+# --- 3) Frase que termina no meio espera a continuacao ---------------------------------------------
+ok(termina_no_meio("Assessor, abre o site do") and termina_no_meio("Eu queria...") and termina_no_meio("Porém, eu gostaria,")
+   and not termina_no_meio("Abre o YouTube.") and not termina_no_meio("O que?"),
+   "Frase pela metade: vírgula, reticências e 'do/que/e' no fim são reconhecidos")
+ok(espera_continuacao({}) == ESPERA_CONTINUACAO and espera_continuacao({"ouvido": {"espera_continuacao": 0}}) == 0,
+   "Frase pela metade: config antigo usa a espera padrão (0 desliga)")
+inicio = time.time()
+o, tocar, ch = novo(["Assessor, abre o site do", "YouTube."])
+tocar(tom(1.0)); tocar(silencio(1.0))
+ok(ch == [], "Frase terminando em 'do' ainda não foi executada (espera a continuação)")
+tocar(tom(0.8)); tocar(silencio(2.0))
+ok(ch == [("abre o site do youtube", "Assessor, abre o site do YouTube.", False)],
+   f"Frase terminando em 'do' junta com a próxima {ch}")
+ok(any(str(r.get("motivo", "")).startswith("terminou no meio") for r in ouvidas(inicio))
+   and any(r.get("junto_da_anterior") for r in ouvidas(inicio)), "ouvido.jsonl mostra a espera e a frase juntada")
+o, tocar, ch = novo(["Assessor, eu queria...", "que você abrisse o YouTube."])
+tocar(tom(1.0)); tocar(silencio(1.5)); tocar(tom(1.2)); tocar(silencio(2.0))
+ok(len(ch) == 1 and ch[0][0] == "eu queria que voce abrisse o youtube", f"'Eu queria... que você abrisse o YouTube' = uma ordem só {ch}")
+o, tocar, ch = novo(["Assessor, abre o YouTube e"])
+tocar(tom(1.0)); tocar(silencio(3.5))
+ok(ch == [("abre o youtube e", "Assessor, abre o YouTube e", False)], f"Se a continuação não vem, vai como está {ch}")
+o, tocar, ch = novo(["Assessor, abre o YouTube."])
+tocar(tom(1.0)); tocar(silencio(1.0))
+ok(len(ch) == 1, "Frase completa não espera nada a mais")
+
+# --- 4) Frase a frase: a 1a toca antes de gerar todas; parar corta a fila inteira ------------------
+voz = voz_simulada(0.05, geracao_lenta=0.3)
+texto = ("Primeira frase bem comprida para passar de quarenta letras. Segunda frase também comprida o bastante "
+         "aqui. Terceira frase comprida para fechar o teste de agora.")
+voz.falar(texto); voz.esperar(10)
+ok(len(voz.gerados) == 3 and voz.tocados and voz.tocados[0] < voz.gerados[-1][1],
+   "Frase a frase: a 1ª frase toca antes de gerar todas")
+voz = voz_simulada(2.0, geracao_lenta=0.1)
+voz.falar(texto); voz.falar("Outra fala que estava na fila esperando a vez dela.")
+time.sleep(0.4); voz.parar(); terminou = voz.esperar(2)
+ok(terminou and not voz.falando.is_set() and len(voz.gerados) < 4 and voz.cortes,
+   f"Interromper corta a fila inteira ({len(voz.gerados)} de 4 partes geradas)")
+voz = Voz({"voz": {"motor": "kokoro", "frase_a_frase": False}}, mudo=True)
+ok(len(voz.partes(texto)) == 1, "Frase a frase desligado: o texto sai de uma vez")
+print("FIM_FALA_FLUIDA")
+"""
+
+
+SEGUIMENTO_ABRIR = r"""
+# "abrir" sem a palavra (janela de conversa) so vale se o alvo existir
+import logging
+from app.config import carregar_config
+from app.comandos import Executor
+from app.voz import Voz
+from app.vocabulario import Vocabulario
+ditos = []
+class VozTeste(Voz):
+    def falar(self, texto): ditos.append(texto)
+class SemIA:
+    ligado = False
+    def esquecer(self): pass
+cfg = carregar_config()
+ex = Executor(cfg, VozTeste(cfg, mudo=True), SemIA(), Vocabulario())
+def ok(c, nome): print(("OK " if c else "FALHOU ") + nome, flush=True)
+seg = ex.executar("e colocar isso pra eu ver pelo telegram", "E colocar isso pra eu ver pelo Telegram.", seguimento=True)
+ok(not ditos and seg == 0.0, f"Seguimento 'e colocar isso pra eu ver pelo Telegram' sem alvo não abre nem fala nada {ditos}")
+ditos.clear()
+ex.executar("abre o xyzqwk", "Assessor, abre o xyzqwk")
+ok(any("conheço" in d for d in ditos), "Com a palavra, 'abre' sem alvo ainda avisa que não conhece")
+print("FIM_SEGUIMENTO_ABRIR")
+"""
+
+
 APARENCIA = r"""
 import yaml
 import app.painel as p
@@ -1720,6 +1886,15 @@ def main() -> int:
                 conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
         if "FIM_CAPTACAO" not in saida:
             conferir(False, "Captação: o teste rodou até o fim", saida[-1500:])
+
+        print("\n[Fala em segundo plano, interromper e frase pela metade]")
+        for trecho, fim in ((FALA_FLUIDA, "FIM_FALA_FLUIDA"), (SEGUIMENTO_ABRIR, "FIM_SEGUIMENTO_ABRIR")):
+            cod, saida = rodar(pasta, trecho, espera=120)
+            for linha in saida.splitlines():
+                if linha.startswith(("OK ", "FALHOU ")):
+                    conferir(linha.startswith("OK "), linha.split(" ", 1)[1].strip(), saida[-1500:])
+            if fim not in saida:
+                conferir(False, f"{fim}: o teste rodou até o fim", saida[-1500:])
 
         print("\n[Validar atualização]")
         cod, saida = rodar(pasta, VALIDACAO, espera=120)

@@ -760,6 +760,26 @@ class Painel(ctk.CTk):
         self.var_espera_palavra = tk.DoubleVar(value=espera_apos_palavra(self.cfg))
         linha_campo(f, f"Espera depois de só “{self.palavra}” (s)", lambda p: ctk.CTkSlider(
             p, from_=0, to=5, number_of_steps=20, variable=self.var_espera_palavra))
+        from .ouvido import espera_continuacao
+        self.var_espera_cont = tk.DoubleVar(value=espera_continuacao(self.cfg))
+        linha_campo(f, "Espera se a frase parar no meio (s)", lambda p: ctk.CTkSlider(
+            p, from_=0, to=3, number_of_steps=12, variable=self.var_espera_cont))
+        ctk.CTkLabel(f, text="Frase que termina em vírgula, reticências ou “do”, “que”, “e”, “pra”... espera a "
+                            "continuação e junta as duas numa ordem só (0 = desligado).",
+                     anchor="w", justify="left", wraplength=620, text_color=tema.TEXTO_FRACO).pack(fill="x", padx=(32, 18))
+        sv = self._sec("voz")
+        self.var_fala_fundo = tk.BooleanVar(value=bool(sv.get("fala_em_segundo_plano", True)))
+        linha_campo(f, "Ouvir enquanto fala", lambda p: ctk.CTkSwitch(
+            p, text=f"a escuta continua enquanto ele fala (só vale frase que começa com “{self.palavra}”)",
+            variable=self.var_fala_fundo))
+        self.var_interromper = tk.BooleanVar(value=bool(sv.get("interromper_com_palavra", True)))
+        linha_campo(f, f"Interromper com “{self.palavra}”", lambda p: ctk.CTkSwitch(
+            p, text=f"“{self.palavra}, para” corta a fala na hora; “{self.palavra}, abre...” corta e executa",
+            variable=self.var_interromper))
+        self.var_frase_a_frase = tk.BooleanVar(value=bool(sv.get("frase_a_frase", True)))
+        linha_campo(f, "Fala frase a frase", lambda p: ctk.CTkSwitch(
+            p, text="resposta longa começa a tocar na 1ª frase enquanto prepara as outras",
+            variable=self.var_frase_a_frase))
         self.var_max = tk.IntVar(value=int(o.get("max_frase") or 60))
         linha_campo(f, "Tamanho máximo de uma frase (s)", lambda p: ctk.CTkSlider(p, from_=15, to=180, number_of_steps=33,
                                                                                 variable=self.var_max))
@@ -1389,6 +1409,7 @@ class Painel(ctk.CTk):
             voz._tocar_original, voz._tocar = voz._tocar, lambda a: (primeira or primeira.append(time.time() - inicio),
                                                                      voz._tocar_original(a))
             voz.falar(self.texto_voz.get())
+            voz.esperar(120)   # (a fala toca em segundo plano: espera terminar para medir)
             usada = next(iter(voz._motores()), "windows")
             if self._motor_escolhido() == "natural" and not voz_natural_pronta():
                 usada = f"{voz._motores()[1] if len(voz._motores()) > 1 else 'edge'} (a natural ainda está carregando)"
@@ -2979,6 +3000,7 @@ class Painel(ctk.CTk):
             o["ganho"] = round(self.var_ganho.get(), 1)
             o["silencio_fim"] = round(self.var_silencio.get(), 1)
             o["espera_apos_palavra"] = round(float(self.var_espera_palavra.get()), 1)
+            o["espera_continuacao"] = round(float(self.var_espera_cont.get()), 2)
             o["gravar_diagnostico"] = bool(self.var_diag.get())
             o["so_minha_voz"] = bool(self.var_so_minha_voz.get())
             o["exigencia_voz"] = round(float(self.var_exig_voz.get()), 2)
@@ -2992,6 +3014,9 @@ class Painel(ctk.CTk):
             v = configuracao.secao(c, "voz")
             v["motor"] = configuracao.aspas(self._motor_escolhido())
             v["fluida"] = bool(self.var_fluida.get())
+            v["fala_em_segundo_plano"] = bool(self.var_fala_fundo.get())
+            v["interromper_com_palavra"] = bool(self.var_interromper.get())
+            v["frase_a_frase"] = bool(self.var_frase_a_frase.get())
             v["voz_edge"] = configuracao.aspas(str(self.var_voz.get()))
             v["voz_kokoro"] = configuracao.aspas(self._voz_kokoro_escolhida())
             v["voz_azure"] = configuracao.aspas(str(self.var_voz_azure.get()).strip() or "pt-BR-AntonioNeural")

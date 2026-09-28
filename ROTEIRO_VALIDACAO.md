@@ -14,6 +14,19 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Conversa fluida: ouvir enquanto fala, interromper e frase pela metade
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, que horas são` e, no meio da resposta, `Mestre, abre o Spotify` | A fala para na hora e o Spotify abre | `_cmd_abrir` |
+| `Mestre, me conta uma curiosidade` e, no meio da resposta, `Mestre, para` | Só para de falar (não executa nada) | (ignorado: só parou de falar) |
+| `Mestre, que horas são` e, enquanto ele responde, `bom dia pessoal` (sem a palavra) | Continua falando; a frase é ignorada (motivo "falando" no ouvido.jsonl) | (ignorado, sem comando) |
+| `Mestre, eu queria…` (pausa de 1 s) `…que você abrisse o YouTube` | Uma ordem só: abre o YouTube | `_cmd_youtube` |
+| `Mestre, abre o site do` (pausa de 1 s) `YouTube` | Junta as duas partes e abre o YouTube | `_cmd_youtube` |
+| Primeira frase logo depois de ligar: `Mestre, que horas são` | Responde tão rápido quanto as outras (o Whisper já foi aquecido) | `_cmd_hora_data` |
+| `Mestre, que horas são` e logo depois (sem a palavra) `e colocar isso pra eu ver pelo Telegram` | Não diz "Não conheço..." nem abre nada | (ignorado, sem comando) |
+| Painel > Áudio > Ajustes de captação: "Ouvir enquanto fala", "Interromper com …", "Fala frase a frase" e "Espera se a frase parar no meio" | Os campos aparecem, salvam e valem depois de reiniciar | (painel) |
+
 ### Captação da voz (não cortar depois de "Assessor")
 
 | Frase | O que deve acontecer | Comando esperado |

@@ -201,6 +201,8 @@ class Executor:
         self._gravacao: dict | None = None
         self._rotina_nova: dict | None = None
         self._n_atendidos = 0   # quantos comandos ja rodaram (para saber se uma frase virou comando)
+        self._seguimento = False       # a frase veio sem a palavra (conversa): "abre" sem alvo e ignorado
+        self._ignorar_seguimento = False
         a = cfg.get("assistente") or {}
         p = cfg.get("personalidade") or {}
         self.nome = a.get("nome") or "Mestre"
@@ -317,7 +319,16 @@ class Executor:
             log.info("Entendi como: %r", t)
         t = self._separar_monitor(t)
         self._entendi = t
-        if self._tentar_comandos(t):
+        self._seguimento, self._ignorar_seguimento = bool(seguimento), False
+        try:
+            atendeu = self._tentar_comandos(t)
+        finally:
+            self._seguimento = False
+        if atendeu and self._ignorar_seguimento:   # ex.: "e colocar isso pra eu ver pelo telegram" (sem a palavra)
+            self._ignorar_seguimento = False
+            self._rota = "ignorado (abrir sem alvo na conversa)"
+            return 0.0
+        if atendeu:
             self._rota = self.ultimo_comando or "comando"
             return self._janela()
 
@@ -1146,6 +1157,7 @@ class Executor:
         if not (re.search(sozinho, t) or re.search(sozinho, puro) or re.search(com_nome, t) or re.search(com_nome, puro)):
             return False
         self.falar("despedida")
+        self.voz.esperar(10)   # (a despedida termina de tocar antes de desligar)
         self.rodando = False
         return True
 
@@ -1157,6 +1169,7 @@ class Executor:
             self.voz.falar("Recarreguei o vocabulário. Mudanças no código ou no config pedem fechar e abrir de novo.")
             return True
         self.voz.falar("Reiniciando! Volto em alguns segundos.")
+        self.voz.esperar(8)   # (a fala termina antes de o processo fechar)
         sistema.reiniciar_mestre()
         return True
 
@@ -1424,6 +1437,7 @@ class Executor:
         for i, v in enumerate(vozes, 1):
             self.voz.configurar(voz=v)
             self.voz.falar(f"Voz número {i}: {self._nome_da_voz(v)}. Fala, chefe! Bora trabalhar?")
+            self.voz.esperar(30)   # (a fala e em segundo plano: so troca a voz depois de ela tocar)
         self.voz.configurar(voz=original)
         self.voz.falar(f"Pra escolher, fala por exemplo: {{palavra}}, usa a voz do {self._nome_da_voz(vozes[-1])}.")
 
@@ -3217,11 +3231,13 @@ class Executor:
     def _cmd_tela(self, t: str) -> bool:
         if contem(t, "bloqueia o computador"):
             self.voz.falar("Bloqueando. Até já!")
+            self.voz.esperar(6)
             sistema.bloquear()
             return True
         if contem(t, "desliga a tela"):
             self.voz.falar(random.choice(["Apagando a tela. É só me chamar.", "Luz apagada. Tô de ouvido ligado."]))
-            time.sleep(1)
+            self.voz.esperar(8)
+            time.sleep(0.5)
             sistema.desligar_tela()
             return True
         if contem(t, "liga a tela"):
@@ -3332,6 +3348,10 @@ class Executor:
                 return True
             self.voz.falar(random.choice([f"Abrindo {chave_site}.", f"Indo pro {chave_site}.", "Já é!"]))
             sistema.abrir_site(sites[chave_site])
+        elif self._seguimento:
+            # Sem a palavra de ativacao (conversa ao redor) e o alvo nao existe: ignora em silencio
+            log.info("Seguimento com 'abre' sem alvo conhecido (%r): ignorado em silêncio", nome)
+            self._ignorar_seguimento = True
         else:
             self.voz.falar(f"Não conheço {nome}. Coloca ele na lista de programas ou sites do config que eu aprendo.")
         return True

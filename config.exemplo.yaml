@@ -59,6 +59,8 @@ ouvido:
   silencio_fim: 0.7
   # "Assessor" sozinho: espera ate estes segundos pelo resto da frase antes de responder (0 = responde na hora)
   espera_apos_palavra: 2.5
+  # Frase que termina no meio (virgula, reticencias, "do", "que", "e"...) espera a continuacao (0 = desligado)
+  espera_continuacao: 1.5
   gravar_diagnostico: true
   dispositivo: "gpu"
   max_frase: 120
@@ -2169,6 +2171,12 @@ voz:
     - "it-IT-GiuseppeMultilingualNeural"
     - "pt-PT-DuarteNeural"
   fluida: true
+  # Fala em segundo plano: a escuta continua enquanto ele fala (so vale frase que comeca com a palavra)
+  fala_em_segundo_plano: true
+  # "Assessor, para" corta a fala na hora; "Assessor, abre o Spotify" corta e executa
+  interromper_com_palavra: true
+  # Resposta longa comeca a tocar na 1a frase enquanto prepara as outras
+  frase_a_frase: true
   voz_kokoro: "pm_alex"
   voz_azure: "pt-BR-AntonioNeural"
 central:

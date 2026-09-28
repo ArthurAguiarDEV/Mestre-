@@ -427,6 +427,14 @@ Depois de cada resposta, o Mestre **continua ouvindo por 10 segundos** sem preci
 > **Você:** "e desliga a tela daqui a pouco…" ← ainda dentro da janela
 
 Frases que ele não entende durante essa janela são **ignoradas em silêncio** (para não responder à TV). Ajuste em `config.yaml` > `conversa` > `janela_segundos`.
+Sem o "Mestre", um "abre ..." só vale se ele conhecer o que é para abrir; senão ignora em silêncio (ex.: "e colocar isso pra eu ver pelo Telegram" no meio de uma conversa).
+A janela de 10 segundos só começa a contar **quando ele termina de falar**.
+
+### 12.2b Conversa fluida: interromper e frase pela metade
+- **Ele ouve enquanto fala.** Pode chamar no meio da resposta: "Mestre, para" faz ele **calar na hora**; "Mestre, abre o Spotify" faz ele parar **e** abrir. Enquanto ele fala, só vale frase que **começa com "Mestre"** (o resto é a própria voz dele saindo da caixa de som e é ignorado). Com fone de ouvido funciona melhor ainda; com caixa de som ajuda ligar "Responder só à minha voz" (Etapa 17.1).
+- **Resposta longa começa logo:** ele fala a 1ª frase enquanto prepara as outras.
+- **Frase pela metade espera o resto:** se você para no meio ("Mestre, eu queria…", "abre o site do…"), ele espera mais um pouquinho (1,5 s) e junta com o que vier depois, em vez de executar pedaços.
+- Tudo isso fica no **painel > Áudio > Ajustes de captação**: "Ouvir enquanto fala", "Interromper com …", "Fala frase a frase" e "Espera se a frase parar no meio" (0 desliga). Salve e diga "Mestre, reinicia".
 
 ### 12.3 Atalhos ensinados por voz
 Dois jeitos:

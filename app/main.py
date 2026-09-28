@@ -99,10 +99,12 @@ def main() -> None:
 
     if args.texto:
         modo_texto(executor, variacoes)
+        voz.esperar(15)
         return
     if args.comando:
         achou, comando = extrair_comando(args.comando, variacoes)
         executor.executar(comando if achou else args.comando, args.comando)
+        voz.esperar(60)   # (a fala roda em segundo plano: termina de falar antes de sair)
         os._exit(0)
 
     ARQUIVO_PID.write_text(str(os.getpid()))

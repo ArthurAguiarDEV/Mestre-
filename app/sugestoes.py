@@ -143,7 +143,8 @@ def analisar(historico: list[dict], ouvidas: list[dict], desde: float, palavra: 
     grafias: "OrderedDict[str, list]" = OrderedDict()
     for o in ouv:
         motivo = str(o.get("motivo") or "")
-        if not motivo or motivo.startswith("só a palavra"):
+        # (esperas e interrupcoes nao sao descarte; "falando" = em geral o eco da propria voz dele)
+        if not motivo or motivo.startswith(("só a palavra", "terminou no meio", "interrompeu", "falando")):
             continue
         texto = str(o.get("texto") or "")
         if motivo.startswith("sem a palavra"):

@@ -22,6 +22,15 @@ log = logging.getLogger(__name__)
 TAXA = 16000            # amostras por segundo
 BLOCO = 1600            # 0,1 segundo por bloco
 PASTA_DIAGNOSTICO = PASTA_LOGS / "audios"
+# Ligado enquanto o Whisper transcreve: a voz natural (placa de video) espera, para nao disputar a placa.
+TRANSCREVENDO = threading.Event()
+
+
+def esperar_whisper(limite: float = 10.0) -> None:
+    """Espera o Whisper terminar a transcricao em andamento (no maximo `limite` segundos)."""
+    fim = time.time() + limite
+    while TRANSCREVENDO.is_set() and time.time() < fim:
+        time.sleep(0.05)
 
 
 def nivel(bloco: bytes | np.ndarray) -> float:
@@ -93,6 +102,15 @@ class Segmentador:
     def duracao_atual(self) -> float:
         """Segundos ja gravados da frase em andamento (0 se ninguem esta falando)."""
         return len(self._frase) * BLOCO / TAXA if self.falando else 0.0
+
+    def fechar(self, minimo: float = 0.0) -> bytes | None:
+        """Encerra a frase em andamento agora (sem esperar a pausa). None se vazia ou mais curta que
+        `minimo` segundos (e que o minimo do Segmentador)."""
+        frase = list(self._frase) if self.falando else []
+        self.reiniciar()
+        if len(frase) < max(self._min_blocos, int(minimo * TAXA / BLOCO)):
+            return None
+        return b"".join(frase)
 
     def reiniciar(self) -> None:
         self.falando = False
@@ -179,14 +197,40 @@ class Transcritor:
         from faster_whisper import decode_audio
 
         with self._trava:
-            segmentos, _ = self.modelo.transcribe(
-                decode_audio(str(caminho), sampling_rate=16000), language="pt", beam_size=5, best_of=5,
-                initial_prompt=self.prompt, condition_on_previous_text=True, vad_filter=True)
-            return " ".join(s.text for s in segmentos).strip()
+            TRANSCREVENDO.set()
+            try:
+                segmentos, _ = self.modelo.transcribe(
+                    decode_audio(str(caminho), sampling_rate=16000), language="pt", beam_size=5, best_of=5,
+                    initial_prompt=self.prompt, condition_on_previous_text=True, vad_filter=True)
+                return " ".join(s.text for s in segmentos).strip()
+            finally:
+                TRANSCREVENDO.clear()
 
     def transcrever(self, audio: bytes, caprichado: bool = False, contexto: str = "") -> str:
         with self._trava:   # o microfone e os audios do celular usam o mesmo modelo, um de cada vez
-            return self._transcrever(audio, caprichado, contexto)
+            TRANSCREVENDO.set()
+            try:
+                return self._transcrever(audio, caprichado, contexto)
+            finally:
+                TRANSCREVENDO.clear()
+
+    def aquecer(self) -> float:
+        """Transcreve 1 s de quase silencio ao ligar: a 1a frase de verdade nao paga o custo de "acordar" o
+        modelo (na placa de video, ~2 s). Devolve quanto tempo levou (0 se falhou)."""
+        inicio = time.time()
+        try:
+            ruido = (np.random.default_rng(0).normal(0, 0.003, TAXA)).astype(np.float32)
+            with self._trava:
+                segmentos, _ = self.modelo.transcribe(ruido, language="pt", beam_size=self.beam,
+                                                      initial_prompt=self.prompt, condition_on_previous_text=False,
+                                                      vad_filter=False)
+                list(segmentos)   # (o faster-whisper so trabalha de verdade quando le os segmentos)
+        except Exception as erro:
+            log.info("Nao consegui aquecer o Whisper (%s): a 1a frase pode demorar um pouco mais", erro)
+            return 0.0
+        gasto = time.time() - inicio
+        log.info("Whisper aquecido em %.1fs", gasto)
+        return gasto
 
     def _transcrever(self, audio: bytes, caprichado: bool = False, contexto: str = "") -> str:
         try:

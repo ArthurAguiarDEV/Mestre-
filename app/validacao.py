@@ -368,14 +368,15 @@ def _parecida(texto: str, item: Item) -> bool:
 
 def descartes(desde: float, ouvidas: list[dict] | None = None) -> list[dict]:
     """Frases que o ouvido jogou fora depois de `desde`, com o motivo (curta demais, sem a palavra,
-    voz não reconhecida...). "só a palavra: esperando o resto" nao e descarte (o resto ainda vem)."""
+    voz não reconhecida...). "só a palavra: esperando o resto" e "terminou no meio" nao sao descarte (o resto
+    ainda vem), nem "interrompeu a fala" (a ordem de parar foi atendida)."""
     if ouvidas is None:
         from . import memoria
         ouvidas = memoria.ouvidas(80)
     lista = []
     for o in ouvidas:
         motivo = str(o.get("motivo") or "")
-        if _ts(o) >= desde and motivo and not motivo.startswith("só a palavra"):
+        if _ts(o) >= desde and motivo and not motivo.startswith(("só a palavra", "terminou no meio", "interrompeu")):
             lista.append({"texto": str(o.get("texto") or ""), "motivo": motivo, "ts": _ts(o),
                           "data": str(o.get("data") or "")})
     return lista
