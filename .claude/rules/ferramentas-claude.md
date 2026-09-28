@@ -7,5 +7,10 @@
 
 ## Economia de sessao
 - Um item por sessao. Itens alto/extra: plano primeiro (plan mode), depois sessao nova para implementar em esforco medio.
-- `app/comandos.py` e `app/painel.py` sao enormes: nunca leia inteiros. Use Grep pelo nome da funcao e leia so o trecho, ou peca a um subagente (Explore) para localizar.
+- `app/painel.py` e enorme: nunca leia inteiro. Use Grep pelo nome da funcao e leia so o trecho, ou peca a um subagente (Explore) para localizar.
+- Comandos ficam no pacote `app/comandos/` (um mixin por assunto; leia so o arquivo do assunto, e Grep `def _cmd_x` se nao souber onde esta):
+  `__init__.py` nucleo (ORDEM, _executar, perguntar, falar, _separar_monitor) · `base.py` constantes · `ia.py` IA/pensamento/fila ·
+  `rotinas.py` rotinas e ensinar rotina · `assistente.py` versao/encerrar/painel/descanso/atalhos/voz · `feedback.py` feedback/melhorias/exportar ·
+  `ditado.py` ditado/IPM/area de transferencia · `anotacoes.py` historico/memoria/projetos/lembretes/notas · `video.py` YouTube/streaming/clicar ·
+  `midia.py` volume/midia/Spotify · `info.py` clima/noticias/hora · `janelas.py` janelas/abas/monitores/tela/pesquisa/abrir.
 - Nao leia `navegador_mestre/`, `venv/`, `modelos/` nem as pastas de versoes antigas em `C:\Ias`.

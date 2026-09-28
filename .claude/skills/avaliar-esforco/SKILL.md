@@ -22,7 +22,7 @@ Texto ditado costuma juntar várias ideias. Um pedido com 3 ideias são 3 avalia
 | Critério | 0 | 1 | 2 |
 |---|---|---|---|
 | Clareza | Diz exatamente o que fazer | 1–2 decisões em aberto | Vago, várias interpretações |
-| Tamanho | 1 arquivo, poucas linhas | 2–4 arquivos | 5+ arquivos ou arquivo gigante (comandos.py, painel.py) |
+| Tamanho | 1 arquivo, poucas linhas | 2–4 arquivos | 5+ arquivos ou arquivo gigante (painel.py) ou o núcleo app/comandos/__init__.py |
 | Raciocínio | Mecânico (texto, config, vocabulário, cor) | Lógica nova comum | Bug sem causa, threads, arquitetura, refatoração grande |
 | Risco | Fácil de desfazer | Algo usado todo dia | Irreversível, dados, integrações |
 | Verificação | Teste automático prova | Teste parcial | Só dá para provar no PC / sem teste |
@@ -48,7 +48,7 @@ Regras acima da soma:
 O que mais consome a sessão é contexto (arquivos grandes relidos, conversa longa) e número de voltas, não só o esforço.
 1. Um item por sessão (`/clear` entre eles); itens mecânicos em lote no nível baixo.
 2. Planejar caro, executar barato: plano em alto/extra; sessão nova em médio para implementar.
-3. Subagente para ler muito: "use um subagente para achar onde X está em comandos.py e me dar só as linhas".
+3. Subagente para ler muito: "use um subagente para achar onde X está em app/comandos/ ou painel.py e me dar só as linhas".
 4. Apontar arquivo e função evita busca.
 5. Contexto acima de ~40%: `/compact` com dica ou `/clear` + resumo antes do pedido.
 6. Teste automático uma vez no fim (o hook já faz isso).
@@ -75,5 +75,5 @@ Critério desconhecido: pontue pelo pior caso e diga isso em meia frase.
 ## Gotchas
 - Pedido ditado longo quase nunca é "extra" inteiro: costuma ser 1 item alto + vários baixos.
 - Alto como padrão desperdiça sessão: vocabulário, texto do guia, cor do painel e config são baixo.
-- Dividir comandos.py: planejamento extra, execução médio, uma fatia por sessão.
+- Refatoração grande (ex.: dividir painel.py): planejamento extra, execução médio, uma fatia por sessão.
 - Não recomende `max` para pedido vago: vago pede refinar-pedido, não mais esforço.

@@ -184,7 +184,7 @@ def analisar(historico: list[dict], ouvidas: list[dict], desde: float, palavra: 
     for verbo, ev in na_ia.items():
         sugestoes.append(_sugestao(
             "ia", verbo, f"Frases com “{verbo}” caíram na IA ({len(ev)}x)",
-            "Parecem comandos simples: virar regex no comando certo (app/comandos.py) + linha em testes/frases.py, "
+            "Parecem comandos simples: virar regex no comando certo (pacote app/comandos/, um arquivo por assunto) + linha em testes/frases.py, "
             "para não depender da IA.", ev))
     if nao_entendi:
         sugestoes.append(_sugestao("nao_entendi", "geral", f"“Não entendi” ({len(nao_entendi)}x)",

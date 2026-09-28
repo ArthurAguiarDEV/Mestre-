@@ -34,7 +34,19 @@ fale com ele em português simples, explique o que mudou e o que ele precisa tes
 | `app/revisar_ditado.py` | Janelinha do fim do ditado (processo separado), conversa com o Mestre por `logs/ditado_revisao.json` |
 | `app/informacoes.py` | Clima (wttr.in) e notícias (Google Notícias RSS), grátis e sem cadastro |
 | `app/vocabulario.py` | Traduz fala solta para a forma oficial usando `vocabulario.yaml` + `aprendido.yaml` |
-| `app/comandos.py` | `Executor`: cada comando é um método `_cmd_*` listado em `Executor.ORDEM`. Ditado (`_iniciar_ditado`…`_entregar_ditado`, destinos ipm/projeto/salvar/nota/copiar) e IA em segundo plano (`_pensar`, `entregar_pensamento`) |
+| `app/comandos/` | Pacote do `Executor` (`from app.comandos import Executor`): cada comando é um método `_cmd_*` listado em `Executor.ORDEM`, num mixin por assunto (a classe herda de todos) |
+| `app/comandos/__init__.py` (~390) | NÚCLEO: `Executor.__init__`, `ORDEM`, `executar`/`_executar`, `_tentar_comandos`, `_separar_monitor`/`_nomes_monitores`, `preencher`/`falar`/`perguntar`, `_pedido_puro`, `_original`, `_responder`; `saudacao_do_horario` |
+| `app/comandos/base.py` (~120) | Constantes (`ARQUIVO_MELHORIAS`, `PROMPT_MELHORIAS`, `LINK_PROJETO_PADRAO`, regex de ditado/rotina...) e funções pequenas (`link_spotify`, `_nome_do_canal`, `_host`...), reexportadas pelo `__init__` |
+| `app/comandos/ia.py` (~355) | IA: `_interpretar_com_ia`, memória de comandos da IA, `_pensar`, fila (`_trabalhar_fila_ia`), `entregar_pensamento`, `_cmd_pensamento`, `_cmd_esquecer` |
+| `app/comandos/rotinas.py` (~360) | Rotinas do config (`_cmd_rotinas`, `_executar_acao`) e ensinar rotina falando (`_cmd_ensinar_rotina`, gravação, frase de chamar) |
+| `app/comandos/assistente.py` (~235) | O próprio assistente: versão, encerrar, reiniciar, painel, ajuda, descanso, conversinha, atalhos ensinados (`_cmd_aprender`/`_cmd_atalhos`) e troca de voz (`_cmd_voz`) |
+| `app/comandos/feedback.py` (~135) | Feedback ("isso tá errado"), obrigado, melhorias (`_cmd_melhorias`, `_aplicar_melhorias`) e `_cmd_exportar` |
+| `app/comandos/ditado.py` (~370) | Ditado (`_iniciar_ditado`…`_entregar_ditado`, destinos ipm/projeto/salvar/nota/copiar), revisão, agente IPM, área de transferência |
+| `app/comandos/anotacoes.py` (~285) | Histórico de respostas, memória "lembra que…", projetos guiados (`_proj_*`), lembretes e notas |
+| `app/comandos/video.py` (~590) | YouTube (página, canais, `_cmd_youtube_controle`, `_acao_youtube`), streamings (`STREAMINGS`), `_cmd_clicar`, `_cmd_tocar` |
+| `app/comandos/midia.py` (~155) | Volume (geral/por programa), teclas de mídia, Spotify |
+| `app/comandos/info.py` (~60) | Clima, notícias, hora e data |
+| `app/comandos/janelas.py` (~515) | Janelas e abas pelo nome/monitores (`_cmd_mover`, `_cmd_juntar`, `_escolher_aba`, `_abrir_no_monitor`), `_cmd_janela`, tela, desligar o PC, pesquisa, `_cmd_abrir` |
 | `app/cerebro.py` | IA opcional (Ollama grátis ou Claude API), interpreta frases e conversa |
 | `app/voz.py` | Fala por motor: kokoro (`app/voz_kokoro.py`, local, modelo em `modelos/kokoro/`), natural (`app/voz_natural.py`: Chatterbox num venv SEPARADO `modelos/voz_natural/venv`, servidor `app/voz_natural_servidor.py` em 127.0.0.1:47633, fecha sozinho com o Mestre), edge, azure (`app/voz_azure.py`), elevenlabs (`app/voz_elevenlabs.py`, sem aquecer: gastaria créditos), windows; o escolhido falha → `voz > reserva` (painel > Voz > "Usar como reserva") → kokoro → edge. Cache em %TEMP%/mestre_voz. `falar` só põe na fila (`fala_em_segundo_plano`) e uma linha separada toca frase a frase; `parar()` corta a fila inteira; quem precisa que a fala termine (desligar, reiniciar, bloquear) chama `voz.esperar()` |
 | `app/segredos.py` | Chaves (Azure, ElevenLabs, token do Telegram) em `%APPDATA%\Mestre\segredos.json`, FORA do projeto |
@@ -49,7 +61,11 @@ fale com ele em português simples, explique o que mudou e o que ele precisa tes
 
 ## Como adicionar um comando
 
-1. Crie `def _cmd_nome(self, t: str) -> bool` em `app/comandos.py`. `t` já vem
+1. Crie `def _cmd_nome(self, t: str) -> bool` no mixin do assunto em `app/comandos/` (YouTube/streaming →
+   `video.py`, janelas/abas/abrir → `janelas.py`, volume/Spotify → `midia.py`, clima/hora → `info.py`, notas/projetos →
+   `anotacoes.py`, ditado/IPM → `ditado.py`, IA → `ia.py`, rotinas → `rotinas.py`, feedback/melhorias → `feedback.py`,
+   o próprio assistente → `assistente.py`). Assunto novo = arquivo novo com `class XMixin:` + incluir na herança
+   do `Executor` em `__init__.py`. Constante compartilhada vai em `base.py`. `t` já vem
    normalizado (minúsculo, sem acentos, sem "mestre") e traduzido pelo vocabulário.
 2. Devolva `True` se reconheceu (e executou), `False` para passar adiante.
 3. Coloque o nome em `Executor.ORDEM` (a ordem importa: os mais específicos vêm antes).

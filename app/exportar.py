@@ -24,7 +24,7 @@ INSTRUCOES = (
     "> **Claude:** este arquivo foi exportado do assistente de voz Mestre (Python, pasta `app/`).\n"
     "> Analise e me explique em português simples:\n"
     "> 1. frases que foram para a IA ou deram \"não entendi\", mas eram comandos simples → quais padrões\n"
-    ">    faltam nos comandos (`_cmd_*` em `app/comandos.py`) e quais frases entram em `testes/frases.py`;\n"
+    ">    faltam nos comandos (`_cmd_*` no pacote `app/comandos/`) e quais frases entram em `testes/frases.py`;\n"
     "> 2. erros de transcrição do Whisper (palavras trocadas) → o que entra em `ouvido.palavras_conhecidas`,\n"
     ">    no `vocabulario.yaml` e no glossário da skill corrigir-transcricao;\n"
     "> 3. frases ignoradas que parecem ter tentado chamar (palavra de ativação mal ouvida);\n"
