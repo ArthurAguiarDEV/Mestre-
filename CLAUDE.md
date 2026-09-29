@@ -87,6 +87,11 @@ Os pedidos chegam falados, longos e com várias ideias juntas (às vezes com o c
 
 Palavra nova que o Whisper errou e ele corrigiu? Acrescente no glossário da corrigir-transcricao.
 
+**Exceção (sem esperar o ok):** bug claro e itens `FEEDBACK:` do MELHORIAS.md. Mostre o
+"Entendi assim:", ache a causa e corrija direto, sem pedir ajuda no que dá para resolver sozinho
+(logs, erro, teste que falha). Ideia nova, mudança de comportamento e pedido com várias frentes
+continuam esperando o "ok".
+
 ## Itens "FEEDBACK:" no MELHORIAS.md
 
 São erros relatados por voz: `ouvi "..." · entendi "..." · respondi "..." · o certo era: ...`, às vezes com
@@ -94,6 +99,16 @@ São erros relatados por voz: `ouvi "..." · entendi "..." · respondi "..." · 
 vocabulário. Descubra onde o erro nasceu (transcrição, vocabulário, regex de comando ou resposta) e corrija
 na camada certa: erro de transcrição costuma se resolver com vocabulário/sinônimo ou prompt do Whisper
 (`Transcritor.PROMPT` em `app/audio.py`), não com regex.
+
+## Princípios de trabalho
+
+- **Simples primeiro:** a mudança mais simples que resolve, mexendo só no necessário (menos bug novo).
+- **Causa raiz:** nada de remendo temporário; ache por que quebrou.
+- **Elegância, sem exagero:** numa mudança não trivial que parece gambiarra, pare e faça a versão
+  limpa; em correção simples e óbvia, não complique.
+- **Só termina provando:** teste automático verde (veja "Como testar"), não só "deve funcionar".
+- **Lições:** ao ser corrigido pelo dono, acrescente uma linha `erro → regra` em `tasks/lessons.md`
+  e leia esse arquivo no começo da sessão.
 
 ## Regras
 
