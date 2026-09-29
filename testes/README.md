@@ -8,9 +8,13 @@ Execute, na raiz do projeto:
 venv\Scripts\python -m testes.teste_basico
 ```
 
-Essa entrada executa os testes de isolamento/comportamento e as 277 frases de
-regressão. Também é possível executar apenas `-m testes.teste_seguranca` ou
-`-m testes.frases`. Use essas entradas por módulo, em um processo Python novo.
+Essa entrada executa os testes de isolamento/comportamento, as regressões sem
+interface recuperadas da suíte antiga e as 277 frases de regressão. Também é
+possível executar apenas `-m testes.teste_seguranca`,
+`-m testes.teste_regressoes_sem_interface` ou `-m testes.frases`. Use essas
+entradas por módulo, em um processo Python novo.
+
+A classificação completa da cobertura antiga está em `COBERTURA_LEGADA.md`.
 
 `testes/__init__.py` instala a barreira antes do aplicativo e define
 `MESTRE_SIMULAR=1`. Processos filhos, navegador padrão, Tk (inclusive janelas

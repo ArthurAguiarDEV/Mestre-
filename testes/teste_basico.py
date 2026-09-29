@@ -2810,8 +2810,11 @@ def _main_legado_com_interface() -> int:
 def main() -> int:
     """Entrada automatica segura: nenhuma janela, dispositivo ou processo real."""
     import unittest
-    from testes import teste_seguranca
-    suite = unittest.defaultTestLoader.loadTestsFromModule(teste_seguranca)
+    from testes import teste_regressoes_sem_interface, teste_seguranca
+    suite = unittest.TestSuite([
+        unittest.defaultTestLoader.loadTestsFromModule(teste_seguranca),
+        unittest.defaultTestLoader.loadTestsFromModule(teste_regressoes_sem_interface),
+    ])
     resultado = unittest.TextTestRunner(verbosity=2).run(suite)
     if not resultado.wasSuccessful():
         return 1
