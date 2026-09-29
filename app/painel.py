@@ -3611,7 +3611,8 @@ class Painel(ctk.CTk):
         self.bt_val_erro = ctk.CTkButton(botoes, text="❌  Deu errado", width=130, **PERIGO, command=self._val_errado)
         self.bt_val_erro.pack(side="left", padx=6)
         self._val_botoes = [self.bt_val_ok, self.bt_val_erro]
-        for texto, acao in (("Pular", lambda: self._val_marcar("pulado")), ("Repetir", self._val_repetir),
+        for texto, acao in (("Pular", lambda: self._val_marcar("pulado")),
+                            ("Bloqueado", lambda: self._val_marcar("bloqueado")), ("Repetir", self._val_repetir),
                             ("◀ Anterior", self._val_anterior), ("■ Parar", self._val_parar)):
             b = ctk.CTkButton(botoes, text=texto, width=96, **SECUNDARIO, command=acao)
             b.pack(side="left", padx=4)
@@ -3661,7 +3662,10 @@ class Painel(ctk.CTk):
 
     def _val_comecar(self):
         from . import validacao
+        if self._val is not None:
+            self._val_parar()  # recomeçar também conserva o relatório parcial anterior
         itens = validacao.escolher(validacao.ler_roteiro(), self.var_val_escolha.get())
+        carregados = itens
         continuo = bool(self.var_val_continuo.get())
         if continuo:
             itens = validacao.para_continuo(itens, bool(self.var_val_manuais.get()))
@@ -3669,7 +3673,9 @@ class Painel(ctk.CTk):
             self.rot_val_resultado.configure(text="Não achei frases no ROTEIRO_VALIDACAO.md para essa escolha.",
                                              text_color=tema.AVISO)
             return
-        self._val = validacao.Sessao(itens, self.var_val_escolha.get())
+        ids_ativos = {i.id for i in itens}
+        excluidos = [i for i in carregados if i.id not in ids_ativos]
+        self._val = validacao.Sessao(itens, self.var_val_escolha.get(), excluidos)
         self._val.continuo = continuo
         validacao.ligar_audio(True)   # o ouvido guarda o audio de cada frase (para o relatorio)
         self.rot_val_resultado.configure(text="")
@@ -3708,8 +3714,8 @@ class Painel(ctk.CTk):
             text=f"Frase {s.indice + 1} de {len(s.itens)} · {validacao.NOMES_SECAO.get(item.secao, '')} › {item.grupo}")
         continuo = getattr(s, "continuo", False)
         self.rot_val_frase.configure(font=tema.fonte(26 if continuo else 18, True))
-        if item.manual:
-            self.rot_val_frase.configure(text=f"Faça: {item.para_falar(self.palavra)}")
+        if not item.exige_microfone:
+            self.rot_val_frase.configure(text=f"Faça: {item.frase}")
         else:
             self.rot_val_frase.configure(text=f"Fale: “{item.para_falar(self.palavra)}”")
         comando = ", ".join(item.comandos) or item.esperado
@@ -3734,7 +3740,8 @@ class Painel(ctk.CTk):
         from . import validacao
         estado, c = self._val_estado, self._val_captura or {}
         esperado = ", ".join(item.comandos) or item.esperado or "?"
-        falando = ("🎙  Pode falar. Quando der certo passa sozinho para a próxima.", tema.TEXTO_FRACO)
+        falando = (("Confira a instrução e marque o resultado." if not item.exige_microfone else
+                    "🎙  Pode falar. Quando der certo passa sozinho para a próxima."), tema.TEXTO_FRACO)
         textos = {
             "ok": ("✅  Deu certo! Indo para a próxima...", tema.SUCESSO),
             "falha": (f"❌  Não bateu (esperado {esperado}, atendeu {c.get('rota') or 'nada'}). "
@@ -3802,7 +3809,7 @@ class Painel(ctk.CTk):
                     self.ent_val_certo.insert(0, fala)
             elif getattr(s, "continuo", False):
                 self._val_vigiar_continuo(s, item)
-            elif not item.manual:
+            elif item.exige_microfone:
                 captura = validacao.capturar(s.exibida_em)
                 if captura != self._val_captura:
                     self._val_captura = captura
@@ -3851,10 +3858,11 @@ class Painel(ctk.CTk):
         self.fr_val_destaque.pack_forget()
         self.fr_val_certo.pack_forget()
         self._val_desenhar()
-        if s is None or not s.resultados:
+        if s is None:
             self.rot_val_resultado.configure(text="Validação parada (nenhuma frase conferida).",
                                              text_color=tema.TEXTO_FRACO)
             return
+        s.interrompida = not s.acabou
         try:
             self._val_relatorio = validacao.gerar_relatorio(s, self.nome)
             self._val_relatorio_feedbacks(s)
@@ -4499,6 +4507,11 @@ class Painel(ctk.CTk):
         self._parar_teste()
         if getattr(self, "_val", None) is not None:   # validacao aberta: o ouvido para de guardar audio
             from . import validacao
+            self._val.interrompida = True
+            try:
+                validacao.gerar_relatorio(self._val, self.nome)
+            except OSError:
+                pass
             validacao.ligar_audio(False)
             self._val = None   # para o laco _val_vigiar nao mexer em widgets ja destruidos
             self._val_cancelar_avanco()

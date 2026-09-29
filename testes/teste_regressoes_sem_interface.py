@@ -1,5 +1,6 @@
 """Cobertura legada recuperada sem interface, rede, áudio ou processos externos."""
 import ast
+import hashlib
 from datetime import datetime
 import math
 from pathlib import Path
@@ -362,6 +363,64 @@ class ValidacaoSemInterface(unittest.TestCase):
         self.assertEqual((len(validacao.escolher(itens, "Só novidades")),
                           len(validacao.escolher(itens, "Só sempre testar"))), (7, 2))
 
+    def test_tipos_ids_etapas_e_instrucoes_fora_do_microfone(self):
+        linhas = [
+            '| `Mestre, oi` <!-- validacao id=voz-1 tipo=fala --> | responde | `_cmd_oi` |',
+            '| `Mestre, abre` → `Mestre, fecha` | duas etapas | `_cmd_abrir` `_cmd_fechar` |',
+            '| (painel) Clique em Salvar | salva | (painel) |',
+            '| Confira o indicador | aparece | (visual) |',
+            '| Se a rede estiver ligada | necessário | (painel) |',
+            '| Espere 5 segundos | termina | (visual) |',
+            '| (automático) rode o teste | passou | (teste) |',
+            '| Fale qualquer pedido e espere | confira | (visual) |',
+        ]
+        cabecalho = '## Novidades\n### Grupo\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+        itens = validacao.ler_roteiro(texto=cabecalho + '\n'.join(linhas))
+        self.assertEqual([i.tipo_item for i in itens],
+                         ['fala', 'sequencia', 'acao_manual', 'observacao', 'pre_condicao',
+                          'espera', 'teste_automatico', 'acao_manual'])
+        self.assertEqual(itens[0].id, 'voz-1')
+        self.assertEqual(itens[1].etapas[0].id, itens[1].id + '-1')
+        self.assertTrue(all(e.independente for e in itens[1].etapas))
+        self.assertEqual({i.id for i in itens}, {i.id for i in validacao.ler_roteiro(
+            texto=cabecalho + '\n'.join(reversed(linhas)))})
+        self.assertTrue(all(i.para_falar('Jarvis') == '' for i in itens[2:]))
+        self.assertEqual(itens[0].para_falar('Jarvis'), 'Jarvis, oi')
+        self.assertIsNone(validacao.conferir(itens[2], {'rota': '_cmd_oi'}))
+        self.assertEqual(validacao.avaliar_continuo(itens[2], 0, 20, [], [])['estado'], 'conferir')
+
+    def test_relatorio_parcial_proveniencia_bloqueios_e_etapas(self):
+        roteiro = ('## Novidades\n### Grupo\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+                   '| `Mestre, abre` → `Mestre, fecha` | duas etapas | `_cmd_abrir` `_cmd_fechar` |\n'
+                   '| Se a rede estiver ligada | necessário | (painel) |\n'
+                   '| (painel) Clique em Salvar | salva | (painel) |\n')
+        itens = validacao.ler_roteiro(texto=roteiro)
+        sessao = validacao.Sessao(itens[:2], 'Só novidades', excluidos=itens[2:])
+        self.assertEqual((sessao.itens_carregados, len(sessao.itens)), (3, 3))
+        self.assertEqual([i.id for i in sessao.itens[:2]],
+                         [itens[0].id + '-1', itens[0].id + '-2'])
+        self.assertEqual([i.comandos for i in sessao.itens[:2]], [['_cmd_abrir'], ['_cmd_fechar']])
+        sessao.marcar('ok', {'rota': '_cmd_abrir'})
+        sessao.marcar('bloqueado')
+        sessao.interrompida = True
+        with tempfile.TemporaryDirectory(prefix='mestre_parcial_') as tmp:
+            pasta = Path(tmp)
+            relatorio = validacao.gerar_relatorio(sessao, 'Jarvis', datetime(2026, 9, 29, 2, 0), pasta)
+            texto = relatorio.read_text(encoding='utf-8')
+            outro = validacao.gerar_relatorio(sessao, 'Jarvis', datetime(2026, 9, 29, 2, 0), pasta)
+            self.assertNotEqual(relatorio, outro)
+            self.assertEqual(validacao.ultimo_relatorio(pasta), outro)
+        self.assertIn('relatório parcial', texto)
+        self.assertIn('**Itens carregados:** 3', texto)
+        self.assertIn(sessao.commit, texto)
+        self.assertIn(sessao.versao, texto)
+        self.assertIn(hashlib.sha256(validacao.ARQUIVO_ROTEIRO.read_bytes()).hexdigest(), texto)
+        self.assertIn('## Pré-condições', texto)
+        self.assertIn('## Itens bloqueados', texto)
+        self.assertIn('## Itens não executados', texto)
+        self.assertIn(itens[0].id + '-2', texto)
+        self.assertIn(itens[2].id, texto)
+
     def test_captura_e_conferencia_de_rotas(self):
         captura = validacao.capturar(self.t0, self.hist, self.ouv)
         self.assertEqual((captura["ouvi"], captura["rota"], captura["fiz"], captura["audio"]),
@@ -382,7 +441,7 @@ class ValidacaoSemInterface(unittest.TestCase):
         self.assertEqual(c2["rota"], "_cmd_youtube")
         self.assertIn("IA:", c2["entendi"])
         self.assertEqual(validacao.conferir(self.itens[8], c2), "falha")
-        self.assertEqual(validacao.conferir(self.itens[4], None), "ok")
+        self.assertIsNone(validacao.conferir(self.itens[4], None))  # tocar vídeo é ação manual
         self.assertEqual(validacao.conferir(self.itens[2], {"rota": "ia"}), "ok")
         self.assertEqual(validacao.conferir(self.itens[7], {"rota": "saiu do descanso"}), "ok")
         self.assertIsNone(validacao.conferir(self.itens[3], captura))
@@ -421,16 +480,16 @@ class ValidacaoSemInterface(unittest.TestCase):
         ignorada = [{"ts": self.t0 + 300, "texto": "Mestre, toca o vídeo", "chamou": False,
                      "motivo": "sem a palavra de ativação"}]
         avaliar = validacao.avaliar_continuo
-        self.assertEqual(avaliar(self.itens[4], self.t0 + 299, self.t0 + 305, [], ignorada)["estado"], "ok")
+        self.assertEqual(avaliar(self.itens[4], self.t0 + 299, self.t0 + 305, [], ignorada)["estado"], "conferir")
         executou = [{"ts": self.t0 + 301, "tipo": "comando", "pedido": "x", "rota": "_cmd_youtube"}]
-        self.assertEqual(avaliar(self.itens[4], self.t0 + 299, self.t0 + 305, executou, ignorada)["estado"], "falha")
+        self.assertEqual(avaliar(self.itens[4], self.t0 + 299, self.t0 + 305, executou, ignorada)["estado"], "conferir")
         uma = [{"ts": self.t0 + 401, "tipo": "comando", "pedido": "a",
                 "rota": "_cmd_ensinar_rotina", "resposta": "?"}]
         duas = uma + [{"ts": self.t0 + 405, "tipo": "comando", "pedido": "b",
                        "rota": "rotina falada: cancelou", "resposta": "ok"}]
         self.assertEqual(avaliar(self.itens[5], self.t0 + 400, self.t0 + 403, uma, [])["estado"], "esperando")
         self.assertEqual(avaliar(self.itens[5], self.t0 + 400, self.t0 + 407, duas, [])["estado"], "ok")
-        self.assertEqual(len(validacao.para_continuo(self.itens)), len(self.itens) - 1)
+        self.assertEqual(validacao.para_continuo(self.itens), [i for i in self.itens if i.exige_microfone])
         self.assertEqual(len(validacao.para_continuo(self.itens, True)), len(self.itens))
 
     def test_sessao_relatorio_feedback_e_pedido_de_correcao(self):

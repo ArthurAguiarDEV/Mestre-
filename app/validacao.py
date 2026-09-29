@@ -18,7 +18,8 @@ terminal de verdade, com o mesmo comando).
 import re
 import shutil
 import time
-from dataclasses import dataclass, field
+import hashlib
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -40,6 +41,15 @@ EQUIVALENTES = {
     "_cmd_ensinar_rotina": ("rotina falada", "resposta: nomear_rotina"),
     "_cmd_pensamento": ("resposta: responder_aviso_pensamento",),
 }
+TIPOS_ITEM = frozenset({"fala", "sequencia", "acao_manual", "observacao", "pre_condicao", "espera", "teste_automatico"})
+
+
+@dataclass(frozen=True)
+class Etapa:
+    id: str
+    tipo: str
+    texto: str
+    independente: bool = True
 
 
 # =====================================================================
@@ -56,11 +66,50 @@ class Item:
     comandos: list[str] = field(default_factory=list)   # _cmd_* esperados
     tipo: str = ""              # comando | ia | ignorado | acordar | qualquer | chamou | manual | ""
     manual: bool = False        # (painel)/(visual)/(automático): nao ha frase para falar
+    id: str = ""
+    tipo_item: str = "fala"
+    etapas: list[Etapa] = field(default_factory=list)
+    origem_id: str = ""
+
+    @property
+    def exige_microfone(self) -> bool:
+        return self.tipo_item in ("fala", "sequencia") and not self.manual
 
     def para_falar(self, palavra: str = "") -> str:
         """As frases com "Mestre" trocado pela palavra de ativacao escolhida (convencao do roteiro)."""
-        texto = self.frase if self.manual else " → ".join(self.falas or [self.frase])
+        if not self.exige_microfone:
+            return ""
+        texto = " → ".join(self.falas or [self.frase])
         return re.sub(r"\bMestre\b", palavra, texto) if palavra else texto
+
+
+def _id_estavel(secao: str, grupo: str, primeira: str, explicito: str = "") -> str:
+    """O ID implícito não depende da posição; um ID explícito sobrevive a mudanças no texto."""
+    if explicito:
+        return explicito
+    chave = "\x1f".join((secao, normalizar(grupo), normalizar(primeira)))
+    return "val-" + hashlib.sha256(chave.encode("utf-8")).hexdigest()[:16]
+
+
+def _tipo_item(primeira: str, falas: list[str], manual: bool) -> str:
+    n = normalizar(primeira).lstrip("( ")
+    if primeira.lstrip().startswith("(automático)") or "testes.teste_basico" in primeira:
+        return "teste_automatico"
+    if re.match(r"^(espere|aguarde|fique .*calado|deixe .* tocar)", n):
+        return "espera"
+    if re.match(r"^(se |com .* ligado|durante uma resposta)", n):
+        return "pre_condicao"
+    if re.match(r"^(confira|olhe|observe|verifique)", n) or re.match(
+        r"^visual\s+(confira|olhe|observe|verifique)", n
+    ):
+        return "observacao"
+    if manual or re.match(r"^(painel|botao|clique|abra o painel|rode |desligue |religue |feche |toque |arraste )", n):
+        return "acao_manual"
+    if len(falas) > 1:
+        return "sequencia"
+    if falas or re.match(r"^(mestre|assessor)\b", n):
+        return "fala"
+    return "acao_manual"  # legado ambíguo: nunca enviar uma instrução ao microfone
 
 
 def _celulas(linha: str) -> list[str]:
@@ -130,6 +179,7 @@ def ler_roteiro(caminho: Path | None = None, texto: str | None = None) -> list[I
         except OSError:
             return []
     itens: list[Item] = []
+    ids: set[str] = set()
     secao, grupo, em_tabela = "outros", "", False
     linhas = texto.splitlines()
     for n, linha in enumerate(linhas):
@@ -161,12 +211,35 @@ def ler_roteiro(caminho: Path | None = None, texto: str | None = None) -> list[I
         while len(cel) < 3:
             cel.append("")
         primeira, o_que, esperado = cel[0], cel[1], " | ".join(c for c in cel[2:] if c)
+        marcador = re.search(r"<!--\s*validacao\s+id=([a-zA-Z0-9_-]+)(?:\s+tipo=([a-z_]+))?\s*-->", primeira)
+        explicito, tipo_explicito = (marcador.group(1), marcador.group(2)) if marcador else ("", "")
+        if marcador:
+            primeira = (primeira[:marcador.start()] + primeira[marcador.end():]).strip()
         falas = [x.strip() for x in re.findall(r"`([^`]+)`", primeira) if x.strip()]
         manual = primeira.lstrip().startswith("(")   # (painel) (visual) (automático)
         comandos = list(dict.fromkeys(re.findall(r"_cmd_[a-z0-9_]*[a-z0-9]", esperado)))
+        tipo_item = tipo_explicito or _tipo_item(primeira, falas, manual)
+        if tipo_item not in TIPOS_ITEM:
+            raise ValueError(f"Tipo de validação desconhecido: {tipo_item}")
+        item_id = _id_estavel(secao, grupo or NOMES_SECAO[secao], primeira, explicito)
+        if item_id in ids:
+            if explicito:
+                raise ValueError(f"ID de validação repetido: {item_id}")
+            sufixo = 2
+            while f"{item_id}-{sufixo}" in ids:
+                sufixo += 1
+            item_id = f"{item_id}-{sufixo}"
+        ids.add(item_id)
+        etapas = []
+        if tipo_item == "sequencia":
+            # Pausas dentro de uma única frase continuam sendo uma única tentativa.
+            continuacao = bool(re.search(r"pausa|…|\.\.\.", primeira, re.IGNORECASE))
+            etapas = [Etapa(f"{item_id}-{n + 1}", "fala", fala, not continuacao)
+                      for n, fala in enumerate(falas)]
         itens.append(Item(secao=secao, grupo=grupo or NOMES_SECAO[secao], frase=primeira.replace("`", ""),
                           falas=falas, o_que=o_que.replace("`", ""), esperado=esperado.replace("`", ""),
-                          comandos=comandos, tipo=_tipo_esperado(esperado, comandos, manual), manual=manual))
+                          comandos=comandos, tipo=_tipo_esperado(esperado, comandos, manual), manual=manual,
+                          id=item_id, tipo_item=tipo_item, etapas=etapas))
     return itens
 
 
@@ -282,7 +355,7 @@ def fala_nova(desde: float, ouvidas: list[dict] | None = None) -> str:
 
 def conferir(item: Item, captura: dict | None) -> str | None:
     """"ok", "falha" ou None (nada para comparar: o usuario decide)."""
-    if item.manual or item.tipo == "manual":
+    if not item.exige_microfone:
         return None
     rota = str((captura or {}).get("rota") or "")
     if item.tipo == "ignorado":
@@ -315,7 +388,7 @@ def explicar(item: Item, captura: dict | None, sugestao: str | None) -> str:
         return f"Bateu: esperado {esperado}, atendeu {rota}."
     if sugestao == "falha":
         return f"Não bateu: esperado {esperado}, atendeu {rota}."
-    if item.manual or item.tipo == "manual":
+    if not item.exige_microfone:
         return "Confira você mesmo e marque."
     if not captura:
         return "Esperando você falar..."
@@ -325,14 +398,64 @@ def explicar(item: Item, captura: dict | None, sugestao: str | None) -> str:
 # =====================================================================
 #  Sessao (usada pelo painel e pelo teste)
 # =====================================================================
+def _proveniencia() -> tuple[str, str, str]:
+    """Congela a origem da validação no início, antes de o roteiro ou o app mudarem."""
+    from .versao import VERSAO
+
+    try:
+        hash_roteiro = hashlib.sha256(ARQUIVO_ROTEIRO.read_bytes()).hexdigest()
+    except OSError:
+        hash_roteiro = "indisponível"
+    commit = "indisponível"
+    try:
+        git = PASTA_PROJETO / ".git"
+        if git.is_file():
+            git = (PASTA_PROJETO / git.read_text(encoding="utf-8").strip().removeprefix("gitdir:").strip()).resolve()
+        comum = git
+        if (git / "commondir").exists():
+            comum = (git / (git / "commondir").read_text(encoding="utf-8").strip()).resolve()
+        cabeca = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if cabeca.startswith("ref: "):
+            referencia = cabeca.removeprefix("ref: ")
+            arquivo_ref = comum / referencia
+            if arquivo_ref.exists():
+                commit = arquivo_ref.read_text(encoding="utf-8").strip()
+            else:
+                for linha in (comum / "packed-refs").read_text(encoding="utf-8").splitlines():
+                    if linha.endswith(" " + referencia):
+                        commit = linha.split(" ", 1)[0]
+                        break
+        else:
+            commit = cabeca
+    except OSError:
+        pass
+    return commit, hash_roteiro, str(VERSAO)
+
+
 class Sessao:
-    def __init__(self, itens: list[Item], escolha: str = "Tudo"):
-        self.itens = itens
+    def __init__(self, itens: list[Item], escolha: str = "Tudo", excluidos: list[Item] | None = None):
+        self.excluidos = list(excluidos or [])
+        self.itens_carregados = len(itens) + len(self.excluidos)
+        self.itens = []
+        for item in itens:
+            if item.tipo_item == "sequencia" and item.etapas and all(e.independente for e in item.etapas):
+                for pos, etapa in enumerate(item.etapas):
+                    comandos = ([item.comandos[pos]] if len(item.comandos) == len(item.etapas)
+                                else item.comandos[:1] if len(item.comandos) == 1 else [])
+                    # No legado, o esperado pode descrever apenas a última fala.
+                    tipo = "comando" if comandos else (item.tipo if pos == len(item.etapas) - 1 else "")
+                    self.itens.append(replace(item, id=etapa.id, origem_id=item.id, frase=etapa.texto,
+                                              falas=[etapa.texto], tipo_item="fala", etapas=[],
+                                              comandos=comandos, tipo=tipo))
+            else:
+                self.itens.append(item)
         self.escolha = escolha
         self.indice = 0
         self.inicio = datetime.now()
-        self.resultados: dict[int, dict] = {}   # indice -> {"veredito", "captura", "sugestao", "certo_era"}
+        self.resultados: dict[int, dict] = {}   # indice -> resultado da etapa/item
         self.exibida_em = time.time()
+        self.commit, self.hash_roteiro, self.versao = _proveniencia()
+        self.interrompida = False
 
     @property
     def atual(self) -> Item | None:
@@ -349,15 +472,24 @@ class Sessao:
 
     def marcar(self, veredito: str, captura: dict | None = None, sugestao: str | None = None,
                certo_era: str = "") -> None:
-        """veredito: "ok" | "falha" | "pulado". Vai para a proxima frase."""
+        """veredito: ok | falha | pulado | bloqueado. Vai para o próximo item."""
         if self.atual is None:
             return
+        if veredito not in ("ok", "falha", "pulado", "bloqueado"):
+            raise ValueError(f"Veredito desconhecido: {veredito}")
         self.resultados[self.indice] = {"veredito": veredito, "captura": captura or {}, "sugestao": sugestao,
                                         "certo_era": certo_era.strip()}
         self.mostrar(self.indice + 1)
 
     def lista(self) -> list[tuple[Item, dict]]:
         return [(self.itens[i], r) for i, r in sorted(self.resultados.items())]
+
+    def lista_completa(self) -> list[tuple[Item, dict]]:
+        lista = [(item, self.resultados.get(i, {"veredito": "nao_executado", "captura": {}}))
+                 for i, item in enumerate(self.itens)]
+        lista.extend((item, {"veredito": "nao_executado", "captura": {}, "motivo": "fora do modo contínuo"})
+                     for item in self.excluidos)
+        return lista
 
 
 # =====================================================================
@@ -372,7 +504,7 @@ ESPERA_IGNORADO = 3       # frase que deve ser ignorada: ouviu e nada aconteceu 
 
 def manual(item: Item) -> bool:
     """Linha sem frase para falar ((painel)/(visual)/(automático)): fica fora do modo continuo por padrao."""
-    return item.manual or item.tipo == "manual"
+    return not item.exige_microfone
 
 
 def para_continuo(itens: list[Item], incluir_manuais: bool = False) -> list[Item]:
@@ -421,6 +553,8 @@ def avaliar_continuo(item: Item, desde: float, agora: float | None = None, histo
             "silencio" (nada ouvido em SILENCIO_SEGUNDOS) | "conferir" (nao da para decidir: o usuario marca)
     """
     agora = time.time() if agora is None else agora
+    if manual(item):
+        return {"estado": "conferir", "captura": None, "descartes": [], "sugestao": None}
     if historico is None or ouvidas is None:
         from . import memoria
         historico = memoria.historico(80) if historico is None else historico
@@ -445,7 +579,9 @@ def avaliar_continuo(item: Item, desde: float, agora: float | None = None, histo
             r["estado"] = "silencio"
         return r
     if sugestao == "ok":
-        falas = max(1, len(item.falas))
+        falas = 1 if item.tipo_item == "sequencia" and item.etapas and not all(
+            e.independente for e in item.etapas
+        ) else max(1, len(item.falas))
         if int((captura or {}).get("pedidos") or 0) >= falas:
             r.update(estado="ok", sugestao="ok")
         return r   # varias falas ("A → B"): espera a ultima
@@ -499,23 +635,42 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
                     pasta: Path | None = None) -> Path:
     agora = agora or datetime.now()
     pasta = Path(pasta or PASTA_EXPORTACOES)
-    lista = sessao.lista()
+    lista = sessao.lista_completa()
     oks = [(i, r) for i, r in lista if r["veredito"] == "ok"]
     falhas = [(i, r) for i, r in lista if r["veredito"] == "falha"]
     pulados = [(i, r) for i, r in lista if r["veredito"] == "pulado"]
+    bloqueados = [(i, r) for i, r in lista if r["veredito"] == "bloqueado"]
+    nao_executados = [(i, r) for i, r in lista if r["veredito"] == "nao_executado"]
+    conferidos = len(oks) + len(falhas) + len(pulados) + len(bloqueados)
     L = [f"# Validação da atualização{(' do ' + nome) if nome else ''}\n",
          f"Feita em {agora:%d/%m/%Y %H:%M} · roteiro: **{sessao.escolha}** · "
-         f"{len(lista)} de {len(sessao.itens)} frases conferidas\n",
+         f"{conferidos} de {sessao.itens_carregados} itens conferidos"
+         f"{' · relatório parcial (sessão interrompida)' if sessao.interrompida or nao_executados else ''}\n",
+         f"- **Commit:** `{sessao.commit}`",
+         f"- **SHA-256 do ROTEIRO_VALIDACAO.md:** `{sessao.hash_roteiro}`",
+         f"- **Versão do aplicativo:** {sessao.versao}",
+         f"- **Itens carregados:** {sessao.itens_carregados}",
          "## Resumo\n",
          f"- ✅ **{len(oks)} ok**",
          f"- ❌ **{len(falhas)} falhas**",
-         f"- ⏭ {len(pulados)} puladas", ""]
+         f"- ⏭ {len(pulados)} pulados",
+         f"- 🚫 {len(bloqueados)} bloqueados",
+         f"- ◻ {len(nao_executados)} não executados", ""]
+    pre_condicoes = [(i, r) for i, r in lista if i.tipo_item == "pre_condicao"]
+    L += ["## Pré-condições\n"]
+    L += [f"- `{i.id}` · {i.frase} · {r['veredito']}" for i, r in pre_condicoes] or ["(nenhuma)"]
+    L.append("")
+    for titulo, grupo in (("Itens bloqueados", bloqueados), ("Itens não executados", nao_executados)):
+        L += [f"## {titulo}\n"]
+        L += [f"- `{i.id}` · {i.frase}" + (f" · {r['motivo']}" if r.get("motivo") else "")
+              for i, r in grupo] or ["(nenhum)"]
+        L.append("")
     L += ["## Falhas\n"]
     if not falhas:
         L.append("(nenhuma)\n")
     for item, r in falhas:
         c = r.get("captura") or {}
-        L += [f"### {item.para_falar() or item.frase}\n",
+        L += [f"### {item.para_falar() or item.frase}\n", f"- **ID:** `{item.id}`",
               f"- **Grupo:** {NOMES_SECAO.get(item.secao, item.secao)} › {item.grupo}",
               f"- **Ouvi:** {c.get('ouvi') or '(nada)'}",
               f"- **Entendi:** {c.get('entendi') or '(nada)'} → `{c.get('rota') or 'nenhum comando'}`",
@@ -526,15 +681,21 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
         if c.get("audio"):
             L.append(f"- **Áudio:** `{c['audio']}`")
         L.append("")
-    L += ["## Todas as frases\n", "| Resultado | Frase | Entendi → comando | Esperado |", "|---|---|---|---|"]
-    marca = {"ok": "✅", "falha": "❌", "pulado": "⏭"}
+    L += ["## Todos os itens\n", "| Resultado | ID | Tipo | Item | Entendi → comando | Esperado |",
+          "|---|---|---|---|---|---|"]
+    marca = {"ok": "✅", "falha": "❌", "pulado": "⏭", "bloqueado": "🚫", "nao_executado": "◻"}
     for item, r in lista:
         c = r.get("captura") or {}
         cel = lambda t: _limpar(t).replace("|", "/")[:140]   # noqa: E731
-        L.append(f"| {marca.get(r['veredito'], '?')} | {cel(item.para_falar() or item.frase)} | "
+        L.append(f"| {marca.get(r['veredito'], '?')} | {item.id} | {item.tipo_item} | "
+                 f"{cel(item.para_falar() or item.frase)} | "
                  f"{cel(c.get('entendi'))} → {cel(c.get('rota')) or '-'} | {cel(', '.join(item.comandos) or item.esperado)} |")
     pasta.mkdir(parents=True, exist_ok=True)
     arquivo = pasta / f"validacao_{agora:%Y-%m-%d_%H%M}.md"
+    sufixo = 2
+    while arquivo.exists():
+        arquivo = pasta / f"validacao_{agora:%Y-%m-%d_%H%M}_{sufixo}.md"
+        sufixo += 1
     arquivo.write_text("\n".join(L) + "\n", encoding="utf-8")
     return arquivo
 
@@ -543,7 +704,8 @@ def salvar_feedbacks(sessao: Sessao, arquivo: Path | None = None, agora: datetim
     """Cada falha vira "- [ ] (data) FEEDBACK: ..." no fim do MELHORIAS.md. Devolve as linhas escritas."""
     arquivo = Path(arquivo or ARQUIVO_MELHORIAS)
     agora = agora or datetime.now()
-    linhas = [f"- [ ] ({agora:%d/%m/%Y}) {linha_feedback(i, r)}" for i, r in sessao.lista() if r["veredito"] == "falha"]
+    linhas = [f"- [ ] ({agora:%d/%m/%Y}) {linha_feedback(i, r)}" for i, r in sessao.lista()
+              if r["veredito"] == "falha" and i.exige_microfone]
     if not linhas:
         return []
     atual = arquivo.read_text(encoding="utf-8") if arquivo.exists() else "# Melhorias\n\n"

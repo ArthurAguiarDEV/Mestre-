@@ -9,6 +9,13 @@ Cada linha é: `frase falada | o que deve acontecer | comando esperado (_cmd_*)`
 frase pra falar (ação no painel, teste automático, checagem visual) tem `(painel)`,
 `(automático)` ou `(visual)` no lugar da frase.
 
+Na validação do painel, cada linha recebe um ID estável mesmo no formato antigo. Para manter o
+mesmo ID ao reescrever uma linha, acrescente `<!-- validacao id=nome-unico tipo=fala -->` na
+primeira coluna. Os tipos possíveis são `fala`, `sequencia`, `acao_manual`, `observacao`,
+`pre_condicao`, `espera` e `teste_automatico`. Uma sequência de falas entre crases é conferida
+etapa por etapa; pausas que completam a mesma frase continuam uma tentativa só. Instruções
+manuais nunca são tratadas como frases para o microfone.
+
 Este arquivo substitui o antigo CHECKLIST_VALIDACAO.md (o texto dele virou uma lista solta,
 sem comando esperado, difícil de conferir por script; ficou só um aviso apontando pra cá).
 
