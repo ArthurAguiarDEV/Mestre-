@@ -409,6 +409,23 @@ def selecionar_direcionado(itens: list[Item], arquivos: list[str] | None = None,
     return Escopo("Direcionado", escolhidos, grupos, motivos, sem_mapeamento, falhas_sem_id)
 
 
+EXPLICACAO_MODOS = (
+    "Rápido: repete sempre as mesmas quatro verificações essenciais (hora, YouTube, volume e anotação). "
+    "Direcionado: você escolhe áreas (grupos) para testar, ou usa as mudanças e falhas detectadas. "
+    "Completo: percorre todo o roteiro, incluindo conferências manuais.")
+
+
+def so_essenciais(escopo: Escopo) -> bool:
+    """Direcionado sem nenhuma área nova (arquivo, falha ou escolha manual): sobram só as falas essenciais."""
+    return escopo.modo == "Direcionado" and bool(escopo.itens) and all(
+        motivo == "regressão essencial" for razoes in escopo.motivos.values() for motivo in razoes)
+
+
+def oferece_direcionado(sessao: "Sessao | None") -> bool:
+    """Depois de concluir o Rápido, a página oferece (sem iniciar sozinha) escolher áreas no Direcionado."""
+    return sessao is not None and sessao.modo == "Rápido" and sessao.acabou and not sessao.interrompida
+
+
 def descrever_escopo(escopo: Escopo) -> str:
     """Resumo para ler antes de iniciar; contagens incluem linhas e etapas independentes."""
     if not escopo.itens:
@@ -422,6 +439,9 @@ def descrever_escopo(escopo: Escopo) -> str:
     descricao = (f"{intro} {len(escopo.itens)} itens ({escopo.etapas} etapas): "
             f"{falas} de fala e {outros} para conferir manualmente. "
             "Itens sem fala não serão enviados ao microfone.")
+    if so_essenciais(escopo):
+        descricao = ("Nenhuma área nova detectada ou marcada: o plano ficaria só nas quatro falas essenciais, "
+                     "como o Rápido. Marque um ou mais grupos na lista para testar outras áreas. ") + descricao
     if escopo.modo == "Direcionado":
         razoes = [f"{grupo}: {', '.join(escopo.motivos.get((secao, grupo), []))}"
                   for secao, grupo in escopo.grupos if escopo.motivos.get((secao, grupo))]

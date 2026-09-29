@@ -1470,7 +1470,7 @@ Quando chega algo do celular, o indicador fica **azul** por alguns segundos (*"�
 ### 31.9 Validar a atualização dentro do painel
 Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por frase:
 1. Depois de atualizar, fale *"assessor, reinicia"* (o assistente precisa estar **ligado**: é ele quem ouve).
-2. Painel > **Sistema** > **Validar atualização**. Escolha **Rápido** (4 falas essenciais), **Direcionado** (seleção pelos arquivos alterados e feedbacks abertos; você também pode marcar grupos) ou **Completo** (todo o roteiro). O painel mostra o que entra, por quê e quantos itens haverá antes de **▶ Começar**. Arquivos sem relação cadastrada são sinalizados e mantêm as 4 falas essenciais.
+2. Painel > **Sistema** > **Validar atualização**. Escolha **Rápido** (4 falas essenciais), **Direcionado** (seleção pelos arquivos alterados e feedbacks abertos; você também pode marcar grupos) ou **Completo** (todo o roteiro). O painel mostra o que entra, por quê e quantos itens haverá antes de **▶ Começar**. Arquivos sem relação cadastrada são sinalizados e mantêm as 4 falas essenciais. O **Rápido** repete sempre as mesmas 4 verificações; para variar, use o **Direcionado** e marque grupos (sem nenhuma área nova, a página avisa que o plano fica só nas 4 essenciais). Ao concluir o Rápido aparece **Escolher áreas no Direcionado**, que apenas prepara a tela: a nova validação só começa no seu clique em **▶ Começar**.
 3. Aparece uma frase (ex.: *Fale: "Assessor, que horas são"*) e o que deve acontecer. **Fale normalmente**, como no dia a dia.
 4. Em 1 ou 2 segundos aparecem três linhas:
    - **OUVI**: o que o reconhecimento de voz escreveu;

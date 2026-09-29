@@ -454,6 +454,36 @@ class ValidacaoSemInterface(unittest.TestCase):
         self.assertEqual([i.id for i in validacao.selecionar_modo(list(reversed(itens)), 'Rápido').itens],
                          list(validacao.IDS_RAPIDOS))
 
+    def test_validacao_variada_explica_avisa_e_oferece_direcionado(self):
+        itens = validacao.ler_roteiro()
+        for modo in validacao.MODOS:
+            self.assertIn(modo, validacao.EXPLICACAO_MODOS)
+        self.assertIn('quatro', validacao.EXPLICACAO_MODOS)
+        self.assertNotIn('Mestre', validacao.EXPLICACAO_MODOS)
+        vazio = validacao.selecionar_direcionado(itens, [], set(), 0)
+        self.assertTrue(validacao.so_essenciais(vazio))
+        self.assertEqual({i.id for i in vazio.itens}, set(validacao.IDS_RAPIDOS))
+        self.assertIn('só nas quatro falas essenciais', validacao.descrever_escopo(vazio))
+        fora = [g for g in validacao.grupos_disponiveis(itens)
+                if not any(i.id in validacao.IDS_RAPIDOS for i in itens if (i.secao, i.grupo) == g)]
+        a, b = fora[0], fora[-1]
+        dois = validacao.selecionar_direcionado(itens, [], set(), 0, grupos_manuais=[a, b])
+        ids = [i.id for i in dois.itens]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(set(validacao.IDS_RAPIDOS) <= set(ids))
+        for chave in (a, b):
+            self.assertTrue(any((i.secao, i.grupo) == chave and i.id not in validacao.IDS_RAPIDOS
+                                for i in dois.itens))
+        self.assertFalse(validacao.so_essenciais(dois))
+        self.assertNotIn('só nas quatro falas essenciais', validacao.descrever_escopo(dois))
+        rapido = validacao.Sessao(validacao.selecionar_modo(itens, 'Rápido').itens, 'Rápido')
+        self.assertFalse(validacao.oferece_direcionado(rapido))
+        rapido.indice = len(rapido.itens)
+        self.assertTrue(validacao.oferece_direcionado(rapido))
+        rapido.interrompida = True
+        self.assertFalse(validacao.oferece_direcionado(rapido))
+        self.assertFalse(validacao.oferece_direcionado(None))
+
     def test_ids_e_grupos_explicitos_sobrevivem_a_renomeacao(self):
         texto = ('## Novidades\n### Nome antigo\n'
                  '<!-- validacao-grupo id=grupo-fixo caminhos=app/ouvido.py rotas=_cmd_hora_data -->\n'
@@ -642,7 +672,7 @@ class ValidacaoSemInterface(unittest.TestCase):
         objeto.nome = objeto.palavra = 'Jarvis'
         for nome in ('_val_atualizar_botao_claude', '_val_atualizar_escopo', '_val_desenhar',
                      '_val_comecar', '_val_marcar', '_val_errado', '_val_repetir',
-                     '_val_anterior', '_val_parar', '_val_confirmar_erro',
+                     '_val_anterior', '_val_parar', '_val_confirmar_erro', '_val_ir_direcionado',
                      '_val_abrir_relatorio', '_val_mandar_claude'):
             setattr(objeto, nome, lambda *_: None)
         objeto._aba_validacao(WidgetFalso())

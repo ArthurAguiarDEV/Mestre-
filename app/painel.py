@@ -3569,6 +3569,9 @@ class Painel(ctk.CTk):
         for nome_secao, grupo in self._val_grupos:
             self.lista_val_grupos.insert("end", f"{validacao.NOMES_SECAO[nome_secao]} › {grupo}")
         self.lista_val_grupos.bind("<<ListboxSelect>>", lambda _: self._val_atualizar_escopo())
+        from . import validacao as _validacao
+        ctk.CTkLabel(f, text=_validacao.EXPLICACAO_MODOS, anchor="w", justify="left", wraplength=800,
+                     text_color=tema.TEXTO_FRACO).pack(fill="x", padx=(32, 18), pady=(0, 4), before=linha)
         self.rot_val_escopo = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
                                           text_color=tema.TEXTO_FRACO)
         self.rot_val_escopo.pack(fill="x", padx=(32, 18), pady=(4, 2))
@@ -3641,6 +3644,8 @@ class Painel(ctk.CTk):
         self.bt_val_claude = ctk.CTkButton(fr_val_pos, text="🛠  Mandar para o Claude corrigir", width=240,
                                            **SECUNDARIO, command=self._val_mandar_claude)
         self.bt_val_claude.pack(side="left", padx=(0, 8))
+        self.bt_val_direcionado = ctk.CTkButton(fr_val_pos, text="Escolher áreas no Direcionado", width=230,
+                                                **SECUNDARIO, command=self._val_ir_direcionado)
         self._val_atualizar_botao_claude()
         self._val_atualizar_escopo()
         self._val_desenhar()
@@ -3650,6 +3655,14 @@ class Painel(ctk.CTk):
         relatorio = validacao.ultimo_relatorio()
         ativo = validacao.relatorio_tem_falhas(relatorio)
         self.bt_val_claude.configure(state="normal" if ativo else "disabled")
+
+    def _val_ir_direcionado(self):
+        """Só prepara a tela (modo Direcionado + lista de grupos); quem inicia é o clique em Começar."""
+        self.var_val_modo.set("Direcionado")
+        self._val_atualizar_escopo()
+        self.bt_val_direcionado.pack_forget()
+        self.rot_val_resultado.configure(text="Marque as áreas que quer testar e clique em Começar.",
+                                         text_color=tema.TEXTO_FRACO)
 
     def _val_mandar_claude(self):
         from . import validacao
@@ -3704,6 +3717,7 @@ class Painel(ctk.CTk):
         self._val.continuo = continuo
         self.rot_val_resultado.configure(text="")
         self.bt_val_relatorio.pack_forget()
+        self.bt_val_direcionado.pack_forget()
         self._val_nova_frase()
         self._val_vigia_token += 1
         self._val_vigiar(self._val_vigia_token)
@@ -3914,6 +3928,8 @@ class Painel(ctk.CTk):
                  f"Relatório: exportacoes/{self._val_relatorio.name}.{extra}",
             text_color=tema.SUCESSO if not falhas else tema.AVISO)
         self.bt_val_relatorio.pack(side="left", padx=(0, 8))
+        if validacao.oferece_direcionado(s):
+            self.bt_val_direcionado.pack(side="left", padx=(0, 8))
         self._val_atualizar_botao_claude()
 
     def _val_relatorio_feedbacks(self, s) -> list[str]:
