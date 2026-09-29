@@ -717,6 +717,110 @@ class ValidacaoSemInterface(unittest.TestCase):
                                                    datetime(2099, 1, 1), Path(tmp))
             self.assertFalse(validacao.relatorio_tem_falhas(relatorio))
 
+    def test_relatorio_final_consolida_sequencia_e_distingue_pendencias(self):
+        roteiro = ('## Novidades\n### Falas\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+                   '| `Mestre, abre` → `Mestre, fecha` <!-- validacao id=sequencia --> | duas falas | `_cmd_abrir` `_cmd_fechar` |\n'
+                   '| `Mestre, teste` <!-- validacao id=falha --> | funciona | `_cmd_teste` |\n'
+                   '| `Mestre, pular` <!-- validacao id=pulo --> | funciona | `_cmd_pular` |\n'
+                   '### Rede\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+                   '| Se a rede estiver ligada <!-- validacao id=condicao --> | necessária | (painel) |\n'
+                   '| `Mestre, online` <!-- validacao id=dependente --> | funciona | `_cmd_online` |\n'
+                   '### Conferência\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+                   '| (painel) Confira a tela <!-- validacao id=manual --> | aparece | (painel) |\n')
+        itens = validacao.ler_roteiro(texto=roteiro)
+        sessao = validacao.Sessao(itens, 'Completo')
+        sessao.marcar('ok')  # primeira etapa da sequência; segunda ficou pendente
+        sessao.mostrar(2)
+        sessao.marcar('falha', {'ouvi': 'teste', 'rota': '_cmd_errado'}, 'falha')
+        sessao.marcar('pulado')
+        sessao.marcar('bloqueado')  # pré-condição bloqueia também a fala seguinte
+        sessao.interrompida = True
+        with tempfile.TemporaryDirectory(prefix='mestre_relatorio_final_') as tmp:
+            texto = validacao.gerar_relatorio(sessao, 'Jarvis', datetime(2026, 9, 29, 3),
+                                              Path(tmp)).read_text(encoding='utf-8')
+        aprovados = texto.split('## Itens aprovados', 1)[1].split('## Falhas', 1)[0]
+        self.assertNotIn('`sequencia`', aprovados)
+        self.assertIn('`sequencia`', texto.split('## Itens não executados', 1)[1])
+        self.assertIn('1 de 2 etapas aprovadas', texto)
+        for secao in ('Resumo para você', 'Falhas que precisam de investigação', 'Itens bloqueados',
+                      'Itens pulados', 'Itens não executados', 'Recomendações e testes físicos pendentes',
+                      'Detalhes técnicos', 'Testes físicos pendentes'):
+            self.assertIn(secao, texto)
+        self.assertIn('Pré-condição não atendida', texto)
+        self.assertIn('`manual`', texto.split('### Testes físicos pendentes', 1)[1])
+        self.assertIn('**Modo:** Completo', texto)
+        self.assertIn('**Itens carregados:** 6', texto)
+        self.assertIn('relatório parcial', texto)
+        completo = validacao.Sessao(itens[:1], 'Completo')
+        completo.marcar('ok')
+        completo.marcar('ok')
+        with tempfile.TemporaryDirectory(prefix='mestre_sequencia_ok_') as tmp:
+            aprovado = validacao.gerar_relatorio(completo, 'Jarvis', datetime(2026, 9, 29, 4),
+                                                 Path(tmp)).read_text(encoding='utf-8')
+        self.assertIn('`sequencia`', aprovado.split('## Itens aprovados', 1)[1].split('## Falhas', 1)[0])
+        for veredito, secao in (('falha', 'Falhas que precisam de investigação'),
+                                 ('bloqueado', 'Itens bloqueados'), ('pulado', 'Itens pulados')):
+            with self.subTest(veredito=veredito):
+                parcial = validacao.Sessao(itens[:1], 'Completo')
+                parcial.marcar('ok')
+                parcial.marcar(veredito)
+                agrupado = validacao._itens_consolidados(parcial.lista_completa())
+                self.assertEqual(agrupado[0][1], veredito)
+                with tempfile.TemporaryDirectory(prefix='mestre_sequencia_estado_') as tmp:
+                    texto_estado = validacao.gerar_relatorio(parcial, 'Jarvis', datetime(2026, 9, 29, 5),
+                                                             Path(tmp)).read_text(encoding='utf-8')
+                self.assertNotIn('`sequencia`', texto_estado.split('## Itens aprovados', 1)[1]
+                                 .split('## Falhas', 1)[0])
+                secao_texto = texto_estado.split('## ' + secao, 1)[1].split('## ', 1)[0]
+                self.assertIn('`sequencia`', secao_texto)
+
+    def test_feedbacks_equivalentes_nao_repetem_e_ambiguos_sao_sinalizados(self):
+        item = validacao.ler_roteiro(texto=(
+            '## Novidades\n### Falas\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+            '| `Mestre, teste` <!-- validacao id=caso --> | resposta certa | `_cmd_teste` |\n'))[0]
+        sessao = validacao.Sessao([item], 'Direcionado')
+        sessao.marcar('falha', {'ouvi': 'teste', 'entendi': 'teste', 'rota': '_cmd_errado',
+                               'fiz': 'resposta errada', 'audio': 'primeiro.wav'}, 'falha', 'resposta certa')
+        with tempfile.TemporaryDirectory(prefix='mestre_deduplicacao_') as tmp:
+            arquivo = Path(tmp) / 'MELHORIAS.md'
+            prefixo = '# Melhorias\n- [ ] ideia anterior sem alteração\n'
+            arquivo.write_text(prefixo, encoding='utf-8')
+            novas = validacao.salvar_feedbacks(sessao, arquivo, datetime(2026, 9, 29))
+            self.assertEqual(len(novas), 1)
+            self.assertIn('validacao-dados etapa=caso assinatura=', novas[0])
+            antes = arquivo.read_bytes()
+            mesma_falha = validacao.Sessao([item], 'Direcionado')
+            mesma_falha.marcar('falha', {'ouvi': 'teste', 'entendi': 'teste', 'rota': '_cmd_errado',
+                                       'fiz': 'resposta errada', 'audio': 'segundo.wav'},
+                               'falha', 'resposta certa')
+            self.assertEqual(validacao.salvar_feedbacks(mesma_falha, arquivo, datetime(2026, 9, 30)), [])
+            self.assertEqual(arquivo.read_bytes(), antes)
+            self.assertTrue(arquivo.read_text(encoding='utf-8').startswith(prefixo))
+
+            diferente = validacao.Sessao([item], 'Direcionado')
+            diferente.marcar('falha', {'ouvi': 'teste', 'entendi': 'teste', 'rota': '_cmd_errado',
+                                     'fiz': 'outra resposta'}, 'falha', 'resposta certa')
+            novas = validacao.salvar_feedbacks(diferente, arquivo, datetime(2026, 10, 1))
+            self.assertEqual(len(novas), 1)
+            self.assertIn('possível duplicidade', novas[0])
+            self.assertEqual(arquivo.read_text(encoding='utf-8').count('FEEDBACK:'), 2)
+
+            legado = Path(tmp) / 'LEGADO.md'
+            corpo = validacao.linha_feedback(item, sessao.resultados[0])
+            corpo = corpo.split(' <!-- validacao-feedback', 1)[0]
+            corpo = corpo.replace(' [áudio: primeiro.wav]', '')
+            legado.write_text(f'- [ ] (28/09/2026) {corpo}\n', encoding='utf-8')
+            self.assertEqual(validacao.salvar_feedbacks(sessao, legado, datetime(2026, 9, 29)), [])
+            self.assertEqual(legado.read_text(encoding='utf-8').count('FEEDBACK:'), 1)
+            duvidoso = validacao.salvar_feedbacks(diferente, legado, datetime(2026, 10, 1))
+            self.assertEqual(len(duvidoso), 1)
+            self.assertIn('possível duplicidade', duvidoso[0])
+            concluido = Path(tmp) / 'CONCLUIDO.md'
+            concluido.write_text(f'- [x] (28/09/2026) {corpo}\n', encoding='utf-8')
+            recorrente = validacao.salvar_feedbacks(sessao, concluido, datetime(2026, 10, 1))
+            self.assertEqual(len(recorrente), 1)  # regressão nova não some atrás de um item já concluído
+            self.assertIn('possível duplicidade', recorrente[0])
+
 
 if __name__ == "__main__":
     unittest.main()

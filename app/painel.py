@@ -3899,7 +3899,7 @@ class Painel(ctk.CTk):
         s.interrompida = not s.acabou
         try:
             self._val_relatorio = validacao.gerar_relatorio(s, self.nome)
-            self._val_relatorio_feedbacks(s)
+            novos_feedbacks = self._val_relatorio_feedbacks(s)
         except Exception as erro:
             self.rot_val_resultado.configure(text=f"Não consegui gerar o relatório: {erro}", text_color=tema.AVISO)
             return
@@ -3907,7 +3907,8 @@ class Painel(ctk.CTk):
         oks = sum(1 for _, r in lista if r["veredito"] == "ok")
         falhas = sum(1 for _, r in lista if r["veredito"] == "falha")
         bloqueados = sum(1 for _, r in lista if r["veredito"] == "bloqueado")
-        extra = f" {falhas} FEEDBACK(s) entraram na lista de melhorias." if falhas else ""
+        extra = (f" {len(novos_feedbacks)} FEEDBACK(s) entraram na lista de melhorias."
+                 if novos_feedbacks else " Falhas já registradas na lista de melhorias." if falhas else "")
         self.rot_val_resultado.configure(
             text=f"✓ {oks} ok · {falhas} falhas · {bloqueados} bloqueados. "
                  f"Relatório: exportacoes/{self._val_relatorio.name}.{extra}",

@@ -20,6 +20,7 @@ import shutil
 import time
 import hashlib
 import fnmatch
+import json
 import subprocess
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -812,6 +813,16 @@ def _limpar(texto) -> str:
     return " ".join(str(texto or "").split()).replace('"', "'")
 
 
+def _assinatura_feedback(item: Item, r: dict) -> str:
+    """Identidade conservadora da falha; áudio e data não alteram o problema observado."""
+    c = r.get("captura") or {}
+    campos = (item.id, _limpar(c.get("ouvi") or item.para_falar()),
+              _limpar(c.get("entendi")), _limpar(c.get("rota")), _limpar(c.get("fiz")),
+              _limpar(r.get("certo_era") or item.o_que),
+              tuple(item.comandos), _limpar(item.esperado))
+    return hashlib.sha256(json.dumps(campos, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
+
+
 def linha_feedback(item: Item, r: dict) -> str:
     """No formato do CLAUDE.md: FEEDBACK: ouvi "..." · entendi "..." · respondi "..." · o certo era: ..."""
     c = r.get("captura") or {}
@@ -827,7 +838,47 @@ def linha_feedback(item: Item, r: dict) -> str:
     if c.get("audio"):
         linha += f" [áudio: {c['audio']}]"
     linha += f" <!-- validacao-feedback id={item.origem_id or item.id} -->"
+    linha += f" <!-- validacao-dados etapa={item.id} assinatura={_assinatura_feedback(item, r)} -->"
     return linha
+
+
+def _corpo_feedback(linha: str) -> str:
+    """Comparação exata do texto útil quando o feedback anterior não tem assinatura."""
+    if "FEEDBACK:" not in linha:
+        return ""
+    corpo = "FEEDBACK:" + linha.split("FEEDBACK:", 1)[1]
+    corpo = re.sub(r"\s*<!--\s*validacao[^>]*-->", "", corpo)
+    corpo = re.sub(r"\s*\[áudio:[^]]*\]", "", corpo)
+    corpo = re.sub(r"\s*\[possível duplicidade:[^]]*\]", "", corpo)
+    return " ".join(corpo.split()).casefold()
+
+
+def _itens_consolidados(lista: list[tuple[Item, dict]]) -> list[tuple[str, str, list[tuple[Item, dict]]]]:
+    """Agrupa etapas independentes: só todas aprovadas tornam o item aprovado."""
+    por_id: dict[str, list[tuple[Item, dict]]] = {}
+    for item, resultado in lista:
+        por_id.setdefault(item.origem_id or item.id, []).append((item, resultado))
+    ordem = ("falha", "bloqueado", "pulado", "nao_executado", "ok")
+    saida = []
+    for id_, etapas in por_id.items():
+        estados = {r["veredito"] for _, r in etapas}
+        estado = next((valor for valor in ordem if valor in estados), "nao_executado")
+        saida.append((id_, estado, etapas))
+    return saida
+
+
+def _descricao_item(id_: str, etapas: list[tuple[Item, dict]]) -> str:
+    textos = [item.para_falar() or item.frase for item, _ in etapas]
+    texto = " → ".join(textos) if len(etapas) > 1 else textos[0]
+    andamento = ""
+    if len(etapas) > 1:
+        aprovadas = sum(r["veredito"] == "ok" for _, r in etapas)
+        andamento = f" · {aprovadas} de {len(etapas)} etapas aprovadas"
+    return f"`{id_}` · {texto}{andamento}"
+
+
+def _quantidade(n: int, singular: str, plural: str) -> str:
+    return f"{n} {singular if n == 1 else plural}"
 
 
 def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = None,
@@ -840,37 +891,78 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
     pulados = [(i, r) for i, r in lista if r["veredito"] == "pulado"]
     bloqueados = [(i, r) for i, r in lista if r["veredito"] == "bloqueado"]
     nao_executados = [(i, r) for i, r in lista if r["veredito"] == "nao_executado"]
-    conferidos = len(oks) + len(falhas) + len(pulados) + len(bloqueados)
+    conferidos = len(oks) + len(falhas)
+    itens = _itens_consolidados(lista)
+    por_estado = {estado: [(id_, etapas) for id_, atual, etapas in itens if atual == estado]
+                  for estado in ("ok", "falha", "bloqueado", "pulado", "nao_executado")}
+    parcial = sessao.interrompida or bool(nao_executados)
+    nota_parcial = (" · relatório parcial (sessão interrompida)" if sessao.interrompida else
+                    " · relatório parcial (itens pendentes)" if parcial else "")
     L = [f"# Validação da atualização{(' do ' + nome) if nome else ''}\n",
          f"Feita em {agora:%d/%m/%Y %H:%M} · roteiro: **{sessao.escolha}** · "
          f"{conferidos} de {len(sessao.itens)} etapas conferidas"
-         f"{' · relatório parcial (sessão interrompida)' if sessao.interrompida or nao_executados else ''}\n",
-         f"- **Commit:** `{sessao.commit}`",
-         f"- **Modo:** {sessao.modo}",
-         f"- **SHA-256 do ROTEIRO_VALIDACAO.md:** `{sessao.hash_roteiro}`",
-         f"- **Versão do aplicativo:** {sessao.versao}",
-         f"- **Itens carregados:** {sessao.itens_carregados}",
-         "## Resumo\n",
+         f"{nota_parcial}\n",
+         "## Resumo para você\n",
+         f"{_quantidade(len(por_estado['ok']), 'item aprovado', 'itens aprovados')}, "
+         f"{_quantidade(len(por_estado['falha']), 'com falha', 'com falha')}, "
+         f"{_quantidade(len(por_estado['bloqueado']), 'bloqueado', 'bloqueados')}, "
+         f"{_quantidade(len(por_estado['pulado']), 'pulado', 'pulados')} e "
+         f"{_quantidade(len(por_estado['nao_executado']), 'não executado', 'não executados')}."
+         f"{' A sessão foi interrompida; os itens restantes continuam pendentes.' if sessao.interrompida else ''}\n",
+         "## Resumo das etapas\n",
          f"- ✅ **{len(oks)} ok**",
          f"- ❌ **{len(falhas)} falhas**",
          f"- ⏭ {len(pulados)} pulados",
          f"- 🚫 {len(bloqueados)} bloqueados",
          f"- ◻ {len(nao_executados)} não executados", ""]
+    L += ["## Itens aprovados\n"]
+    L += [f"- {_descricao_item(id_, etapas)}" for id_, etapas in por_estado["ok"]] or ["(nenhum)"]
+    L.append("")
+    L += ["## Falhas que precisam de investigação\n"]
+    L += [f"- {_descricao_item(id_, etapas)}" for id_, etapas in por_estado["falha"]] or ["(nenhuma)"]
+    L.append("")
     pre_condicoes = [(i, r) for i, r in lista if i.tipo_item == "pre_condicao"]
     L += ["## Pré-condições\n"]
-    L += [f"- `{i.id}` · {i.frase} · {r['veredito']}" for i, r in pre_condicoes] or ["(nenhuma)"]
+    nomes_estado = {"ok": "atendida", "falha": "falhou", "bloqueado": "não atendida",
+                    "pulado": "pulada", "nao_executado": "não executada"}
+    L += [f"- `{i.id}` · {i.frase} · {nomes_estado.get(r['veredito'], r['veredito'])}"
+          for i, r in pre_condicoes] or ["(nenhuma)"]
     L.append("")
-    for titulo, grupo in (("Itens bloqueados", bloqueados), ("Itens não executados", nao_executados)):
+    for titulo, estado in (("Itens bloqueados", "bloqueado"), ("Itens pulados", "pulado"),
+                           ("Itens não executados", "nao_executado")):
         L += [f"## {titulo}\n"]
-        L += [f"- `{i.id}` · {i.frase}" + (f" · {r['motivo']}" if r.get("motivo") else "")
-              for i, r in grupo] or ["(nenhum)"]
+        grupo = por_estado[estado]
+        L += [f"- {_descricao_item(id_, etapas)}" +
+              next((f" · {r['motivo']}" for _, r in etapas if r.get("motivo")), "")
+              for id_, etapas in grupo] or ["(nenhum)"]
         L.append("")
-    L += ["## Falhas\n"]
+    L += ["## Recomendações e testes físicos pendentes\n"]
+    recomendacoes = []
+    if por_estado["falha"]:
+        recomendacoes.append("Investigue as falhas com OUVI, ENTENDI e FIZ nos detalhes técnicos.")
+    if por_estado["bloqueado"]:
+        recomendacoes.append("Atenda às pré-condições e repita os itens bloqueados.")
+    if por_estado["pulado"] or por_estado["nao_executado"]:
+        recomendacoes.append("Retome os itens pulados ou não executados antes de concluir a validação.")
+    L += [f"- {texto}" for texto in recomendacoes] or ["- Nenhuma correção indicada pelos itens concluídos."]
+    fisicos = [(id_, etapas) for id_, estado, etapas in itens if estado != "ok" and
+               any(i.tipo_item in {"acao_manual", "observacao", "pre_condicao", "espera"} for i, _ in etapas)]
+    L += ["", "### Testes físicos pendentes"]
+    L += [f"- {_descricao_item(id_, etapas)}" for id_, etapas in fisicos] or ["(nenhum)"]
+    L += ["", "## Detalhes técnicos\n",
+          f"- **Commit:** `{sessao.commit}`",
+          f"- **Modo:** {sessao.modo}",
+          f"- **SHA-256 do ROTEIRO_VALIDACAO.md:** `{sessao.hash_roteiro}`",
+          f"- **Versão do aplicativo:** {sessao.versao}",
+          f"- **Itens carregados:** {sessao.itens_carregados}",
+          "", "### Evidências das falhas\n"]
     if not falhas:
         L.append("(nenhuma)\n")
     for item, r in falhas:
         c = r.get("captura") or {}
-        L += [f"### {item.para_falar() or item.frase}\n", f"- **ID:** `{item.id}`",
+        L += [f"#### {item.para_falar() or item.frase}\n", f"- **ID:** `{item.id}`",
+              f"- **ID do item:** `{item.origem_id or item.id}`",
+              f"- **Assinatura do feedback:** `{_assinatura_feedback(item, r)}`",
               f"- **Grupo:** {NOMES_SECAO.get(item.secao, item.secao)} › {item.grupo}",
               f"- **Ouvi:** {c.get('ouvi') or '(nada)'}",
               f"- **Entendi:** {c.get('entendi') or '(nada)'} → `{c.get('rota') or 'nenhum comando'}`",
@@ -881,7 +973,7 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
         if c.get("audio"):
             L.append(f"- **Áudio:** `{c['audio']}`")
         L.append("")
-    L += ["## Todos os itens\n", "| Resultado | ID | Tipo | Item | Entendi → comando | Esperado |",
+    L += ["### Todos os itens\n", "| Resultado | ID | Tipo | Item | Entendi → comando | Esperado |",
           "|---|---|---|---|---|---|"]
     marca = {"ok": "✅", "falha": "❌", "pulado": "⏭", "bloqueado": "🚫", "nao_executado": "◻"}
     for item, r in lista:
@@ -901,17 +993,55 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
 
 
 def salvar_feedbacks(sessao: Sessao, arquivo: Path | None = None, agora: datetime | None = None) -> list[str]:
-    """Cada falha vira "- [ ] (data) FEEDBACK: ..." no fim do MELHORIAS.md. Devolve as linhas escritas."""
+    """Acrescenta somente falhas novas; dúvidas são preservadas e sinalizadas."""
     arquivo = Path(arquivo or ARQUIVO_MELHORIAS)
     agora = agora or datetime.now()
-    linhas = [f"- [ ] ({agora:%d/%m/%Y}) {linha_feedback(i, r)}" for i, r in sessao.lista()
-              if r["veredito"] == "falha" and i.exige_microfone]
+    atual = arquivo.read_text(encoding="utf-8") if arquivo.exists() else "# Melhorias\n\n"
+    existentes = [(linha, bool(re.match(r"^\s*-\s*\[\s*\]", linha)))
+                 for linha in atual.splitlines() if re.match(r"^\s*-\s*\[[ xX]\].*\bFEEDBACK:", linha)]
+    linhas = []
+    for item, resultado in sessao.lista():
+        if resultado["veredito"] != "falha" or not item.exige_microfone:
+            continue
+        corpo = linha_feedback(item, resultado)
+        id_ = item.origem_id or item.id
+        assinatura = _assinatura_feedback(item, resultado)
+        texto = _corpo_feedback(corpo)
+        ouvido = re.search(r'\bouvi "([^"]+)"', corpo)
+        possivel = False
+        equivalente = False
+        for anterior, aberta in existentes:
+            id_antigo = re.search(r"<!--\s*validacao-feedback\s+id=([a-zA-Z0-9_-]+)\s*-->", anterior)
+            dados = re.search(r"<!--\s*validacao-dados\s+etapa=([a-zA-Z0-9_-]+)\s+assinatura=([a-f0-9]+)\s*-->", anterior)
+            mesmo_id = bool(id_antigo and id_antigo.group(1) == id_)
+            mesma_etapa = not dados or dados.group(1) == item.id
+            corpo_igual = _corpo_feedback(anterior) == texto
+            if aberta and mesmo_id and mesma_etapa and ((dados and dados.group(2) == assinatura) or corpo_igual):
+                equivalente = True
+                break
+            if aberta and not id_antigo and corpo_igual:
+                equivalente = True  # texto inteiro igual, mesmo no formato anterior aos IDs
+                break
+            ouvido_antigo = re.search(r'\bouvi "([^"]+)"', anterior)
+            if (mesmo_id and mesma_etapa) or (ouvido and ouvido_antigo and
+                                              ouvido.group(1).casefold() == ouvido_antigo.group(1).casefold()):
+                possivel = True
+        if equivalente:
+            continue
+        if possivel:
+            corpo += " [possível duplicidade: confira o feedback anterior]"
+        linha = f"- [ ] ({agora:%d/%m/%Y}) {corpo}"
+        linhas.append(linha)
+        existentes.append((linha, True))
     if not linhas:
         return []
-    atual = arquivo.read_text(encoding="utf-8") if arquivo.exists() else "# Melhorias\n\n"
-    if atual and not atual.endswith("\n"):
-        atual += "\n"
-    arquivo.write_text(atual + "\n".join(linhas) + "\n", encoding="utf-8")
+    novo = not arquivo.exists() or arquivo.stat().st_size == 0
+    with arquivo.open("a", encoding="utf-8") as saida:
+        if novo:
+            saida.write("# Melhorias\n\n")
+        elif atual and not atual.endswith("\n"):
+            saida.write("\n")
+        saida.write("\n".join(linhas) + "\n")
     return linhas
 
 
