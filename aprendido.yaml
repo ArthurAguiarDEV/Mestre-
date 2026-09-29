@@ -3,8 +3,8 @@
 atalhos: {}
 preferencias:
   indicador_posicao:
-  - 2573
-  - 16
-  tom: +9Hz
+  - 2888
+  - 111
+  tom: -6Hz
   velocidade: +50%
-  voz: en-US-BrianMultilingualNeural
+  voz: it-IT-GiuseppeMultilingualNeural

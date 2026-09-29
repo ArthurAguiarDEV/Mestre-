@@ -14,6 +14,23 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Painel: menu lateral desliza como no protótipo B
+
+A barra de ícones (68 px) fica sempre fixa. Os nomes e grupos ficam numa "gaveta" já montada atrás
+dos ícones e só deslizam para o lado; a página não muda de tamanho nem de lugar.
+
+| Frase/ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Pare o mouse na barra de ícones por um instante | Os nomes e grupos deslizam de trás dos ícones, suaves e já prontos (sem texto aparecendo aos pedaços); a página fica parada | (painel) |
+| (painel) Só passe o mouse rápido por cima da barra | Não abre | (painel) |
+| (painel) Tire o mouse do menu (para a página) | Fecha deslizando; a página não se mexe | (painel) |
+| (painel) Abra e feche 10 vezes seguidas; e entre/saia rápido no meio do movimento | Inverte de onde está, sem piscar, sem travar e sem deslocar a página | (painel) |
+| (painel) Passe o mouse pelos itens com o menu aberto | O destaque acompanha na hora (ícone + nome num destaque só) | (painel) |
+| (painel) Clique num ícone e depois num nome | Abre a página uma vez; o menu recolhe e só reabre depois que o mouse sair e voltar | (painel) |
+| (painel) Depois do clique, com o mouse ainda na barra, pare em outro ícone | Aparece o balãozinho (só com o menu fechado) | (painel) |
+| (painel) Janela no tamanho mínimo: gire a roda do mouse sobre os ícones ou nomes | A lista rola (ícones e nomes juntos) até "Aparência"; sem barra de rolagem grande (só um fio discreto na gaveta) | (painel) |
+| (visual) Repita com o Windows em escala 125% e 150% | Ícones, nomes e destaques alinhados, nada cortado | (visual) |
+
 ### Painel > Sistema > Tempos: quanto tempo cada etapa leva
 
 Nova página no painel que mostra a média e o pior caso das últimas 50 vezes de cada etapa: da
@@ -101,8 +118,8 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | Frase | O que deve acontecer | Comando esperado |
 |---|---|---|
 | (painel) Abra a Central pelo atalho | Abre rápido, no Início; a barra da esquerda mostra só ícones e a versão "2.5" | (painel) |
-| (painel) Passe o mouse na barra de ícones da esquerda | Ela abre suave (sem travar) mostrando os nomes e os grupos; tire o mouse e ela fecha | (painel) |
-| (painel) Pare o mouse em cima de um ícone | Aparece um balãozinho com o nome e o que tem na página | (painel) |
+| (painel) Pare o mouse na barra de ícones da esquerda | Os nomes e os grupos deslizam suaves (sem travar) por cima da página; tire o mouse e eles recolhem | (painel) |
+| (painel) Clique num ícone e pare o mouse em outro ícone | Aparece um balãozinho com o nome e o que tem na página (só com o menu fechado) | (painel) |
 | (painel) Clique em várias páginas e volte a elas | A página aberta fica destacada em rosa; voltar a uma página já aberta é na hora | (painel) |
 | (painel) Início, com o Assessor ligado: fale `Mestre, que horas são` | O cartão de status muda (Ouvindo → Pensando/Falando) e o comando aparece em "Últimos comandos" com OUVI / ENTENDI / FIZ, sem clicar em nada | (painel) |
 | (painel) Início: `Mestre, me explica a teoria da relatividade` | A pergunta aparece em "Fila do pensando" com o tempo contando; some quando termina | (painel) |
@@ -206,7 +223,7 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 
 | Frase / ação | O que deve acontecer | Comando esperado |
 |---|---|---|
-| (automático) `venv\Scripts\python -m testes.teste_basico` | Linha "Nenhum erro escondido nos botões" fecha OK, teste completo 275 de 275 | (teste automático) |
+| (automático) `venv\Scripts\python -m testes.teste_basico` | Linha "Nenhum erro escondido nos botões" fecha OK, teste completo 277 de 277 | (teste automático) |
 | (visual) olhe o ícone perto do relógio (bandeja) | Ícone novo, na cor escolhida em Aparência | (bandeja) |
 | (painel) abra o painel, ensine uma rotina nova por voz SEM fechar o painel, depois clique Salvar no painel | A rotina nova continua no config.yaml; uma rotina que você apagar no painel continua apagada | (painel) |
 | (painel) Sistema > Validar atualização → "Só novidades" → Começar; fale a frase que aparece; marque ✅/❌ (no ❌ diga "o certo era") → Parar | Mostra OUVI / ENTENDI (com o comando) / FIZ de cada frase e sugere ✅/❌; no fim cria `exportacoes/validacao_AAAA-MM-DD_HHMM.md` e cada ❌ vira FEEDBACK no MELHORIAS.md | (painel) |

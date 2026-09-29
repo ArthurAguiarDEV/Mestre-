@@ -579,7 +579,7 @@ Chega de editar YAML no Bloco de Notas. Abra o painel de um destes jeitos:
 | **Atalhos** | Ver, editar e apagar os atalhos que você ensinou por voz |
 | **Melhorias** | Ver e escrever a lista de ideias; botão **"Refinar e aplicar com o Claude Code"** |
 
-> Na versão 2.5 o menu virou uma barra de ícones (passe o mouse para ver os nomes). Onde fica cada página: veja a [Etapa 32](#etapa-32--versão-25).
+> Na versão 2.5 o menu virou uma barra de ícones (pare o mouse em cima dela para ver os nomes). Onde fica cada página: veja a [Etapa 32](#etapa-32--versão-25).
 
 Depois de mudar, clique em **"Salvar e reiniciar o Mestre"** (canto de baixo).
 - O painel guarda uma cópia do arquivo antigo (`config.yaml.bak`) e **mantém seus comentários**.
@@ -1507,8 +1507,11 @@ O assistente olha sozinho, uma vez por dia, o que aconteceu desde a última olha
 A partir daqui a versão tem ponto: depois da 13 vem a **2.5** (o painel mostra "2.5" embaixo da barra de ícones e no selo **v2.5** do canto).
 
 ### 32.1 Menu de ícones (barra da esquerda)
-- A barra da esquerda mostra **só os ícones**. **Passe o mouse** em cima: ela abre por cima da página mostrando os nomes e os grupos; tire o mouse e ela fecha.
-- Parou o mouse num ícone? Aparece um balãozinho com o nome e o que tem na página.
+- A barra da esquerda mostra **só os ícones** e nunca muda de tamanho. **Pare o mouse** em cima dela por um instante: os nomes e os grupos deslizam de trás dos ícones, por cima da página. Tire o mouse do menu e eles recolhem. (Só passar rápido por cima não abre.) O ícone do programa no alto também abre/fecha com um clique, e Esc fecha.
+- A página não muda de tamanho nem de posição: o menu só passa por cima da borda esquerda enquanto está aberto.
+- Ao escolher uma página, o menu recolhe e fica fechado até o mouse sair da barra (para você ver a página inteira).
+- A lista não coube na tela (janela pequena ou fonte grande)? Gire a **roda do mouse** em cima dos ícones ou dos nomes.
+- Parou o mouse num ícone com o menu fechado (por exemplo, logo depois de escolher uma página)? Aparece um balãozinho com o nome e o que tem na página. Com o menu aberto, os nomes já aparecem e o balão não.
 - A página aberta fica com o ícone **rosa** (na cor que você escolheu em Aparência).
 - Onde fica cada coisa (de cima para baixo):
 

@@ -1,12 +1,168 @@
 """Cobertura legada recuperada sem interface, rede, áudio ou processos externos."""
+import ast
 from datetime import datetime
+import math
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
+from types import SimpleNamespace
 
 from app import atualizar, configuracao, validacao
+
+
+def metodos_menu_sem_janela():
+    """Carrega os metodos reais sem importar customtkinter ou iniciar a interface."""
+    origem = Path(__file__).resolve().parents[1] / "app" / "painel.py"
+    arvore = ast.parse(origem.read_text(encoding="utf-8"))
+    classe = next(n for n in arvore.body if isinstance(n, ast.ClassDef) and n.name == "Painel")
+    movimento = next(n for n in arvore.body if isinstance(n, ast.ClassDef) and n.name == "MovimentoGaveta")
+    metodos = [n for n in classe.body if isinstance(n, ast.FunctionDef)
+               and n.name in {"_rail_aplicar", "_rail_alternar", "_rail_esc", "_escolher_menu",
+                              "_rail_montar_pendente", "_marcar_item", "mostrar_pagina"}]
+    classe_falsa = ast.ClassDef(name="MenuSemInterface", bases=[], keywords=[], body=metodos, decorator_list=[])
+    modulo = ast.fix_missing_locations(ast.Module(body=[movimento, classe_falsa], type_ignores=[]))
+    contexto = {"math": math}
+    exec(compile(modulo, str(origem), "exec"), contexto)
+    return contexto["MenuSemInterface"], contexto["MovimentoGaveta"]
+
+
+def percorrer(mov, t, ate, no_trilho, na_gaveta=False, passo=0.016):
+    """Anda o relogio de t ate `ate` em quadros de ~16 ms; devolve (t, [p de cada quadro])."""
+    ps = []
+    while t < ate - 1e-9:
+        t += passo
+        ps.append(mov.passo(t, no_trilho, na_gaveta))
+    return t, ps
+
+
+class MenuSemJanela(unittest.TestCase):
+    def test_passar_rapido_nao_abre_e_parar_abre_suave(self):
+        _, Movimento = metodos_menu_sem_janela()
+        mov = Movimento()
+        mov.acordar(0.0)
+        t, ps = percorrer(mov, 0.0, Movimento.ESPERA * 0.6, no_trilho=True)
+        t, ps2 = percorrer(mov, t, t + 0.3, no_trilho=False)
+        self.assertEqual(set(ps + ps2), {0.0})   # so passou por cima: continua fechado
+        t, ps = percorrer(mov, t, t + Movimento.ESPERA + 0.4, no_trilho=True)
+        self.assertEqual(ps[-1], 1.0)
+        self.assertEqual(ps, sorted(ps))   # so anda para frente
+        self.assertLess(max(b - a for a, b in zip(ps, ps[1:])), 0.35)   # em varios quadros, sem salto
+
+    def test_sair_fecha_e_voltar_no_meio_inverte_sem_salto(self):
+        _, Movimento = metodos_menu_sem_janela()
+        mov = Movimento()
+        mov.acordar(0.0)
+        t, _ = percorrer(mov, 0.0, 1.0, no_trilho=True)
+        self.assertEqual(mov.p, 1.0)
+        t, ps = percorrer(mov, t, t + 0.05, no_trilho=False)
+        meio = ps[-1]
+        self.assertTrue(0 < meio < 1)
+        # o mouse volta para a parte da gaveta ainda visivel: abre de novo a partir de onde estava
+        t, ps = percorrer(mov, t, t + 0.4, no_trilho=False, na_gaveta=True)
+        self.assertGreater(ps[0], meio)
+        self.assertLess(ps[0] - meio, 0.35)
+        self.assertEqual(ps[-1], 1.0)
+        t, ps = percorrer(mov, t, t + 0.5, no_trilho=False)
+        self.assertEqual(ps[-1], 0.0)
+        self.assertEqual(ps, sorted(ps, reverse=True))
+
+    def test_tela_travada_nao_faz_a_gaveta_saltar(self):
+        _, Movimento = metodos_menu_sem_janela()
+        mov = Movimento()
+        mov.abrir()
+        mov.acordar(0.0)
+        mov.passo(0.016, True, False)
+        antes = mov.p
+        mov.passo(2.0, True, False)   # 2 s sem quadro (pagina montando)
+        self.assertLess(mov.p - antes, 1 - math.exp(-Movimento.PASSO_MAX / Movimento.TAU) + 1e-9)
+
+    def test_depois_do_clique_fica_fechado_ate_o_mouse_sair(self):
+        _, Movimento = metodos_menu_sem_janela()
+        mov = Movimento()
+        mov.acordar(0.0)
+        t, _ = percorrer(mov, 0.0, 1.0, no_trilho=True)
+        mov.fechar()
+        t, ps = percorrer(mov, t, t + 1.5, no_trilho=True)
+        self.assertEqual(ps[-1], 0.0)   # mouse parado no trilho nao reabre
+        t, _ = percorrer(mov, t, t + 0.1, no_trilho=False)
+        self.assertFalse(mov.segurar)
+        t, ps = percorrer(mov, t, t + Movimento.ESPERA + 0.4, no_trilho=True)
+        self.assertEqual(ps[-1], 1.0)   # saiu e voltou: abre de novo
+
+    def test_abrir_e_fechar_so_move_a_gaveta(self):
+        Painel, Movimento = metodos_menu_sem_janela()
+        espaco, conteudo, gaveta, trilho, borda = (unittest.mock.Mock() for _ in range(5))
+        pintados = []
+        painel = SimpleNamespace(
+            _rail_fechado=68, _gaveta_largura=212, _rail_desloc=0, _rail_espaco=espaco, _conteudo=conteudo,
+            _gaveta=gaveta, _trilho=trilho, _trilho_borda=borda, _dica=unittest.mock.Mock(),
+            _rail_marcados={"Voz"}, _rail_foco=None, _rail_pintar=pintados.append,
+        )
+        mov = Movimento()
+        mov.acordar(0.0)
+        t = 0.0
+        for _ in range(10):   # abrir e fechar dez vezes
+            t, ps = percorrer(mov, t, t + 1.0, no_trilho=True)
+            t, ps2 = percorrer(mov, t, t + 1.0, no_trilho=False)
+            for p in ps + ps2:
+                Painel._rail_aplicar(painel, p)
+        self.assertEqual(espaco.mock_calls, [])
+        self.assertEqual(conteudo.mock_calls, [])
+        chamadas = gaveta.place_configure.call_args_list
+        self.assertTrue(chamadas)
+        self.assertTrue(all(c.args == () and set(c.kwargs) == {"x"} for c in chamadas))
+        xs = [c.kwargs["x"] for c in chamadas]
+        self.assertEqual((min(xs), max(xs), xs[-1]), (68 - 212, 68, 68 - 212))
+        self.assertFalse(trilho.place_configure.called)
+        self.assertEqual(pintados.count("Voz"), 20)   # pilula do trilho troca de forma so ao abrir/fechar
+
+    def test_clique_em_pagina_montada_abre_na_hora_e_uma_vez(self):
+        Painel, Movimento = metodos_menu_sem_janela()
+        mostradas = []
+        painel = SimpleNamespace(
+            _rail_mov=Movimento(), _rail_desloc=212, _rail_depois=None, _rail_montar_id=None,
+            paginas={"Voz": ("montada", "")}, _rail_acordar=lambda: None,
+            mostrar_pagina=mostradas.append,
+        )
+        Painel._escolher_menu(painel, "Voz")
+        self.assertEqual(mostradas, ["Voz"])
+        self.assertTrue(painel._rail_mov.segurar)
+        self.assertEqual(painel._rail_mov.alvo, 0)
+
+    def test_pagina_nova_monta_depois_que_a_gaveta_fecha(self):
+        Painel, Movimento = metodos_menu_sem_janela()
+        mostradas, cancelados = [], []
+        painel = SimpleNamespace(
+            _rail_mov=Movimento(), _rail_desloc=212, _rail_depois=None, _rail_montar_id=None,
+            _rail_marcados={"Início"}, pagina_atual="Início", _rail_pintar=lambda _n: None,
+            paginas={"Voz": (None, ""), "Áudio": (None, ""), "Início": ("montada", "")},
+            _rail_acordar=lambda: None, after_cancel=cancelados.append, mostrar_pagina=mostradas.append,
+        )
+        painel._marcar_item = lambda nome, ativo: Painel._marcar_item(painel, nome, ativo)
+        Painel._escolher_menu(painel, "Voz")
+        self.assertEqual((mostradas, painel._rail_depois, painel._rail_marcados), ([], "Voz", {"Voz"}))
+        painel._rail_montar_id = "agendado"
+        Painel._escolher_menu(painel, "Áudio")   # mudou de ideia antes de montar
+        self.assertEqual((cancelados, painel._rail_depois, painel._rail_marcados), (["agendado"], "Áudio", {"Áudio"}))
+        Painel._rail_montar_pendente(painel)
+        Painel._rail_montar_pendente(painel)
+        self.assertEqual(mostradas, ["Áudio"])
+
+    def test_logo_e_esc(self):
+        Painel, Movimento = metodos_menu_sem_janela()
+        painel = SimpleNamespace(_rail_mov=Movimento(), _rail_acordar=lambda: None)
+        Painel._rail_alternar(painel)
+        self.assertEqual((painel._rail_mov.alvo, painel._rail_mov.segurar), (1, False))
+        Painel._rail_esc(painel)
+        self.assertEqual((painel._rail_mov.alvo, painel._rail_mov.segurar), (0, True))
+
+    def test_mesma_pagina_nao_e_montada_ou_selecionada_outra_vez(self):
+        Painel, _ = metodos_menu_sem_janela()
+
+        painel = SimpleNamespace(pagina_atual="Voz")
+        Painel.mostrar_pagina(painel, "Voz")
 
 
 ROTEIRO = r'''# Roteiro

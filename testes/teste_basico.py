@@ -2541,16 +2541,14 @@ ok(len(list(p._descendentes(pn))) == widgets, "Início: atualizar não cria widg
 pn.mostrar_pagina("Voz"); pn.update(); pn.mostrar_pagina("Início"); pn.update()
 t0 = time.time(); pn.mostrar_pagina("Voz"); pn.update(); tempo = time.time() - t0
 ok(pn._montadas == ["Início", "Voz"] and tempo < 0.3, f"Voltar a uma página já aberta é rápido ({tempo:.3f}s)")
-ok(pn.botoes_menu["Voz"].cget("fg_color") == p.tema.ROSA_FUNDO and pn.titulo_pagina.cget("text") == "Voz",
+ok(pn._rail_marcados == {"Voz"} and pn.titulo_pagina.cget("text") == "Voz",
    "Menu: item ativo destacado e título da página")
-pn._rail_ir(pn._rail_aberto); fim = time.time() + 2
-while time.time() < fim and pn._rail_largura != pn._rail_aberto:
-    pn.update(); time.sleep(0.01)
-ok(pn._rail_largura == pn._rail_aberto, "Menu de ícones abre (mostrando os nomes)")
-pn._rail_ir(pn._rail_fechado); fim = time.time() + 2
-while time.time() < fim and pn._rail_largura != pn._rail_fechado:
-    pn.update(); time.sleep(0.01)
-ok(pn._rail_largura == pn._rail_fechado, "Menu de ícones fecha de novo")
+x_conteudo = pn._conteudo.winfo_x()
+pn._rail_aplicar(1.0); pn.update()
+ok(pn._gaveta.winfo_x() == pn._rail_fechado and pn._conteudo.winfo_x() == x_conteudo,
+   "Menu de ícones abre (mostrando os nomes) sem mexer na página")
+pn._rail_aplicar(0.0); pn.update()
+ok(pn._gaveta.winfo_x() == pn._rail_fechado - pn._gaveta_largura, "Menu de ícones fecha de novo")
 ok(pn.salvar() and set(pn._montadas) == {"Início", "Voz"}, "Salvar com só algumas páginas abertas")
 ok(not erros, "Painel 2.5 sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
 pn._fechar()

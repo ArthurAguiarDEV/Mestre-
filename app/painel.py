@@ -3,6 +3,7 @@
 Abre pelo atalho "Mestre" (app.central), pelo icone perto do relogio, pelo duplo clique no indicador ou falando
 "Mestre, abre o painel".
 """
+import math
 import queue
 import threading
 import time
@@ -338,8 +339,8 @@ def linha_campo(master, rotulo: str, widget_fabrica, largura_rotulo=230):
     return w
 
 
-RAIL = 68            # menu lateral fechado: so os icones
-RAIL_ABERTO = 236    # com o mouse em cima: icones + nomes
+RAIL = 68            # trilho de icones (sempre visivel, nunca muda de largura)
+RAIL_ABERTO = 280    # trilho + gaveta com os nomes (a gaveta tem largura fixa: RAIL_ABERTO - RAIL)
 LILAS = "#C3A6F5"
 COR_SITUACAO = {"ouvindo": tema.SUCESSO, "pensando": LILAS, "falando": tema.ROSA, "descansando": tema.TEXTO_FRACO,
                 "pausado": tema.AVISO, "desligado": tema.TEXTO_FRACO}
@@ -399,10 +400,10 @@ class Dica:
                 corpo = tk.Frame(self.janela, bg=tema.CAMPO)
                 corpo.pack(padx=1, pady=1)
                 self._t = tk.Label(corpo, bg=tema.CAMPO, fg=tema.TEXTO, anchor="w", justify="left",
-                                   font=(tema.FONTE, 10 + tema.TAMANHO - 14, "bold"))
+                                   font=(tema.FONTE, 12 + tema.TAMANHO - 14, "bold"))
                 self._t.pack(fill="x", padx=10, pady=(7, 0))
                 self._x = tk.Label(corpo, bg=tema.CAMPO, fg=tema.TEXTO_FRACO, anchor="w", justify="left", wraplength=260,
-                                   font=(tema.FONTE, 9 + tema.TAMANHO - 14))
+                                   font=(tema.FONTE, 11 + tema.TAMANHO - 14))
                 self._x.pack(fill="x", padx=10, pady=(1, 8))
             self._t.configure(text=titulo)
             self._x.configure(text=texto)
@@ -421,6 +422,57 @@ class Dica:
                 self.janela.withdraw()
             except tk.TclError:
                 pass
+
+
+class MovimentoGaveta:
+    """Quanto a gaveta com os nomes do menu esta aberta: p = 0 (escondida atras dos icones) ate 1 (aberta).
+
+    Sem Tk (o teste usa direto). O mouse parado sobre o trilho por ESPERA segundos abre; sair da area inteira do
+    menu fecha; voltar no meio do caminho inverte a partir de onde esta (nada pula nem pisca). Depois de um
+    clique num item (ou Esc) fica fechada ate o mouse sair do menu, para a pagina aparecer inteira."""
+    ESPERA = 0.22   # s com o mouse sobre os icones antes de abrir (so passar por cima nao abre)
+    TAU = 0.045     # s: a cada TAU anda ~63% do que falta (rapido no comeco, suave no fim, nos dois sentidos)
+    PASSO_MAX = 0.05   # s: se a tela travar um instante, a gaveta continua de onde estava (nao salta)
+
+    def __init__(self):
+        self.p, self.alvo = 0.0, 0
+        self.segurar = False
+        self._chegou = None
+        self._t = None
+
+    @property
+    def parado(self) -> bool:
+        return self.p == self.alvo
+
+    def acordar(self, agora: float) -> None:
+        self._t = agora
+
+    def abrir(self) -> None:
+        self.alvo, self.segurar = 1, False
+
+    def fechar(self) -> None:
+        self.alvo, self.segurar, self._chegou = 0, True, None
+
+    def passo(self, agora: float, no_trilho: bool, na_gaveta: bool) -> float:
+        dt = 0.0 if self._t is None else min(max(agora - self._t, 0.0), self.PASSO_MAX)
+        self._t = agora
+        dentro = no_trilho or (na_gaveta and self.p > 0)
+        if not dentro:
+            self.segurar, self._chegou = False, None
+        if self.segurar:
+            self.alvo = 0
+        elif self.alvo == 1 or self.p > 0:
+            self.alvo = 1 if dentro else 0   # aberta, abrindo ou fechando: segue o mouse na hora
+        elif no_trilho:
+            if self._chegou is None:
+                self._chegou = agora
+            if agora - self._chegou >= self.ESPERA:
+                self.alvo = 1
+        if self.p != self.alvo and dt > 0:
+            self.p += (self.alvo - self.p) * (1 - math.exp(-dt / self.TAU))
+            if abs(self.alvo - self.p) < 0.004:
+                self.p = float(self.alvo)
+        return self.p
 
 
 # =====================================================================
@@ -479,7 +531,8 @@ class Painel(ctk.CTk):
         self.paginas = {nome: (None, info[1]) for nome, info in PAGINAS.items()}
         self._montadas: list[str] = []
         self.mostrar_pagina("Início")
-        self._rail.lift()
+        self._gaveta.lift()   # conteudo < gaveta < trilho
+        self._trilho.lift()
         self.protocol("WM_DELETE_WINDOW", self._fechar)
         self.after(100, self._atualizar_medidor)
         self.after(1000, self._tique_status)
@@ -509,135 +562,300 @@ class Painel(ctk.CTk):
             w.configure(**opcoes)
             self._ultimos_valores[id(w)] = opcoes
 
-    # --- menu lateral compacto (so icones; abre com o mouse em cima) ------------
+    # --- menu lateral: trilho de icones fixo + gaveta com os nomes que desliza (prototipo B) ----------------
+    # Trilho: 68 px, sempre por cima, nunca muda. Gaveta: largura fixa, montada ja aqui, escondida atras do
+    # trilho; abrir/fechar so muda o x dela. O grid (_rail_espaco, _conteudo e paginas) nunca e tocado.
+    # Cada lista e UM canvas (icones/nomes sao itens desenhados): destacar e rolar nao recriam widgets.
     def _montar_lateral(self):
         from .atualizar import versao_atual
         from .ponte import VERSAO_EXTENSAO
         self.versao = versao_atual()
         escala = ctk.ScalingTracker.get_widget_scaling(self)
-        self._rail_fechado, self._rail_aberto = round(RAIL * escala), round(RAIL_ABERTO * escala)
-        self._rail_largura = self._rail_alvo = self._rail_fechado
-        self._rail_anim = self._rail_abrir = self._rail_vigia = None
+
+        def px(v):
+            return max(1, round(v * escala))
+
+        self._rail_fechado, self._rail_aberto = px(RAIL), px(RAIL_ABERTO)
+        trilho_l, gaveta_l = self._rail_fechado, self._rail_aberto - self._rail_fechado
+        self._gaveta_largura = gaveta_l
+        self._rail_mov = MovimentoGaveta()
+        self._rail_tique_id = self._rail_montar_id = None
+        self._rail_desloc = 0            # quanto a gaveta ja saiu de tras do trilho (px)
+        self._rail_rolagem = 0.0
+        self._rail_passo_roda = px(60)
+        self._rail_foco = None           # item sob o mouse
+        self._rail_marcados: set[str] = set()
+        self._rail_depois = None         # pagina nova escolhida com a gaveta aberta: monta quando ela fechar
         self._dica = Dica(self)
-        # o espaco do menu fechado fica reservado; o menu aberto passa POR CIMA do conteudo (nada se mexe)
-        tk.Frame(self, width=self._rail_fechado, bg=tema.LATERAL, highlightthickness=0, bd=0).grid(
-            row=0, column=0, sticky="ns")
-        self._rail = tk.Frame(self, bg=tema.LATERAL, highlightthickness=0, bd=0)
-        self._rail.place(x=0, y=0, relheight=1, width=self._rail_fechado)
-        dentro = tk.Frame(self._rail, bg=tema.LATERAL, highlightthickness=0, bd=0)
-        dentro.place(x=0, y=0, relheight=1, width=self._rail_aberto)   # largura fixa: o menu so "recorta"
-        tk.Frame(self._rail, bg=tema.BORDA, width=1, highlightthickness=0, bd=0).place(
-            relx=1, x=-1, y=0, relheight=1, width=1)
-        # marca (icone do programa + nome); o nome comeca depois da parte visivel do menu fechado
-        marca = ctk.CTkFrame(dentro, fg_color="transparent")
-        marca.pack(fill="x", pady=(16, 8))
+        alto_topo, alto_pe = px(72), px(42)
+
+        self._rail_espaco = tk.Frame(self, width=trilho_l, bg=tema.LATERAL, highlightthickness=0, bd=0)
+        self._rail_espaco.grid(row=0, column=0, sticky="ns")
+        self._gaveta = tk.Frame(self, bg=tema.LATERAL, highlightthickness=0, bd=0)
+        self._gaveta.place(x=trilho_l - gaveta_l, y=0, relheight=1, width=gaveta_l)
+        self._trilho = tk.Frame(self, bg=tema.LATERAL, highlightthickness=0, bd=0)
+        self._trilho.place(x=0, y=0, relheight=1, width=trilho_l)
+        partes = []
+        for dono in (self._trilho, self._gaveta):
+            topo = tk.Frame(dono, bg=tema.LATERAL, highlightthickness=0, bd=0)
+            topo.place(x=0, y=0, relwidth=1, height=alto_topo)
+            pe = tk.Frame(dono, bg=tema.LATERAL, highlightthickness=0, bd=0)
+            pe.place(x=0, rely=1, y=-alto_pe, relwidth=1, height=alto_pe)
+            lista = tk.Canvas(dono, bg=tema.LATERAL, highlightthickness=0, bd=0, yscrollincrement=1)
+            lista.place(x=0, y=alto_topo, relwidth=1, relheight=1, height=-(alto_topo + alto_pe))
+            partes.append((topo, pe, lista))
+        (topo_t, pe_t, self._rail_lista), (topo_g, pe_g, self._gaveta_lista) = partes
+        # marca: icone do programa no trilho, nome na gaveta (mesma altura)
         self._logo = ctk.CTkImage(icones.logo(tema.ROSA, 128), size=(36, 36))
-        ctk.CTkLabel(marca, text="", image=self._logo, width=48).pack(side="left", padx=(10, 0))
-        ctk.CTkLabel(marca, text=self.nome, anchor="w", font=tema.fonte(17, True)).pack(side="left", padx=(16, 0))
+        ctk.CTkButton(topo_t, text="", image=self._logo, width=48, height=48,
+                      corner_radius=12, fg_color="transparent", hover_color=tema.CARTAO,
+                      command=self._rail_alternar).pack(side="left", padx=(10, 0), pady=(16, 8))
+        ctk.CTkLabel(topo_g, text=self.nome, anchor="w", height=48,
+                     font=tema.fonte(17, True)).pack(side="left", padx=(8, 0), pady=(16, 8))
         # rodape: versao do projeto e da extensao
-        pe = ctk.CTkFrame(dentro, fg_color="transparent")
-        pe.pack(side="bottom", fill="x", pady=(6, 14))
-        ctk.CTkLabel(pe, text=self.versao, width=48, height=22, corner_radius=11, fg_color=tema.ROSA_FUNDO,
-                     text_color=tema.ROSA, font=tema.fonte(11, True)).pack(side="left", padx=(10, 0))
-        self.rot_versao = ctk.CTkLabel(pe, text=f"Versão {self.versao} · extensão {VERSAO_EXTENSAO}", anchor="w",
-                                       text_color=tema.TEXTO_FRACO, font=tema.fonte(11))
-        self.rot_versao.pack(side="left", padx=(16, 0))
-        menu = ctk.CTkScrollableFrame(dentro, fg_color=tema.LATERAL, corner_radius=0,
-                                      scrollbar_button_color=tema.LATERAL,
-                                      scrollbar_button_hover_color=tema.SECUNDARIO_HOVER)
-        menu.pack(fill="both", expand=True)
-        self.botoes_menu, self._rotulos_menu = {}, {}
-        for grupo, nomes in GRUPOS_MENU:
-            g = ctk.CTkFrame(menu, fg_color="transparent", height=22)
-            g.pack(fill="x", pady=(8, 1))
-            ctk.CTkFrame(g, width=20, height=2, corner_radius=1, fg_color=tema.BORDA).pack(side="left", padx=(24, 0))
-            ctk.CTkLabel(g, text=grupo, anchor="w", height=18, text_color=tema.TEXTO_FRACO,
-                         font=tema.fonte(10, True)).pack(side="left", padx=(28, 0))
+        ctk.CTkLabel(pe_t, text=self.versao, width=48, height=22, corner_radius=11, fg_color=tema.ROSA_FUNDO,
+                     text_color=tema.ROSA, font=tema.fonte(11, True)).pack(side="left", padx=(10, 0), pady=(6, 14))
+        self.rot_versao = ctk.CTkLabel(pe_g, text=f"Versão {self.versao} · extensão {VERSAO_EXTENSAO}", anchor="w",
+                                       height=22, text_color=tema.TEXTO_FRACO, font=tema.fonte(12))
+        self.rot_versao.pack(side="left", padx=(8, 0), pady=(6, 14))
+        self._rail_desenhar(px)
+        # bordas: a do trilho some com a gaveta aberta (icone e nome viram um destaque so)
+        self._trilho_borda = tk.Frame(self._trilho, bg=tema.BORDA, width=1, highlightthickness=0, bd=0)
+        self._trilho_borda.place(relx=1, x=-1, y=0, relheight=1, width=1)
+        tk.Frame(self._gaveta, bg=tema.BORDA, width=1, highlightthickness=0, bd=0).place(
+            relx=1, x=-1, y=0, relheight=1, width=1)
+        for lista in (self._rail_lista, self._gaveta_lista):
+            lista.bind("<Motion>", lambda e: self._rail_focar(self._rail_linha_em(e.widget, e.y)))
+            lista.bind("<Leave>", lambda _e: self._rail_focar(None))
+            lista.bind("<Button-1>", self._rail_clicar)
+            lista.bind("<MouseWheel>", self._rail_rolar)
+        self._rail_lista.bind("<Configure>", lambda _e: self._rail_rolar_para(self._rail_rolagem))
+        _ligar_eventos(self._trilho, Enter=self._rail_acordar)
+        _ligar_eventos(self._gaveta, Enter=self._rail_acordar)
+        tk.Misc.bind(self, "<Escape>", self._rail_esc, "+")
+
+    def _rail_desenhar(self, px):
+        """Desenha grupos e itens nas duas listas, nas MESMAS alturas (a rolagem move as duas juntas)."""
+        from PIL import Image, ImageDraw, ImageTk
+        t, g = self._rail_lista, self._gaveta_lista
+        trilho_l, gaveta_l = self._rail_fechado, self._gaveta_largura
+        alto_item, alto_pilula, raio = px(44), px(40), px(12)
+        self._rail_fotos: dict = {}
+
+        def pilula(largura, cor, esquerda=True, direita=True):
+            k = 4   # desenha 4x maior e reduz: canto liso em 100/125/150%
+            im = Image.new("RGBA", (largura * k, alto_pilula * k), (0, 0, 0, 0))
+            ImageDraw.Draw(im).rounded_rectangle(
+                (0 if esquerda else -2 * raio * k, 0, largura * k - 1 + (0 if direita else 2 * raio * k),
+                 alto_pilula * k - 1), raio * k, fill=cor)
+            return ImageTk.PhotoImage(im.resize((largura, alto_pilula), Image.LANCZOS))
+
+        # trilho fechado: pilula so do icone; aberto: vai ate a borda e emenda com a da gaveta
+        for chave, cor in (("foco", tema.CARTAO), ("ativo", tema.ROSA_FUNDO)):
+            self._rail_fotos[("curta", chave)] = pilula(px(48), cor)
+            self._rail_fotos[("longa", chave)] = pilula(trilho_l - px(10), cor, direita=False)
+            self._rail_fotos[("gaveta", chave)] = pilula(gaveta_l - px(12), cor, esquerda=False)
+        self._rail_icone_lado = px(21)
+        fonte_px = -px(14 + tema.TAMANHO - 14)
+        self._rail_fontes = ((tema.FONTE, fonte_px), (tema.FONTE, fonte_px, "bold"))
+        fonte_grupo = (tema.FONTE, -px(12 + tema.TAMANHO - 14), "bold")
+        self._rail_linhas: list[tuple[int, int, str]] = []
+        self._rail_desenho: dict[str, dict] = {}
+        y = px(4)
+        for i, (grupo, nomes) in enumerate(GRUPOS_MENU):
+            alto = px(22 if i == 0 else 30)
+            meio = y + alto - px(9)
+            t.create_line(px(24), meio, px(44), meio, fill=tema.BORDA, width=px(2), capstyle="round")
+            g.create_text(px(8), meio, text=grupo, anchor="w", fill=tema.TEXTO_FRACO, font=fonte_grupo)
+            y += alto
             for nome in nomes:
-                self._item_menu(menu, nome)
-        _ligar_eventos(self._rail, Enter=self._rail_entrou)
+                c = y + alto_item // 2
+                self._rail_desenho[nome] = {
+                    "tp": t.create_image(px(10), c, anchor="w", state="hidden"),
+                    "ti": t.create_image(px(34), c, image=self._rail_icone(nome, tema.TEXTO_FRACO)),
+                    "gp": g.create_image(0, c, anchor="w", state="hidden"),
+                    "gt": g.create_text(px(8), c, text=nome, anchor="w", fill=tema.TEXTO,
+                                        font=self._rail_fontes[0]),
+                }
+                self._rail_linhas.append((y, y + alto_item, nome))
+                y += alto_item
+        self._rail_altura = y + px(8)
+        self._rail_barra = g.create_line(0, 0, 0, 0, fill=tema.BORDA, width=px(3), capstyle="round",
+                                         state="hidden")
+        self._rail_barra_x = gaveta_l - px(5)
+        for lista, largura in ((t, trilho_l), (g, gaveta_l)):
+            lista.configure(scrollregion=(0, 0, largura, self._rail_altura))
 
-    def _item_menu(self, menu, nome: str):
-        icone, descricao = PAGINAS[nome][0], PAGINAS[nome][1]
-        linha = ctk.CTkFrame(menu, fg_color="transparent")
-        linha.pack(fill="x", pady=1)
-        bt = ctk.CTkButton(linha, text="", image=icones.ctk_icone(icone, tema.TEXTO_FRACO, 21), width=48, height=40,
-                           corner_radius=12, fg_color="transparent", hover_color=tema.CARTAO,
-                           command=lambda: self.mostrar_pagina(nome))
-        bt.pack(side="left", padx=(10, 0))
-        rot = ctk.CTkLabel(linha, text=nome, anchor="w", text_color=tema.TEXTO_FRACO, font=tema.fonte(13), cursor="hand2")
-        rot.pack(side="left", fill="x", expand=True, padx=(16, 0))
-        self.botoes_menu[nome], self._rotulos_menu[nome] = bt, rot
+    def _rail_icone(self, nome: str, cor: str):
+        chave = (nome, cor)
+        if chave not in self._rail_fotos:
+            from PIL import Image, ImageTk
+            lado = self._rail_icone_lado
+            im = icones.imagem(PAGINAS[nome][0], cor).resize((lado, lado), Image.LANCZOS)
+            self._rail_fotos[chave] = ImageTk.PhotoImage(im)
+        return self._rail_fotos[chave]
 
-        def entrar(_=None):
-            if nome != getattr(self, "pagina_atual", None):
-                self._por(bt, fg_color=tema.CARTAO)
-                self._por(rot, text_color=tema.TEXTO)
-            self._dica.agendar(lambda: (self._rail.winfo_rootx() + self._rail_largura + 8, linha.winfo_rooty()),
-                               nome, descricao)
-
-        def sair(_=None):
-            if nome != getattr(self, "pagina_atual", None):
-                self._por(bt, fg_color="transparent")
-                self._por(rot, text_color=tema.TEXTO_FRACO)
-            self._dica.cancelar()
-        _ligar_eventos(linha, Enter=entrar, Leave=sair)
-        for w in (linha, rot):   # (o botao do icone ja tem o command)
-            _ligar_eventos(w, **{"Button-1": lambda _=None: self.mostrar_pagina(nome)})
+    def _rail_pintar(self, nome: str):
+        """Destaque de um item: rosa = pagina aberta, cinza = mouse em cima. So troca itens do canvas."""
+        d, t, g = self._rail_desenho[nome], self._rail_lista, self._gaveta_lista
+        ativo, foco = nome in self._rail_marcados, nome == self._rail_foco
+        if ativo or foco:
+            tipo = "ativo" if ativo else "foco"
+            forma = "longa" if self._rail_desloc > 0 else "curta"
+            t.itemconfigure(d["tp"], image=self._rail_fotos[(forma, tipo)], state="normal")
+            g.itemconfigure(d["gp"], image=self._rail_fotos[("gaveta", tipo)], state="normal")
+        else:
+            t.itemconfigure(d["tp"], state="hidden")
+            g.itemconfigure(d["gp"], state="hidden")
+        t.itemconfigure(d["ti"], image=self._rail_icone(nome, tema.ROSA if ativo else
+                                                        tema.TEXTO if foco else tema.TEXTO_FRACO))
+        g.itemconfigure(d["gt"], fill=tema.ROSA if ativo else tema.TEXTO, font=self._rail_fontes[ativo])
 
     def _marcar_item(self, nome: str, ativo: bool):
-        cor = tema.ROSA if ativo else tema.TEXTO_FRACO
-        self._por(self.botoes_menu[nome], fg_color=tema.ROSA_FUNDO if ativo else "transparent",
-                  hover_color=tema.ROSA_FUNDO if ativo else tema.CARTAO,
-                  image=icones.ctk_icone(PAGINAS[nome][0], cor, 21))
-        self._por(self._rotulos_menu[nome], text_color=cor, font=tema.fonte(13, ativo))
+        if (nome in self._rail_marcados) != ativo:
+            (self._rail_marcados.add if ativo else self._rail_marcados.discard)(nome)
+            self._rail_pintar(nome)
 
-    def _rail_entrou(self, _=None):
-        if self._rail_alvo != self._rail_aberto and self._rail_abrir is None:
-            self._rail_abrir = self.after(90, self._rail_expandir)   # (passar rapido por cima nao abre)
-        if self._rail_vigia is None:
-            self._rail_vigia = self.after(100, self._vigiar_rail)
+    def _rail_linha_em(self, lista, y: int):
+        y = lista.canvasy(y)
+        for y0, y1, nome in self._rail_linhas:
+            if y0 <= y < y1:
+                return nome
+        return None
 
-    def _rail_expandir(self):
-        self._rail_abrir = None
-        self._rail_ir(self._rail_aberto)
+    def _rail_focar(self, nome):
+        if nome == self._rail_foco:
+            return
+        antigo, self._rail_foco = self._rail_foco, nome
+        for n in (antigo, nome):
+            if n:
+                self._rail_pintar(n)
+        cursor = "hand2" if nome else ""
+        self._rail_lista.configure(cursor=cursor)
+        self._gaveta_lista.configure(cursor=cursor)
+        self._dica.cancelar()
+        if nome and self._rail_desloc == 0 and self._rail_mov.segurar:
+            # balao so com o menu fechado (depois de um clique ele fica fechado ate o mouse sair)
+            y0 = next(a for a, _b, n in self._rail_linhas if n == nome)
+            self._dica.agendar(lambda: (self._trilho.winfo_rootx() + self._rail_fechado + 8,
+                                        self._rail_lista.winfo_rooty() + y0 - round(self._rail_rolagem)),
+                               nome, PAGINAS[nome][1])
 
-    def _ponteiro_no_rail(self) -> bool:
+    def _rail_clicar(self, evento):
+        nome = self._rail_linha_em(evento.widget, evento.y)
+        if nome:
+            self._escolher_menu(nome)
+
+    def _rail_rolar(self, evento):
+        self._rail_rolar_para(self._rail_rolagem - evento.delta / 120 * self._rail_passo_roda)
+        self._rail_focar(self._rail_linha_em(evento.widget, evento.y))
+        return "break"
+
+    def _rail_rolar_para(self, rolagem: float):
+        visivel = self._rail_lista.winfo_height()
+        self._rail_rolagem = min(max(rolagem, 0.0), max(0, self._rail_altura - visivel))
+        fracao = round(self._rail_rolagem) / self._rail_altura
+        self._rail_lista.yview_moveto(fracao)
+        self._gaveta_lista.yview_moveto(fracao)
+        # marcador discreto na borda da gaveta, so quando a lista nao cabe
+        g, total = self._gaveta_lista, self._rail_altura
+        if visivel <= 1 or total <= visivel:
+            g.itemconfigure(self._rail_barra, state="hidden")
+            return
+        alto = max(self._rail_passo_roda // 2, visivel * visivel / total)
+        topo = round(self._rail_rolagem) + (visivel - alto) * self._rail_rolagem / (total - visivel)
+        g.coords(self._rail_barra, self._rail_barra_x, topo + 4, self._rail_barra_x, topo + alto - 4)
+        g.itemconfigure(self._rail_barra, state="normal")
+
+    def _rail_alternar(self):
+        """Clique no icone do programa: abre ou fecha na hora (sem esperar o mouse parar)."""
+        if self._rail_mov.alvo:
+            self._rail_mov.fechar()
+        else:
+            self._rail_mov.abrir()
+        self._rail_acordar()
+
+    def _rail_esc(self, _=None):
+        if self._rail_mov.alvo or self._rail_mov.p:
+            self._rail_mov.fechar()
+            self._rail_acordar()
+
+    def _escolher_menu(self, nome: str):
+        """Clique num icone ou nome: abre a pagina uma vez e recolhe a gaveta (so reabre depois que o mouse sair)."""
+        aberta = self._rail_desloc > 0
+        self._rail_mov.fechar()
+        self._rail_acordar()
+        if self._rail_depois is not None:   # outra pagina nova ainda esperando a gaveta fechar: desiste dela
+            if self._rail_montar_id is not None:
+                self.after_cancel(self._rail_montar_id)
+                self._rail_montar_id = None
+            self._marcar_item(self._rail_depois, False)
+            self._rail_depois = None
+            atual = getattr(self, "pagina_atual", None)
+            if atual:
+                self._marcar_item(atual, True)
+        if aberta and self.paginas[nome][0] is None:
+            # 1a vez desta pagina: marca ja; monta quando a gaveta terminar de fechar (montar trava um instante)
+            atual = getattr(self, "pagina_atual", None)
+            if atual and atual != nome:
+                self._marcar_item(atual, False)
+            self._marcar_item(nome, True)
+            self._rail_depois = nome
+            return
+        self.mostrar_pagina(nome)
+
+    def _rail_montar_pendente(self):
+        self._rail_montar_id = None
+        nome, self._rail_depois = self._rail_depois, None
+        if nome:
+            self.mostrar_pagina(nome)
+
+    def _rail_acordar(self, _=None):
+        """Mouse entrou no menu (ou clique/Esc): comeca a acompanhar. Parado e longe do menu, nada roda."""
+        if self._rail_tique_id is None:
+            self._rail_mov.acordar(time.perf_counter())
+            self._rail_tique()
+
+    def _rail_tique(self):
+        self._rail_tique_id = None
         try:
             x, y = self.winfo_pointerxy()
-            rx, ry = self._rail.winfo_rootx(), self._rail.winfo_rooty()
-            return rx <= x < rx + self._rail_largura and ry <= y < ry + self._rail.winfo_height()
+            tx, ty, alto = self._trilho.winfo_rootx(), self._trilho.winfo_rooty(), self._trilho.winfo_height()
         except tk.TclError:
-            return False
+            return   # janela fechando
+        borda = tx + self._rail_fechado
+        na_altura = ty <= y < ty + alto
+        no_trilho = na_altura and tx <= x < borda
+        na_gaveta = na_altura and borda <= x < borda + self._rail_desloc
+        mov = self._rail_mov
+        self._rail_aplicar(mov.passo(time.perf_counter(), no_trilho, na_gaveta))
+        if not (no_trilho or na_gaveta) and self._rail_foco:
+            self._rail_focar(None)   # a gaveta saiu de baixo do mouse: nada fica destacado
+        if mov.parado and mov.p == 0:
+            if self._rail_depois is not None and self._rail_montar_id is None:
+                self._rail_montar_id = self.after(20, self._rail_montar_pendente)   # deixa a tela pintar antes
+            if not no_trilho:
+                return   # fechada e o mouse fora: para (o <Enter> acorda de novo)
+        self._rail_tique_id = self.after(40 if mov.parado else 15, self._rail_tique)
 
-    def _vigiar_rail(self):
-        """Enquanto o mouse esta no menu, confere a cada 0,1 s; saiu = fecha (so roda nesse tempo)."""
-        if self._ponteiro_no_rail():
-            self._rail_vigia = self.after(100, self._vigiar_rail)
+    def _rail_aplicar(self, p: float):
+        """Posiciona a gaveta. So o x dela muda: trilho, grid e paginas continuam onde estao."""
+        desloc = round(self._gaveta_largura * p)
+        if desloc == self._rail_desloc:
             return
-        self._rail_vigia = None
-        if self._rail_abrir is not None:
-            self.after_cancel(self._rail_abrir)
-            self._rail_abrir = None
-        self._dica.cancelar()
-        self._rail_ir(self._rail_fechado)
-
-    def _rail_ir(self, alvo: int):
-        self._rail_alvo = alvo
-        if alvo == self._rail_aberto:
-            self._rail.lift()
-        if self._rail_anim is None:
-            self._rail_passo()
-
-    def _rail_passo(self):
-        """Animacao curta (~0,1 s): so muda a largura de UM quadro; o conteudo do menu nao e redesenhado."""
-        falta = self._rail_alvo - self._rail_largura
-        if abs(falta) <= 3:
-            self._rail_largura = self._rail_alvo
-        else:
-            self._rail_largura += int(falta * 0.5)
-        self._rail.place_configure(width=self._rail_largura)
-        self._rail_anim = self.after(12, self._rail_passo) if self._rail_largura != self._rail_alvo else None
+        abriu, fechou = self._rail_desloc == 0, desloc == 0
+        self._rail_desloc = desloc
+        if abriu:
+            self._dica.cancelar()
+            self._gaveta.lift()
+            self._trilho.lift()
+            self._trilho_borda.place_forget()
+        self._gaveta.place_configure(x=self._rail_fechado - self._gaveta_largura + desloc)
+        if fechou:
+            self._trilho_borda.place(relx=1, x=-1, y=0, relheight=1, width=1)
+        if abriu or fechou:   # pilula do trilho: curta (fechado) ou emendada com a da gaveta (aberto)
+            for nome in self._rail_marcados | {self._rail_foco} - {None}:
+                self._rail_pintar(nome)
 
     # --- conteudo: cabecalho, pagina e rodape ------------------------------------
     def _montar_conteudo(self):
@@ -694,6 +912,10 @@ class Painel(ctk.CTk):
 
     def mostrar_pagina(self, nome: str):
         anterior = getattr(self, "pagina_atual", None)
+        if anterior == nome:
+            if nome == "Sugestões de melhoria" and hasattr(self, "_sug_linhas"):
+                self._sug_recarregar()
+            return
         if anterior and anterior != nome:
             self._marcar_item(anterior, False)
         if self.paginas[nome][0] is None and hasattr(self, "titulo_pagina"):
