@@ -60,7 +60,7 @@ NOMES_ACAO_ENERGIA = {"desligar": "desligar o computador", "suspender": "colocar
                       "reiniciar": "reiniciar o computador"}
 PADROES_ENERGIA = (
     ("desligar", re.compile(r"^desliga(r)?( o (pc|computador))?$")),
-    ("suspender", re.compile(r"^(vai )?(dormir|dorme|suspende(r)?)( o (pc|computador))?$")),
+    ("suspender", re.compile(r"^(vai )?(dormir|dorme|suspende(r)?)( ou (dormir|dorme|suspende(r)?))?( o (pc|computador))?$")),
     ("reiniciar", re.compile(r"^reinicia(r)?( o (pc|computador))?$")),
 )
 
@@ -310,7 +310,7 @@ class Caixa:
     def _comando_especial(self, chat: int, texto: str) -> bool:
         """ "print", "print do monitor 2", "o que ta tocando", "grava 15 segundos do monitor 1",
         "desligar"/"dormir"/"suspender"/"reiniciar" (com confirmacao) e "cancela". Devolve True se tratou."""
-        puro = normalizar(texto)
+        puro = self._pedido_do_celular(texto)
         pendente = self._energia.get(chat)
         if pendente and puro in ("cancela", "cancelar"):
             sistema.cancelar_desligamento()
@@ -341,6 +341,15 @@ class Caixa:
                 self.responder(chat, f"Tem certeza que quer {NOMES_ACAO_ENERGIA[acao]}? Responda: sim.")
                 return True
         return False
+
+    def _pedido_do_celular(self, texto: str) -> str:
+        """ "Assessor, mande print pro robô" -> "print": tira a palavra de ativacao, o "mande/manda"
+        do comeco e o "pro robo/pra mim/aqui" do fim; "oque" (sem espaco) vira "o que"."""
+        achou, comando = extrair_comando(texto, palavras_ativacao(self.cfg))
+        puro = comando if achou and comando else normalizar(texto)
+        puro = re.sub(r"\boque\b", "o que", puro)
+        puro = re.sub(r"^(me )?(mande|manda|envia|envie)\s+(?=\S)", "", puro)
+        return re.sub(r"\s+(pro robo|pra mim|para mim|aqui|no telegram|por favor)$", "", puro)
 
     @staticmethod
     def _pedido_de_video(puro: str) -> tuple[int, int] | None:

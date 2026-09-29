@@ -308,6 +308,14 @@ FRASES = [
     ("Mestre, manda um print da tela pro Telegram", "_cmd_print_telegram"),
     ("Mestre, o que tá tocando", "_cmd_tocando"),
     ("Mestre, o que está tocando agora", "_cmd_tocando"),
+    # --- frases reais do historico (29/09): "para" cala a fala / descarta a IA, "oque" junto ---
+    ("Mestre, para.", "_cmd_parar"),
+    ("Mestre, chega", "_cmd_parar"),
+    ("Mestre, para de falar", "_cmd_parar"),
+    ("Mestre oque tá tocando", "_cmd_tocando"),
+    ("Mestre, mande um print no Telegram", "_cmd_print_telegram"),
+    # armadilha: "para o vídeo" continua sendo controle do vídeo
+    ("Mestre, para o vídeo", "_cmd_youtube_controle"),
 ]
 
 

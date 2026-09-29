@@ -126,6 +126,9 @@ sinonimos:
             "escreve ai", "registra"]
   "me lembra": ["me lembre", "lembra", "me avisa", "me avise", "avisa", "me alerta", "me cutuca",
                 "nao me deixa esquecer"]
+  # erros comuns do Whisper
+  "cancela": ["sancelo", "sancela"]
+  "o que": ["oque"]
 
 
 # ---------------------------------------------------------------------

@@ -28,6 +28,20 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Sugestões de 29/09: "para", print sem travar e Telegram com "mande"
+<!-- validacao-grupo id=grupo-sugestoes-29-09-para-print-telegram caminhos=app/comandos/assistente.py,app/comandos/celular.py,app/recebidos.py,vocabulario.yaml -->
+
+| Frase | O que deve acontecer | Comando esperado |
+|---|---|---|
+| `Mestre, me conta uma curiosidade` e logo depois `Mestre, para` <!-- validacao id=item-178 --> | Não fala a curiosidade (descarta o que a IA ia responder) e não diz nada | `_cmd_parar` |
+| Enquanto ele fala algo comprido: `Mestre, chega` <!-- validacao id=item-179 --> | Para de falar na hora | `_cmd_parar` |
+| `Mestre, para o vídeo` <!-- validacao id=item-180 --> | Continua pausando o vídeo (não confunde com o "para") | `_cmd_youtube_controle` |
+| `Mestre, manda um print no Telegram` e logo em seguida `Mestre, que horas são?` <!-- validacao id=item-181 --> | Responde as horas na hora (o print sobe em segundo plano, não trava mais a escuta); as fotos chegam no Telegram | `_cmd_print_telegram` |
+| (Telegram) escreva `Mande print pro robô` <!-- validacao id=item-182 --> | Chegam as fotos (antes ia pro projeto no Claude) | (Telegram) |
+| (Telegram) escreva `Mande desligar` e depois `cancela` <!-- validacao id=item-183 --> | Pergunta "Tem certeza...?" e depois cancela | (Telegram) |
+| (Telegram) escreva `Mestre oque tá tocando` <!-- validacao id=item-184 --> | Responde no próprio Telegram o que está tocando | (Telegram) |
+| (Telegram) escreva `Mestre dormir ou suspender` e depois `cancela` <!-- validacao id=item-185 --> | Pergunta "Tem certeza...?" e depois cancela | (Telegram) |
+
 ### Painel: menu lateral desliza como no protótipo B
 <!-- validacao-grupo id=grupo-painel-menu-lateral-desliza-como-no-prototipo-b caminhos=app/painel.py -->
 

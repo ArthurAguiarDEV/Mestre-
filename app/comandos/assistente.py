@@ -234,3 +234,11 @@ class AssistenteMixin:
             self.voz.falar(self.preencher(random.choice(["Até mais {apelido}.", "Falou {apelido}!", "Tchau {apelido}. Tô por aqui."])))
             return True
         return False
+
+    def _cmd_parar(self, t: str) -> bool:
+        """ "para", "chega", "para de falar": cala na hora e descarta o que a IA ainda ia responder (sem falar nada)."""
+        if not re.fullmatch(r"(para|parar|pare|chega|para de falar|para ai|silencio|cala a boca)", self._pedido_puro()):
+            return False
+        self.voz.parar()
+        self.cancelar_pensamento()
+        return True

@@ -863,10 +863,16 @@ ok(fotos_enviadas and fotos_enviadas[-1][0] == 111 and len(fotos_enviadas[-1][1]
 fotos_enviadas.clear()
 caixa._mensagem_telegram({"chat": {"id": 111}, "text": "print do monitor 2"})
 ok(fotos_enviadas and len(fotos_enviadas[-1][1]) == 1, f"Telegram “print do monitor 2”: só o print daquele monitor ({fotos_enviadas})")
+fotos_enviadas.clear()
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "Mande print pro robô"})
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": "Mande print do monitor 2"})
+ok(len(fotos_enviadas) == 2 and len(fotos_enviadas[0][1]) == 2 and len(fotos_enviadas[1][1]) == 1,
+   f"Telegram “Mande print pro robô”/“Mande print do monitor 2”: viram print, não vão pro projeto ({fotos_enviadas})")
 
 ex.caixa = caixa
 fotos_enviadas.clear()
 diga("manda um print no telegram", "Manda um print no Telegram")
+time.sleep(0.5)   # o print sobe numa linha separada (nao trava a escuta)
 ok(fotos_enviadas and fotos_enviadas[-1][0] == 111, f"Falando no PC “manda um print no Telegram” ({fotos_enviadas})")
 
 _janelas_tg = sistema.janelas_abertas
@@ -881,6 +887,10 @@ resposta_tocando = respostas_tg[-1][1] if respostas_tg else ""
 ok("Sunset Blvd" in resposta_tocando and "Um Vídeo" in resposta_tocando and "tocando" in resposta_tocando
    and "Editor de Código" in resposta_tocando,
    f"Telegram “o que tá tocando”: Spotify, YouTube e a janela ativa de cada monitor ({resposta_tocando!r})")
+respostas_tg.clear()
+caixa._mensagem_telegram({"chat": {"id": 111}, "text": f"{ex.palavra.capitalize()} oque tá tocando"})
+ok(respostas_tg and "Sunset Blvd" in respostas_tg[-1][1],
+   f"Telegram “<palavra> oque tá tocando” (com a palavra e “oque” junto): responde no Telegram ({respostas_tg[-1:]})")
 _, falas_toc = diga("o que ta tocando", "O que tá tocando")
 ok(any("Sunset Blvd" in f for f in falas_toc), f"Falando no PC “o que tá tocando” responde falando ({falas_toc})")
 sistema.janelas_abertas = _janelas_tg
@@ -915,6 +925,12 @@ caixa._mensagem_telegram({"chat": {"id": 111}, "text": "cancela"})
 ok(("cancelar_desligamento",) in comandos_energia and ("cancelar_suspensao",) in comandos_energia
    and not any(c[0] == "suspender" for c in comandos_energia),
    f"“cancela” antes do “sim”: cancela o pedido, nada acontece ({comandos_energia})")
+for pedido_energia in ("Mande desligar", f"{ex.palavra.capitalize()} dormir ou suspender"):
+    respostas_tg.clear()
+    caixa._mensagem_telegram({"chat": {"id": 111}, "text": pedido_energia})
+    ok(respostas_tg and "certeza" in respostas_tg[-1][1].lower(),
+       f"Telegram “{pedido_energia}”: pede confirmação ({respostas_tg[-1:]})")
+    caixa._mensagem_telegram({"chat": {"id": 111}, "text": "cancela"})
 sistema.desligar_pc, sistema.suspender_pc, sistema.reiniciar_pc = _desligar_pc, _suspender_pc, _reiniciar_pc
 sistema.cancelar_desligamento, sistema.cancelar_suspensao = _cancelar_desl, _cancelar_susp
 sistema.monitores = _monitores_tg

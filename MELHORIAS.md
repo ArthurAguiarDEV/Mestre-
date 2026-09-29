@@ -37,3 +37,9 @@
 - [ ] (29/09/2026) FEEDBACK: ouvi "Assessor. Curiosidade." · entendi "curiosidade (ia)" · respondi "Analisando. Mestre, que curiosidade interessante! Posso tentar encontrar algo que lhe agrade. A que tipo de curiosidade o Mestre se refere?" · o certo era: nao parou (validação: esperado (só parou)) (ouvido: descartei “Analisando.” (falando)) [áudio: logs/validacao/20260929_014029_508314.wav]
 - [ ] (29/09/2026) FEEDBACK: ouvi "E aí, Amaya." · entendi "amaya (ia)" · respondi "Processando. Mestre." · o certo era: escutou errado (validação: esperado (o comando falado)) [áudio: logs/validacao/20260929_014047_325259.wav]
 - [ ] (29/09/2026) FEEDBACK: ouvi "bora voltar a trabalhar" · entendi "" · respondi "" · o certo era: n tava descansando (validação: esperado _cmd_descanso) (ouvido: descartei “Bora voltar a trabalhar.” (sem a palavra de ativação))
+- [x] (29/09/2026) [Áudio do celular transcrito pelo Assessor: corrija a transcrição e refine antes de implementar.]
+      Mande print pro robô
+- [x] (29/09/2026) [Áudio do celular transcrito pelo Assessor: corrija a transcrição e refine antes de implementar.]
+      Mande print do monitor 2
+- [x] (29/09/2026) [Áudio do celular transcrito pelo Assessor: corrija a transcrição e refine antes de implementar.]
+      Mande desligar

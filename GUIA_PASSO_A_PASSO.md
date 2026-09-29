@@ -1549,6 +1549,11 @@ A partir daqui a versão tem ponto: depois da 13 vem a **2.5** (o painel mostra 
 
 Agora o seu robô do Telegram (o mesmo da Etapa 31, "Caminho 2: Telegram") faz mais coisa. Tudo
 sem precisar falar "Assessor": é só mandar a mensagem direto pro robô, de qualquer lugar.
+Também vale escrever do jeito natural: *"Mande print pro robô"*, *"Mande desligar"*, *"Assessor oque tá
+tocando"* — o "mande", o "pro robô" e o "Assessor" do começo são ignorados.
+
+**Mandar parar:** falando no PC, *"Assessor, para"* (ou *"chega"*, *"para de falar"*) faz ele calar na
+hora e jogar fora a resposta que a IA ainda estava pensando.
 
 ### 33.1 Print da tela
 - Mande **`print`**: chegam as fotos, uma por monitor, cada uma com a legenda "Monitor N".

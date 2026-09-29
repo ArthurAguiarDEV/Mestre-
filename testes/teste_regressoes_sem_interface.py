@@ -903,5 +903,38 @@ class ValidacaoSemInterface(unittest.TestCase):
             self.assertIn('possível duplicidade', recorrente[0])
 
 
+class TelegramSemRede(unittest.TestCase):
+    """Pedidos reais do celular (29/09) que iam pro projeto em vez de virar comando."""
+
+    def setUp(self):
+        from app import recebidos
+        self.caixa = object.__new__(recebidos.Caixa)   # sem threads nem rede
+        self.caixa.cfg = {"assistente": {"palavra_ativacao": "Assessor"}}
+        self.caixa._energia = {}
+        self.respostas, self.prints = [], []
+        self.caixa.responder = lambda chat, texto: self.respostas.append(texto)
+        self.caixa._telegram_print = lambda chat, monitor: self.prints.append(monitor)
+
+    def test_mande_print_e_palavra_de_ativacao(self):
+        self.assertTrue(self.caixa._comando_especial(1, "Mande print pro robô"))
+        self.assertTrue(self.caixa._comando_especial(1, "Mande print do monitor 2"))
+        self.assertTrue(self.caixa._comando_especial(1, "Assessor, print"))
+        self.assertEqual(self.prints, [None, 2, None])
+
+    def test_energia_com_mande_e_com_a_palavra(self):
+        for pedido in ("Mande desligar", "Assessor dormir ou suspender", "suspender ou dormir"):
+            self.assertTrue(self.caixa._comando_especial(1, pedido), pedido)
+            self.assertIn("certeza", self.respostas[-1].lower())
+            with patch("app.sistema.cancelar_desligamento"), patch("app.sistema.cancelar_suspensao"):
+                self.assertTrue(self.caixa._comando_especial(1, "cancela"))
+
+    def test_oque_junto_vira_o_que(self):
+        self.assertEqual(self.caixa._pedido_do_celular("Assessor oque tá tocando"), "o que ta tocando")
+
+    def test_texto_comum_continua_indo_pro_destino(self):
+        self.assertFalse(self.caixa._comando_especial(1, "Mande uma ideia pro projeto do painel"))
+        self.assertFalse(self.caixa._comando_especial(1, "Trocando o apelido não registrou"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -38,7 +38,7 @@ FIM_ROTINA = (r"^((e|ok|beleza|entao|bom|pode|agora)\s+)*(pronto|terminei|acabei
 CANCELA_ROTINA = (r"\b(cancela|cancelar|cancele|esquece|descarta|desiste|apaga)( essa| a| esta)? (rotina|gravacao)\b|"
                   r"\b(para|pare|parar) de gravar\b|\bdesisto da rotina\b")
 # Passos que nao fazem sentido repetir numa rotina (controle do proprio assistente, conversas, ditado...)
-NAO_GRAVA_NA_ROTINA = {"_cmd_pensamento", "_cmd_descanso", "_cmd_versao", "_cmd_conversinha", "_cmd_exportar",
+NAO_GRAVA_NA_ROTINA = {"_cmd_pensamento", "_cmd_parar", "_cmd_descanso", "_cmd_versao", "_cmd_conversinha", "_cmd_exportar",
                        "_cmd_historico", "_cmd_memoria", "_cmd_ensinar_rotina", "_cmd_encerrar", "_cmd_reiniciar",
                        "_cmd_ajuda", "_cmd_ditado", "_cmd_projeto", "_cmd_feedback", "_cmd_obrigado", "_cmd_aprender",
                        "_cmd_atalhos", "_cmd_melhorias", "_cmd_esquecer", "_cmd_desligar_pc"}
