@@ -36,6 +36,9 @@ VALIDADE_ATIVA = 3 * 3600      # painel fechou sem avisar: depois de 3 h para de
 MAXIMO_AUDIOS = 120
 ESCOLHAS = {"Só novidades": ("novidades",), "Só sempre testar": ("sempre",), "Tudo": ("novidades", "sempre", "outros")}
 NOMES_SECAO = {"novidades": "Novidades", "sempre": "Sempre testar", "outros": "Outros"}
+MODOS = ("Rápido", "Direcionado", "Completo")
+# IDs explícitos no roteiro: regressões úteis sem configuração, espera ou ação física demorada.
+IDS_RAPIDOS = ("rapido-hora", "rapido-youtube", "rapido-volume", "rapido-anotacao")
 # Rotas que tambem contam como o comando esperado (o comando continua a conversa por uma pergunta)
 EQUIVALENTES = {
     "_cmd_ensinar_rotina": ("rotina falada", "resposta: nomear_rotina"),
@@ -248,6 +251,61 @@ def escolher(itens: list[Item], escolha: str) -> list[Item]:
     return [i for i in itens if i.secao in secoes]
 
 
+def grupos_disponiveis(itens: list[Item]) -> list[tuple[str, str]]:
+    """Grupos distintos na ordem do roteiro, identificados também pela seção."""
+    return list(dict.fromkeys((item.secao, item.grupo) for item in itens))
+
+
+@dataclass
+class Escopo:
+    modo: str
+    itens: list[Item]
+    grupos: list[tuple[str, str]]
+
+    @property
+    def etapas(self) -> int:
+        return sum(len(i.etapas) if i.tipo_item == "sequencia" and i.etapas
+                   and all(e.independente for e in i.etapas) else 1 for i in self.itens)
+
+
+def selecionar_modo(itens: list[Item], modo: str,
+                   grupos: list[tuple[str, str]] | None = None) -> Escopo:
+    """Seleciona linhas sem depender da posição delas no roteiro."""
+    if modo not in MODOS:
+        raise ValueError(f"Modo de validação desconhecido: {modo}")
+    if modo == "Rápido":
+        por_id = {item.id: item for item in itens}
+        ausentes = [id_ for id_ in IDS_RAPIDOS if id_ not in por_id or not por_id[id_].exige_microfone]
+        if ausentes:
+            raise ValueError(f"Faltam falas essenciais no roteiro: {', '.join(ausentes)}")
+        escolhidos = [por_id[id_] for id_ in IDS_RAPIDOS]
+        return Escopo(modo, escolhidos, grupos_disponiveis(escolhidos))
+    if modo == "Direcionado":
+        selecionados = set(grupos or [])
+        disponiveis = grupos_disponiveis(itens)
+        desconhecidos = selecionados - set(disponiveis)
+        if desconhecidos:
+            raise ValueError(f"Grupo de validação desconhecido: {sorted(desconhecidos)}")
+        escolhidos = [item for item in itens if (item.secao, item.grupo) in selecionados]
+        return Escopo(modo, escolhidos, [grupo for grupo in disponiveis if grupo in selecionados])
+    return Escopo(modo, list(itens), grupos_disponiveis(itens))
+
+
+def descrever_escopo(escopo: Escopo) -> str:
+    """Resumo para ler antes de iniciar; contagens incluem linhas e etapas independentes."""
+    if not escopo.itens:
+        return ("Selecione pelo menos um grupo para validar." if escopo.modo == "Direcionado" else
+                "Nenhum item disponível para este modo.")
+    falas = sum(i.exige_microfone for i in escopo.itens)
+    outros = len(escopo.itens) - falas
+    intro = {"Rápido": "Regressões essenciais, sem tarefas físicas longas.",
+             "Direcionado": f"Grupos escolhidos: {', '.join(g for _, g in escopo.grupos)}.",
+             "Completo": "Todo o roteiro aplicável, incluindo conferências manuais e pré-condições."}[escopo.modo]
+    return (f"{intro} {len(escopo.itens)} itens ({escopo.etapas} etapas): "
+            f"{falas} de fala e {outros} para conferir manualmente. "
+            "Itens sem fala não serão enviados ao microfone.")
+
+
 # =====================================================================
 #  O que o assistente registrou
 # =====================================================================
@@ -450,6 +508,7 @@ class Sessao:
             else:
                 self.itens.append(item)
         self.escolha = escolha
+        self.modo = escolha if escolha in MODOS else "Legado"
         self.indice = 0
         self.inicio = datetime.now()
         self.resultados: dict[int, dict] = {}   # indice -> resultado da etapa/item
@@ -477,9 +536,21 @@ class Sessao:
             return
         if veredito not in ("ok", "falha", "pulado", "bloqueado"):
             raise ValueError(f"Veredito desconhecido: {veredito}")
+        item = self.atual
+        if item.tipo_item == "pre_condicao" and veredito in ("falha", "pulado"):
+            veredito = "bloqueado"
         self.resultados[self.indice] = {"veredito": veredito, "captura": captura or {}, "sugestao": sugestao,
                                         "certo_era": certo_era.strip()}
-        self.mostrar(self.indice + 1)
+        proximo = self.indice + 1
+        if item.tipo_item == "pre_condicao" and veredito == "bloqueado":
+            motivo = f"Pré-condição não atendida: {item.frase}"
+            self.resultados[self.indice]["motivo"] = motivo
+            while proximo < len(self.itens) and (self.itens[proximo].secao, self.itens[proximo].grupo) == (
+                item.secao, item.grupo
+            ):
+                self.resultados[proximo] = {"veredito": "bloqueado", "captura": {}, "motivo": motivo}
+                proximo += 1
+        self.mostrar(proximo)
 
     def lista(self) -> list[tuple[Item, dict]]:
         return [(self.itens[i], r) for i, r in sorted(self.resultados.items())]
@@ -644,9 +715,10 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
     conferidos = len(oks) + len(falhas) + len(pulados) + len(bloqueados)
     L = [f"# Validação da atualização{(' do ' + nome) if nome else ''}\n",
          f"Feita em {agora:%d/%m/%Y %H:%M} · roteiro: **{sessao.escolha}** · "
-         f"{conferidos} de {sessao.itens_carregados} itens conferidos"
+         f"{conferidos} de {len(sessao.itens)} etapas conferidas"
          f"{' · relatório parcial (sessão interrompida)' if sessao.interrompida or nao_executados else ''}\n",
          f"- **Commit:** `{sessao.commit}`",
+         f"- **Modo:** {sessao.modo}",
          f"- **SHA-256 do ROTEIRO_VALIDACAO.md:** `{sessao.hash_roteiro}`",
          f"- **Versão do aplicativo:** {sessao.versao}",
          f"- **Itens carregados:** {sessao.itens_carregados}",

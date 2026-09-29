@@ -3552,25 +3552,31 @@ class Painel(ctk.CTk):
         self._val_estado = ""        # modo continuo: esperando | ok | falha | conferir | silencio
         self._val_descartes = []     # frases que o ouvido jogou fora (com o motivo)
         self._val_avanco = None      # after() que passa para a proxima frase depois do ✅
+        self._val_vigia_token = 0    # impede laços antigos após recomeçar
         f = secao(pagina, "Validar atualização",
-                  f"Depois de atualizar, fale as frases do roteiro uma por vez ao {self.nome} (ligado, como sempre). "
-                  "Para cada frase o painel mostra o que ele OUVIU, o que ENTENDEU (e qual comando atendeu) e o que "
-                  "FEZ, compara com o esperado e sugere ✅ ou ❌. Você confirma. No fim sai um relatório em "
-                  "exportacoes/ e cada ❌ vira um FEEDBACK na lista de melhorias.")
+                  f"Escolha o modo e confira o escopo antes de começar. Fale as frases ao {self.nome} "
+                  "e confirme as ações manuais na tela. Para cada fala, o painel mostra OUVI, ENTENDI e FIZ. "
+                  "Ao terminar ou parar, salva um relatório em exportacoes/.")
         linha = ctk.CTkFrame(f, fg_color="transparent")
         linha.pack(fill="x", padx=(32, 18), pady=4)
-        self.var_val_escolha = tk.StringVar(value="Só novidades")
-        ctk.CTkSegmentedButton(linha, values=list(validacao.ESCOLHAS), variable=self.var_val_escolha).pack(side="left")
+        self.var_val_modo = tk.StringVar(value="Rápido")
+        ctk.CTkSegmentedButton(linha, values=list(validacao.MODOS), variable=self.var_val_modo,
+                               command=lambda _: self._val_atualizar_escopo()).pack(side="left")
         self.bt_val_comecar = ctk.CTkButton(linha, text="▶  Começar", width=130, command=self._val_comecar)
         self.bt_val_comecar.pack(side="left", padx=10)
+        self._val_grupos = validacao.grupos_disponiveis(validacao.ler_roteiro())
+        self.lista_val_grupos = tk.Listbox(f, selectmode=tk.MULTIPLE, exportselection=False, height=6)
+        for secao, grupo in self._val_grupos:
+            self.lista_val_grupos.insert("end", f"{validacao.NOMES_SECAO[secao]} › {grupo}")
+        self.lista_val_grupos.bind("<<ListboxSelect>>", lambda _: self._val_atualizar_escopo())
+        self.rot_val_escopo = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
+                                          text_color=tema.TEXTO_FRACO)
+        self.rot_val_escopo.pack(fill="x", padx=(32, 18), pady=(4, 2))
         opcoes = ctk.CTkFrame(f, fg_color="transparent")
         opcoes.pack(fill="x", padx=(32, 18), pady=(2, 0))
         self.var_val_continuo = tk.BooleanVar(value=True)
-        ctk.CTkCheckBox(opcoes, text="Modo contínuo (passa sozinho quando dá certo, só para no ❌)",
+        ctk.CTkCheckBox(opcoes, text="Avançar sozinho nas falas que derem certo",
                         variable=self.var_val_continuo).pack(side="left")
-        self.var_val_manuais = tk.BooleanVar(value=False)
-        ctk.CTkCheckBox(opcoes, text="Incluir linhas de painel/visual", variable=self.var_val_manuais).pack(side="left",
-                                                                                                        padx=14)
         self.rot_val_progresso = ctk.CTkLabel(f, text="", anchor="w", text_color=tema.TEXTO_FRACO)
         self.rot_val_progresso.pack(fill="x", padx=(32, 18), pady=(6, 0))
         self.rot_val_frase = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
@@ -3636,6 +3642,7 @@ class Painel(ctk.CTk):
                                            **SECUNDARIO, command=self._val_mandar_claude)
         self.bt_val_claude.pack(side="left", padx=(0, 8))
         self._val_atualizar_botao_claude()
+        self._val_atualizar_escopo()
         self._val_desenhar()
 
     def _val_atualizar_botao_claude(self):
@@ -3660,28 +3667,43 @@ class Painel(ctk.CTk):
                                        "Copiei o pedido para a área de transferência: abra um terminal na "
                                        "pasta do projeto, rode \"claude\" e cole (Ctrl+V).")
 
+    def _val_escopo(self):
+        from . import validacao
+        grupos = [self._val_grupos[i] for i in self.lista_val_grupos.curselection()]
+        return validacao.selecionar_modo(validacao.ler_roteiro(), self.var_val_modo.get(), grupos)
+
+    def _val_atualizar_escopo(self):
+        from . import validacao
+        if self.var_val_modo.get() == "Direcionado":
+            self.lista_val_grupos.pack(fill="x", padx=(32, 18), pady=4, before=self.rot_val_escopo)
+        else:
+            self.lista_val_grupos.pack_forget()
+        try:
+            texto = validacao.descrever_escopo(self._val_escopo())
+        except ValueError as erro:
+            texto = str(erro)
+        self.rot_val_escopo.configure(text=texto)
+
     def _val_comecar(self):
         from . import validacao
+        try:
+            escopo = self._val_escopo()
+        except ValueError as erro:
+            self.rot_val_resultado.configure(text=str(erro), text_color=tema.AVISO)
+            return
+        if not escopo.itens:
+            self.rot_val_resultado.configure(text=validacao.descrever_escopo(escopo), text_color=tema.AVISO)
+            return
         if self._val is not None:
             self._val_parar()  # recomeçar também conserva o relatório parcial anterior
-        itens = validacao.escolher(validacao.ler_roteiro(), self.var_val_escolha.get())
-        carregados = itens
         continuo = bool(self.var_val_continuo.get())
-        if continuo:
-            itens = validacao.para_continuo(itens, bool(self.var_val_manuais.get()))
-        if not itens:
-            self.rot_val_resultado.configure(text="Não achei frases no ROTEIRO_VALIDACAO.md para essa escolha.",
-                                             text_color=tema.AVISO)
-            return
-        ids_ativos = {i.id for i in itens}
-        excluidos = [i for i in carregados if i.id not in ids_ativos]
-        self._val = validacao.Sessao(itens, self.var_val_escolha.get(), excluidos)
+        self._val = validacao.Sessao(escopo.itens, escopo.modo)
         self._val.continuo = continuo
-        validacao.ligar_audio(True)   # o ouvido guarda o audio de cada frase (para o relatorio)
         self.rot_val_resultado.configure(text="")
         self.bt_val_relatorio.pack_forget()
         self._val_nova_frase()
-        self._val_vigiar()
+        self._val_vigia_token += 1
+        self._val_vigiar(self._val_vigia_token)
 
     def _val_nova_frase(self):
         self._val_captura, self._val_sugestao, self._val_errado_desde = None, None, 0.0
@@ -3692,6 +3714,9 @@ class Painel(ctk.CTk):
         if self._val and self._val.acabou:
             self._val_parar()
             return
+        if self._val and self._val.atual:
+            from . import validacao
+            validacao.ligar_audio(self._val.atual.exige_microfone)
         self._val_desenhar()
 
     def _val_desenhar(self):
@@ -3711,11 +3736,13 @@ class Painel(ctk.CTk):
             return
         item = s.atual
         self.rot_val_progresso.configure(
-            text=f"Frase {s.indice + 1} de {len(s.itens)} · {validacao.NOMES_SECAO.get(item.secao, '')} › {item.grupo}")
+            text=f"Item {s.indice + 1} de {len(s.itens)} · {validacao.NOMES_SECAO.get(item.secao, '')} › {item.grupo}")
         continuo = getattr(s, "continuo", False)
         self.rot_val_frase.configure(font=tema.fonte(26 if continuo else 18, True))
         if not item.exige_microfone:
-            self.rot_val_frase.configure(text=f"Faça: {item.frase}")
+            acao = {"pre_condicao": "Confirme a condição", "espera": "Aguarde",
+                    "observacao": "Confira", "teste_automatico": "Teste"}.get(item.tipo_item, "Faça")
+            self.rot_val_frase.configure(text=f"{acao}: {item.frase}")
         else:
             self.rot_val_frase.configure(text=f"Fale: “{item.para_falar(self.palavra)}”")
         comando = ", ".join(item.comandos) or item.esperado
@@ -3795,11 +3822,11 @@ class Painel(ctk.CTk):
         if mudou:
             self._val_desenhar()
 
-    def _val_vigiar(self):
+    def _val_vigiar(self, token):
         """Uma vez por segundo: o que o assistente registrou desde que a frase apareceu."""
         from . import validacao
         s = self._val
-        if s is None or s.atual is None:
+        if token != self._val_vigia_token or s is None or s.atual is None:
             return
         try:
             item = s.atual
@@ -3817,7 +3844,7 @@ class Painel(ctk.CTk):
                     self._val_desenhar()
         except Exception as erro:   # (arquivo sendo escrito pelo outro processo etc.: tenta de novo)
             self.rot_val_resultado.configure(text=f"Não consegui ler o histórico agora: {erro}", text_color=tema.AVISO)
-        self.after(500 if getattr(s, "continuo", False) else 1000, self._val_vigiar)
+        self.after(500 if getattr(s, "continuo", False) else 1000, lambda: self._val_vigiar(token))
 
     def _val_marcar(self, veredito: str, certo_era: str = ""):
         if not self._val or self._val.atual is None:
@@ -3831,6 +3858,9 @@ class Painel(ctk.CTk):
         self._val_nova_frase()
 
     def _val_errado(self):
+        if self._val and self._val.atual and self._val.atual.tipo_item == "pre_condicao":
+            self._val_marcar("bloqueado")
+            return
         self._val_errado_desde = time.time()
         self.fr_val_certo.pack(fill="x", padx=(32, 18), pady=4, after=self.rot_val_sugestao)
         self.ent_val_certo.focus_set()
@@ -3852,6 +3882,7 @@ class Painel(ctk.CTk):
         """Fecha a validacao: relatorio + FEEDBACK no MELHORIAS.md (tambem na caixa da pagina Melhorias)."""
         from . import validacao
         s, self._val = self._val, None
+        self._val_vigia_token += 1
         validacao.ligar_audio(False)
         self._val_cancelar_avanco()
         self._val_estado, self._val_descartes = "", []
@@ -3872,9 +3903,11 @@ class Painel(ctk.CTk):
         lista = s.lista()
         oks = sum(1 for _, r in lista if r["veredito"] == "ok")
         falhas = sum(1 for _, r in lista if r["veredito"] == "falha")
+        bloqueados = sum(1 for _, r in lista if r["veredito"] == "bloqueado")
         extra = f" {falhas} FEEDBACK(s) entraram na lista de melhorias." if falhas else ""
         self.rot_val_resultado.configure(
-            text=f"✓ {oks} ok · {falhas} falhas. Relatório: exportacoes/{self._val_relatorio.name}.{extra}",
+            text=f"✓ {oks} ok · {falhas} falhas · {bloqueados} bloqueados. "
+                 f"Relatório: exportacoes/{self._val_relatorio.name}.{extra}",
             text_color=tema.SUCESSO if not falhas else tema.AVISO)
         self.bt_val_relatorio.pack(side="left", padx=(0, 8))
         self._val_atualizar_botao_claude()
@@ -4514,6 +4547,7 @@ class Painel(ctk.CTk):
                 pass
             validacao.ligar_audio(False)
             self._val = None   # para o laco _val_vigiar nao mexer em widgets ja destruidos
+            self._val_vigia_token += 1
             self._val_cancelar_avanco()
         servidor = getattr(self, "_servidor", None)
         if servidor:   # libera a porta ja (para um painel novo conseguir abrir logo em seguida)

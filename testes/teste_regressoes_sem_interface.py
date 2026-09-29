@@ -410,6 +410,10 @@ class ValidacaoSemInterface(unittest.TestCase):
             outro = validacao.gerar_relatorio(sessao, 'Jarvis', datetime(2026, 9, 29, 2, 0), pasta)
             self.assertNotEqual(relatorio, outro)
             self.assertEqual(validacao.ultimo_relatorio(pasta), outro)
+            etapas = validacao.gerar_relatorio(validacao.Sessao([itens[0]]), 'Jarvis',
+                                               datetime(2026, 9, 29, 2, 1), pasta).read_text(encoding='utf-8')
+            self.assertIn('0 de 2 etapas conferidas', etapas)
+            self.assertIn('**Itens carregados:** 1', etapas)
         self.assertIn('relatório parcial', texto)
         self.assertIn('**Itens carregados:** 3', texto)
         self.assertIn(sessao.commit, texto)
@@ -420,6 +424,105 @@ class ValidacaoSemInterface(unittest.TestCase):
         self.assertIn('## Itens não executados', texto)
         self.assertIn(itens[0].id + '-2', texto)
         self.assertIn(itens[2].id, texto)
+
+    def test_modos_selecionam_escopo_e_descrevem_antes_de_iniciar(self):
+        itens = validacao.ler_roteiro()
+        rapido = validacao.selecionar_modo(itens, 'Rápido')
+        self.assertEqual([i.id for i in rapido.itens], list(validacao.IDS_RAPIDOS))
+        self.assertTrue(all(i.exige_microfone and i.tipo_item == 'fala' for i in rapido.itens))
+        self.assertEqual(rapido.etapas, len(rapido.itens))
+        self.assertIn('4 itens (4 etapas)', validacao.descrever_escopo(rapido))
+        self.assertIn('sem tarefas físicas longas', validacao.descrever_escopo(rapido))
+
+        grupos = validacao.grupos_disponiveis(itens)
+        escolhidos = [grupos[2], grupos[-1]]
+        direcionado = validacao.selecionar_modo(itens, 'Direcionado', escolhidos)
+        self.assertEqual(direcionado.itens,
+                         [i for i in itens if (i.secao, i.grupo) in escolhidos])
+        self.assertEqual(direcionado.grupos, escolhidos)
+        self.assertIn(escolhidos[0][1], validacao.descrever_escopo(direcionado))
+        self.assertEqual(validacao.descrever_escopo(validacao.selecionar_modo(itens, 'Direcionado')),
+                         'Selecione pelo menos um grupo para validar.')
+
+        completo = validacao.selecionar_modo(itens, 'Completo')
+        self.assertEqual(completo.itens, itens)
+        self.assertTrue(any(i.tipo_item == 'pre_condicao' for i in completo.itens))
+        self.assertTrue(any(i.tipo_item == 'observacao' for i in completo.itens))
+        self.assertTrue(any(i.tipo_item == 'espera' for i in completo.itens))
+        self.assertIn(f'{len(itens)} itens', validacao.descrever_escopo(completo))
+        self.assertIn('não serão enviados ao microfone', validacao.descrever_escopo(completo))
+        self.assertEqual([i.id for i in validacao.selecionar_modo(list(reversed(itens)), 'Rápido').itens],
+                         list(validacao.IDS_RAPIDOS))
+
+    def test_pre_condicao_bloqueia_grupo_sem_registrar_falha(self):
+        roteiro = ('## Novidades\n### Grupo A\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+                   '| Se a rede estiver ligada | necessária | (painel) |\n'
+                   '| `Mestre, abre o site` | abre | `_cmd_abrir` |\n'
+                   '### Grupo B\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+                   '| `Mestre, que horas são` | responde | `_cmd_hora_data` |\n')
+        sessao = validacao.Sessao(validacao.selecionar_modo(validacao.ler_roteiro(texto=roteiro),
+                                                           'Completo').itens, 'Completo')
+        sessao.marcar('falha')
+        self.assertEqual([r['veredito'] for _, r in sessao.lista_completa()],
+                         ['bloqueado', 'bloqueado', 'nao_executado'])
+        self.assertEqual(sessao.atual.grupo, 'Grupo B')
+        with tempfile.TemporaryDirectory(prefix='mestre_precondicao_') as tmp:
+            relatorio = validacao.gerar_relatorio(sessao, 'Jarvis', datetime(2026, 9, 29, 2, 1), Path(tmp))
+            texto = relatorio.read_text(encoding='utf-8')
+        self.assertIn('**Modo:** Completo', texto)
+        self.assertIn('Pré-condição não atendida', texto)
+        self.assertIn('**0 falhas**', texto)
+
+    def test_painel_descreve_modo_sem_abrir_janela(self):
+        origem = Path(__file__).resolve().parents[1] / 'app' / 'painel.py'
+        arvore = ast.parse(origem.read_text(encoding='utf-8'))
+        painel = next(n for n in arvore.body if isinstance(n, ast.ClassDef) and n.name == 'Painel')
+        metodos = [n for n in painel.body if isinstance(n, ast.FunctionDef)
+                   and n.name in {'_val_escopo', '_val_atualizar_escopo'}]
+        falsa = ast.ClassDef(name='PainelSemJanela', bases=[], keywords=[], body=metodos, decorator_list=[])
+        modulo = ast.fix_missing_locations(ast.Module(body=[falsa], type_ignores=[]))
+        contexto = {'__name__': 'app._teste_painel_validacao', '__package__': 'app'}
+        exec(compile(modulo, str(origem), 'exec'), contexto)
+
+        class ListaFalsa:
+            def __init__(self):
+                self.indices = ()
+                self.visivel = False
+
+            def curselection(self):
+                return self.indices
+
+            def pack(self, **_):
+                self.visivel = True
+
+            def pack_forget(self):
+                self.visivel = False
+
+        class RotuloFalso:
+            def __init__(self):
+                self.texto = ''
+
+            def configure(self, **opcoes):
+                self.texto = opcoes['text']
+
+        classe = contexto['PainelSemJanela']
+        objeto = classe()
+        estado = {'modo': 'Rápido'}
+        objeto.var_val_modo = SimpleNamespace(get=lambda: estado['modo'])
+        objeto._val_grupos = validacao.grupos_disponiveis(validacao.ler_roteiro())
+        objeto.lista_val_grupos = ListaFalsa()
+        objeto.rot_val_escopo = RotuloFalso()
+        objeto._val_atualizar_escopo()
+        self.assertIn('4 itens', objeto.rot_val_escopo.texto)
+        self.assertFalse(objeto.lista_val_grupos.visivel)
+        estado['modo'] = 'Direcionado'
+        objeto.lista_val_grupos.indices = (0,)
+        objeto._val_atualizar_escopo()
+        self.assertTrue(objeto.lista_val_grupos.visivel)
+        self.assertIn(objeto._val_grupos[0][1], objeto.rot_val_escopo.texto)
+        estado['modo'] = 'Completo'
+        objeto._val_atualizar_escopo()
+        self.assertIn(f'{len(validacao.ler_roteiro())} itens', objeto.rot_val_escopo.texto)
 
     def test_captura_e_conferencia_de_rotas(self):
         captura = validacao.capturar(self.t0, self.hist, self.ouv)

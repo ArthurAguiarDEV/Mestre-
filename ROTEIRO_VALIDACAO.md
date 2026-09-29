@@ -15,6 +15,8 @@ primeira coluna. Os tipos possíveis são `fala`, `sequencia`, `acao_manual`, `o
 `pre_condicao`, `espera` e `teste_automatico`. Uma sequência de falas entre crases é conferida
 etapa por etapa; pausas que completam a mesma frase continuam uma tentativa só. Instruções
 manuais nunca são tratadas como frases para o microfone.
+No painel, **Rápido** usa quatro falas essenciais da seção "Sempre testar", **Direcionado**
+usa os grupos escolhidos e **Completo** inclui todas as linhas aplicáveis.
 
 Este arquivo substitui o antigo CHECKLIST_VALIDACAO.md (o texto dele virou uma lista solta,
 sem comando esperado, difícil de conferir por script; ficou só um aviso apontando pra cá).
@@ -300,22 +302,22 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | `Mestre, bora trabalhar` | Roda a rotina "Bora trabalhar" (abre Gmail, Claude...) | `_cmd_rotinas` |
 | `Mestre, abre o Gmail` | Abre o Gmail no navegador | `_cmd_abrir` |
 | `Mestre, abre o Spotify` | Abre o PROGRAMA Spotify (não o canal do YouTube) | `_cmd_abrir` |
-| `Mestre, abre o YouTube` | Abre o YouTube | `_cmd_youtube` |
+| `Mestre, abre o YouTube` <!-- validacao id=rapido-youtube tipo=fala --> | Abre o YouTube | `_cmd_youtube` |
 | `Mestre, toca Legião Urbana no Spotify` | Toca o artista/playlist no Spotify | `_cmd_spotify` |
-| `Mestre, aumenta o volume` | Sobe o volume geral | `_cmd_volume` |
+| `Mestre, aumenta o volume` <!-- validacao id=rapido-volume tipo=fala --> | Sobe o volume geral | `_cmd_volume` |
 | `Mestre, pausa a música` | Pausa o que estiver tocando | `_cmd_midia` |
 | `Mestre, dá um like` (com um vídeo do YouTube aberto) | Curte o vídeo | `_cmd_youtube_controle` |
 | `Mestre, próximo vídeo` | Pula pro próximo vídeo | `_cmd_youtube_controle` |
 | `Mestre, joga essa janela pro monitor 2` | Move a janela ativa pro monitor 2 | `_cmd_mover` |
 | `Mestre, minimiza tudo` | Minimiza todas as janelas | `_cmd_janela` |
 | `Mestre, nova aba` | Abre uma aba nova no navegador | `_cmd_janela` |
-| `Mestre, anota comprar pão` | Guarda a nota | `_cmd_notas` |
+| `Mestre, anota comprar pão` <!-- validacao id=rapido-anotacao tipo=fala --> | Guarda a nota | `_cmd_notas` |
 | `Mestre, vou ditar` | Começa o ditado (janela de revisão no fim) | `_cmd_ditado` |
 | `Mestre, o que você acha de aprender python` | Vai pensar (fila da IA), fala ou mostra a resposta depois | (IA, sem comando) |
 | `Mestre, pode descansar` | Fica quieto; só acorda com "bora voltar a trabalhar" | `_cmd_descanso` |
 | `Mestre, bora voltar a trabalhar` (com ele descansando) | Acorda e volta a atender normalmente | (acorda no ouvido, sem `_cmd_`) |
 | `Mestre, reinicia` | Reinicia o Assessor com as mudanças, em poucos segundos | `_cmd_reiniciar` |
-| `Mestre, que horas são` | Fala a hora atual | `_cmd_hora_data` |
+| `Mestre, que horas são` <!-- validacao id=rapido-hora tipo=fala --> | Fala a hora atual | `_cmd_hora_data` |
 | `Mestre, repete` | Repete a última resposta | `_cmd_historico` |
 | `Mestre, lembra que eu trabalho de manhã` | Guarda o fato pra lembrar depois | `_cmd_memoria` |
 | `Mestre, abre o painel` | Abre a janela do painel | `_cmd_painel` |

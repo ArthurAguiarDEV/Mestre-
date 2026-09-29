@@ -1470,7 +1470,7 @@ Quando chega algo do celular, o indicador fica **azul** por alguns segundos (*"�
 ### 31.9 Validar a atualização dentro do painel
 Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por frase:
 1. Depois de atualizar, fale *"assessor, reinicia"* (o assistente precisa estar **ligado**: é ele quem ouve).
-2. Painel > **Sistema** > **Validar atualização**. Escolha **Só novidades**, **Só sempre testar** ou **Tudo** e clique **▶ Começar**.
+2. Painel > **Sistema** > **Validar atualização**. Escolha **Rápido** (4 falas essenciais), **Direcionado** (marque os grupos que quer testar) ou **Completo** (todo o roteiro). O painel mostra o que entra e quantos itens haverá antes de **▶ Começar**.
 3. Aparece uma frase (ex.: *Fale: "Assessor, que horas são"*) e o que deve acontecer. **Fale normalmente**, como no dia a dia.
 4. Em 1 ou 2 segundos aparecem três linhas:
    - **OUVI**: o que o reconhecimento de voz escreveu;
@@ -1482,7 +1482,7 @@ Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por 
 7. Ao parar (ou no fim da lista) sai o relatório `exportacoes/validacao_AAAA-MM-DD_HHMM.md`. Ele registra os itens feitos, bloqueados e não executados, além do commit, versão e hash do roteiro. Se a sessão for interrompida, o relatório é parcial. Cada ❌ de uma frase falada vira um item FEEDBACK na lista de Melhorias, pronto para o Claude Code corrigir. Botão **Abrir o relatório** para ver.
 8. Teve falha? O botão **🛠 Mandar para o Claude corrigir** fica ativo (sem falha nenhuma, ele fica desativado). Clique nele: o painel salva o pedido em `exportacoes/pedido_correcao_*.md` e abre uma janela de terminal já com o **Claude Code** rodando (você continua acompanhando e aprovando tudo normalmente, como sempre). Se o Claude Code não estiver instalado no PC, o painel avisa e copia o pedido para você colar onde quiser.
 
-Linhas de painel, observação, pré-condição, espera ou teste automático não têm frase para falar: faça o que a tela diz e marque o resultado. Sequências de falas independentes aparecem uma etapa por vez. Enquanto a validação está aberta, o assistente guarda o áudio de cada frase em `logs/validacao/` (só as últimas 120).
+Linhas de painel, observação, pré-condição, espera ou teste automático não têm frase para falar: faça o que a tela diz e marque o resultado. Se uma pré-condição não estiver atendida, marque **Bloqueado**; os próximos itens daquele grupo aparecem como bloqueados no relatório, sem contar como falha do produto. Sequências de falas independentes aparecem uma etapa por vez. Enquanto a validação está aberta, o assistente guarda o áudio de cada frase em `logs/validacao/` (só as últimas 120).
 
 #### Modo contínuo (o jeito mais rápido)
 A caixinha **Modo contínuo** já vem marcada. Com ela:
@@ -1490,7 +1490,7 @@ A caixinha **Modo contínuo** já vem marcada. Com ela:
 2. Deu certo? Aparece **✅ Deu certo!** e em 1,5 segundo vem a próxima frase **sozinha**, sem clicar em nada.
 3. Deu errado? Ele **para** e mostra em letras grandes o que aconteceu: **OUVI** (o que o reconhecimento escreveu) → **ENTENDI** (e qual comando atendeu) → **FIZ** (o que ele respondeu). Se o ouvido jogou a frase fora, aparece também **DESCARTEI** com o motivo: *curta demais*, *sem a palavra de ativação*, *voz não reconhecida*... Isso mostra exatamente o que ele entendeu. Depois é só **❌ Deu errado** (para anotar "o certo era"), **Repetir** ou **Pular**.
 4. Ficou 15 segundos sem ouvir nada? Aparece **"Não ouvi nada — fale de novo ou Pular"**.
-5. As linhas sem fala ficam fora do modo contínuo e constam como não executadas no relatório. Quer conferir essas também? Marque **Incluir linhas de painel/visual**.
+5. Linhas sem fala pedem confirmação manual mesmo com o avanço automático ligado; nunca são tratadas como comandos para o microfone.
 Prefere o jeito antigo (você confirma cada frase)? Desmarque **Modo contínuo** antes de começar.
 
 ### 31.10 Sugestões de melhoria (todo dia às 8h)
