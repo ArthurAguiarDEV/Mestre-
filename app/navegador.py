@@ -12,6 +12,7 @@ import queue
 import threading
 
 from .config import PASTA_PROJETO
+from . import sistema
 
 log = logging.getLogger(__name__)
 PASTA_PERFIL = PASTA_PROJETO / "navegador_mestre"
@@ -64,12 +65,16 @@ class Navegador:
 
     @staticmethod
     def disponivel() -> bool:
+        if sistema.SIMULADO:
+            return True
         import importlib.util
 
         return importlib.util.find_spec("playwright") is not None
 
     # --- linha propria do Playwright ------------------------------------------------
     def _laco(self) -> None:
+        if sistema.SIMULADO:
+            return
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as pw:
@@ -86,6 +91,9 @@ class Navegador:
 
     def rodar(self, funcao, espera: float = 40):
         """Roda funcao() na linha do navegador e devolve o resultado (ou levanta o erro)."""
+        if sistema.SIMULADO:
+            log.info("[simulado] acao do navegador controlado")
+            return None
         if not self._linha or not self._linha.is_alive():
             self._linha = threading.Thread(target=self._laco, daemon=True)
             self._linha.start()
@@ -98,6 +106,8 @@ class Navegador:
 
     def _garantir_pagina(self):
         """(na linha do navegador) Abre o navegador se preciso e devolve a aba."""
+        if sistema.SIMULADO:
+            raise RuntimeError("Pagina real indisponivel em simulacao")
         if self._ctx is not None:
             try:
                 if self._pagina is None or self._pagina.is_closed():
@@ -143,6 +153,8 @@ class Navegador:
 
     def _levar_para(self, pagina, m: dict) -> None:
         """(na linha do navegador) Poe a janela no monitor pedido, maximizada."""
+        if sistema.SIMULADO:
+            return
         cdp = self._ctx.new_cdp_session(pagina)
         janela = cdp.send("Browser.getWindowForTarget")["windowId"]
         cdp.send("Browser.setWindowBounds", {"windowId": janela, "bounds": {"windowState": "normal"}})
@@ -151,6 +163,8 @@ class Navegador:
         cdp.send("Browser.setWindowBounds", {"windowId": janela, "bounds": {"windowState": "maximized"}})
 
     def endereco(self) -> str:
+        if sistema.SIMULADO:
+            return ""
         return self.rodar(lambda: self._pagina.url if self._pagina and not self._pagina.is_closed() else "", espera=5)
 
     def tecla(self, tecla: str) -> None:
@@ -288,6 +302,9 @@ class YouTubeNoNavegadorNormal:
 
     def abrir(self, link: str, monitor: dict | None = None) -> None:
         from . import sistema
+        if sistema.SIMULADO:
+            log.info("[simulado] Abrindo site: %s", link)
+            return
         if not self.exe:
             sistema.abrir_site(link)
             return
@@ -298,7 +315,7 @@ class YouTubeNoNavegadorNormal:
 
     def na_pagina_do_youtube(self) -> bool:
         from . import sistema
-        if not sistema.EH_WINDOWS:
+        if sistema.SIMULADO or not sistema.EH_WINDOWS:
             return False
         titulo = next((t for h, t, _ in sistema._janelas_visiveis() if h == sistema.janela_da_frente()), "")
         return "youtube" in titulo.lower()

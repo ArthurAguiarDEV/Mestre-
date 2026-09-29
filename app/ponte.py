@@ -4,6 +4,8 @@ Um servidorzinho SO no proprio PC (127.0.0.1:47632). A extensao pergunta "tem pe
 (/proximo), faz a acao na aba do YouTube e devolve a resposta (/resposta).
 O painel consulta /estado para mostrar se a extensao esta conectada.
 """
+from . import sistema
+
 import itertools
 import json
 import logging
@@ -30,6 +32,8 @@ class Ponte:
 
     # --- lado do Mestre ----------------------------------------------------------------
     def iniciar(self) -> bool:
+        if sistema.SIMULADO:
+            return False
         if self._servidor:
             return True
         ponte = self
@@ -90,11 +94,14 @@ class Ponte:
         return True
 
     def conectada(self) -> bool:
-        return time.time() - self.ultimo_contato < 45
+        return not sistema.SIMULADO and time.time() - self.ultimo_contato < 45
 
     def pedir(self, acao: str, arg=None, espera: float = 8.0, aba: int | None = None):
         """Manda um pedido para a extensao e devolve o resultado (ou levanta TimeoutError/RuntimeError).
         aba: as acoes do YouTube vao para essa aba (senao, a do YouTube que voce usou por ultimo)."""
+        if sistema.SIMULADO:
+            log.info("[simulado] extensao: %s", acao)
+            return None
         ident = next(self._ids)
         evento = threading.Event()
         self._eventos[ident] = evento
@@ -125,6 +132,8 @@ def desatualizada(versao: str) -> bool:
 
 def versao_da_extensao() -> str:
     """Para o painel: a versao que esta rodando no Brave ("" = nao conectada)."""
+    if sistema.SIMULADO:
+        return ''
     try:
         import urllib.request
 
@@ -137,6 +146,8 @@ def versao_da_extensao() -> str:
 
 def extensao_conectada() -> bool:
     """Para o painel (outro programa): pergunta ao Mestre se a extensao esta conversando com ele."""
+    if sistema.SIMULADO:
+        return False
     try:
         import urllib.request
 

@@ -15,7 +15,7 @@ EH_WINDOWS = sys.platform == "win32"
 SIMULADO = not EH_WINDOWS or os.environ.get("MESTRE_SIMULAR") == "1"
 log = logging.getLogger(__name__)
 
-if EH_WINDOWS:
+if EH_WINDOWS and not SIMULADO:
     import ctypes
 
     user32 = ctypes.windll.user32
@@ -296,7 +296,7 @@ def monitores() -> list[dict]:
 
     Cada um: {"numero", "x", "y", "largura", "altura", "marca", "hz", "descricao"} (area util, sem a barra).
     """
-    if not EH_WINDOWS:
+    if SIMULADO or not EH_WINDOWS:
         return []
     from ctypes import wintypes
 
@@ -354,6 +354,8 @@ def _monitor_desejado() -> int | None:
 
 def _posicionar_janela_nova(antes: int, numero: int, espera: float = 6.0) -> None:
     """Espera a janela que acabou de abrir aparecer na frente e leva para o monitor pedido."""
+    if SIMULADO:
+        return None
     fim = time.time() + espera
     while time.time() < fim:
         atual = user32.GetForegroundWindow()
@@ -376,7 +378,7 @@ def depois_de_abrir(antes: int | None) -> None:
 
 
 def janela_da_frente() -> int:
-    return user32.GetForegroundWindow() if EH_WINDOWS else 0
+    return user32.GetForegroundWindow() if EH_WINDOWS and not SIMULADO else 0
 
 
 # --- Janelas e atalhos de teclado ------------------------------------------------------
@@ -569,7 +571,7 @@ def cancelar_suspensao() -> None:
 
 def abrir_site(url: str) -> None:
     log.info("Abrindo site: %s", url)
-    if SIMULADO and EH_WINDOWS:
+    if SIMULADO:
         return
     antes = janela_da_frente()
     brave = None
@@ -676,7 +678,7 @@ NAVEGADORES = ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.ex
 
 def _janelas_visiveis() -> list[tuple[int, str, str]]:
     """(identificador, titulo, programa.exe) de cada janela aberta."""
-    if not EH_WINDOWS:
+    if SIMULADO or not EH_WINDOWS:
         return []
     from ctypes import wintypes
 
@@ -724,7 +726,7 @@ def _escondida(hwnd: int) -> bool:
 
 def monitor_da_janela(hwnd: int) -> int | None:
     """Em qual monitor (numero do Mestre) esta o meio da janela."""
-    if not EH_WINDOWS or not hwnd:
+    if SIMULADO or not EH_WINDOWS or not hwnd:
         return None
     from ctypes import wintypes
     r = wintypes.RECT()
@@ -739,7 +741,7 @@ def monitor_da_janela(hwnd: int) -> int | None:
 
 def monitor_do_mouse() -> int | None:
     """Em qual monitor (numero do Mestre) o mouse esta: e onde voce provavelmente esta olhando."""
-    if not EH_WINDOWS:
+    if SIMULADO or not EH_WINDOWS:
         return None
     from ctypes import wintypes
     ponto = wintypes.POINT()
@@ -790,7 +792,7 @@ def janela_pelo_titulo(inicio: str, exe: str = "brave.exe", espera: float = 2.5)
 
 def programa_da_frente() -> str:
     """O .exe da janela que esta na frente (ex.: "brave.exe")."""
-    if not EH_WINDOWS:
+    if SIMULADO or not EH_WINDOWS:
         return ""
     h = janela_da_frente()
     return next((e for hw, _, e in _janelas_visiveis() if hw == h), "")
@@ -810,6 +812,8 @@ def janela_do_app_claude() -> int | None:
 
 
 def _trazer_para_frente(hwnd: int) -> None:
+    if SIMULADO:
+        return None
     user32.ShowWindow(hwnd, 9)                 # restaura se estiver minimizada
     user32.keybd_event(0x12, 0, 0, 0)          # um "Alt" solto: o Windows deixa trocar de janela
     user32.keybd_event(0x12, 0, KEYEVENTF_KEYUP, 0)
@@ -819,6 +823,8 @@ def _trazer_para_frente(hwnd: int) -> None:
 
 def _clicar_na_caixa_de_mensagem(hwnd: int, altura: int, posicao: list | None = None) -> None:
     """UM clique na caixa de mensagem: na posicao que voce ensinou (painel) ou no meio do rodape."""
+    if SIMULADO:
+        return None
     from ctypes import wintypes
 
     r = wintypes.RECT()
@@ -836,6 +842,8 @@ def _clicar_na_caixa_de_mensagem(hwnd: int, altura: int, posicao: list | None = 
 
 def abrir_app_claude() -> int | None:
     """Abre o app Claude (se estiver fechado) e devolve a janela dele."""
+    if SIMULADO:
+        return None
     import os as _os
 
     hwnd = janela_do_app_claude()
@@ -866,6 +874,8 @@ def _focar_caixa_pela_acessibilidade(hwnd: int, limite: float = 6.0) -> bool:
 
     E bem mais confiavel que clicar numa posicao fixa. Biblioteca: uiautomation (gratis).
     """
+    if SIMULADO:
+        return False
     try:
         import uiautomation as auto
     except Exception as erro:
@@ -927,6 +937,8 @@ def print_de_diagnostico(nome: str, manter: int = 6) -> Path | None:
 
 def preparar_janela_do_claude() -> int | None:
     """Abre/traz o app Claude, no monitor principal e MAXIMIZADO (a caixa fica sempre no mesmo lugar)."""
+    if SIMULADO:
+        return None
     hwnd = abrir_app_claude()
     if not hwnd:
         return None
@@ -942,6 +954,8 @@ def preparar_janela_do_claude() -> int | None:
 
 def posicao_do_mouse_no_claude() -> list | None:
     """Painel > "Ensinar onde fica a caixa": onde o mouse esta, em fracao da janela do Claude."""
+    if SIMULADO:
+        return None
     from ctypes import wintypes
 
     hwnd = janela_do_app_claude()
@@ -1017,6 +1031,8 @@ def apertar_enter() -> None:
 
 def copiar(texto: str) -> None:
     """Coloca o texto na area de transferencia (Ctrl+V cola)."""
+    if SIMULADO:
+        return None
     try:
         import pyperclip
 
@@ -1027,6 +1043,8 @@ def copiar(texto: str) -> None:
 
 def ler_area_transferencia() -> str:
     """O texto que esta copiado (Ctrl+C)."""
+    if SIMULADO:
+        return ''
     try:
         import pyperclip
 
@@ -1071,6 +1089,8 @@ def _python_sem_janela() -> str:
 
 
 def _rodar_modulo(modulo: str) -> None:
+    if SIMULADO:
+        return None
     from .config import PASTA_PROJETO
 
     subprocess.Popen([_python_sem_janela(), "-m", modulo], cwd=str(PASTA_PROJETO))
@@ -1098,6 +1118,8 @@ def iniciar_mestre() -> None:
 
 def rodar_comando(frase: str, espera: int = 120) -> str:
     """Roda UM comando num Mestre separado (python -m app.main --comando) e devolve o diario."""
+    if SIMULADO:
+        return '[simulado] comando: ' + frase
     from .config import PASTA_PROJETO
 
     try:
@@ -1114,6 +1136,8 @@ def rodar_comando(frase: str, espera: int = 120) -> str:
 
 
 def processo_vivo(pid: str) -> bool:
+    if SIMULADO:
+        return False
     try:
         numero = int(str(pid).strip())
     except ValueError:
@@ -1135,6 +1159,8 @@ def processo_vivo(pid: str) -> bool:
 
 def mestre_ligado() -> bool:
     """True se o Mestre esta rodando (o arquivo mestre.pid existe E o processo esta vivo)."""
+    if SIMULADO:
+        return False
     from .config import PASTA_PROJETO
 
     arquivo = PASTA_PROJETO / "mestre.pid"
@@ -1148,6 +1174,8 @@ def mestre_ligado() -> bool:
 
 def parar_mestre() -> bool:
     """Desliga o Mestre que esta rodando (usado pelo painel)."""
+    if SIMULADO:
+        return False
     from .config import PASTA_PROJETO
 
     arquivo = PASTA_PROJETO / "mestre.pid"
@@ -1159,12 +1187,16 @@ def parar_mestre() -> bool:
 
 
 def parar_pid(pid: str) -> None:
+    if SIMULADO:
+        return None
     comando = ["taskkill", "/PID", pid, "/F"] if EH_WINDOWS else ["kill", pid]
     subprocess.run(comando, capture_output=True, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def reiniciar_mestre() -> None:
     """Liga um Mestre novo e desliga o que estava rodando (inclusive este processo)."""
+    if SIMULADO:
+        return None
     from .config import PASTA_PROJETO
 
     arquivo = PASTA_PROJETO / "mestre.pid"

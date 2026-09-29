@@ -322,12 +322,27 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # aceita acento sem PYTHONIOENCODING
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     os.environ["MESTRE_SIMULAR"] = "1"
+    # Também protege a execução direta: python testes/frases.py.
+    if not __package__:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from testes.seguranca import instalar
+    instalar()
     logging.basicConfig(level=logging.ERROR)
     projeto = Path(__file__).resolve().parent.parent
-    pasta = Path(tempfile.mkdtemp(prefix="mestre_frases_")) / "mestre"
+    with tempfile.TemporaryDirectory(prefix="mestre_frases_") as tmp:
+        return _na_copia(projeto, Path(tmp) / "mestre")
+
+
+def _na_copia(projeto, pasta) -> int:
+    import shutil
+    import sys
     shutil.copytree(projeto, pasta, ignore=shutil.ignore_patterns("venv", "modelos", "logs", "*.zip", "__pycache__",
-                                                                   "memoria", "navegador_mestre"))
+                                                                   "memoria", "navegador_mestre", ".git", ".agents", ".codex",
+                                                                   "recebidos", "exportacoes", "notas", "respostas"))
     (pasta / "logs").mkdir(exist_ok=True)
+    shutil.copyfile(pasta / "config.exemplo.yaml", pasta / "config.yaml")
+    (pasta / "aprendido.yaml").write_text("{}\n", encoding="utf-8")
+    (pasta / "MELHORIAS.md").write_text("# Melhorias de teste\n", encoding="utf-8")
     sys.path.insert(0, str(pasta))
     for mod in [m for m in sys.modules if m == "app" or m.startswith("app.")]:
         del sys.modules[mod]
@@ -337,6 +352,11 @@ def main() -> int:
     from app.texto import extrair_comando
     from app.vocabulario import Vocabulario
     from app.voz import Voz
+    from app import youtube, informacoes
+    # Este teste mede roteamento de frases, não serviços externos.
+    youtube._primeiro_video = lambda *a, **k: "https://www.youtube.com/watch?v=teste"
+    informacoes.clima = lambda *a, **k: "Clima simulado."
+    informacoes.noticias = lambda *a, **k: ["Notícia simulada."]
     configuracao.migrar()
     cfg = carregar_config()
     # As frases de teste começam com "Mestre": não depender da palavra que o usuário escolheu
@@ -358,6 +378,7 @@ def main() -> int:
             pass
 
     ex = Executor(cfg, Voz(cfg, mudo=True), SemIA(), Vocabulario())
+    ex.voz.falar = lambda *a, **k: None
     ex._yt = lambda: None
     variacoes = palavras_ativacao(cfg)
     falhas = []
@@ -375,7 +396,10 @@ def main() -> int:
     print(f"\nVOCABULARIO: {len(FRASES) - len(falhas)} de {len(FRASES)} frases foram para o comando certo.")
     for frase, esperado, veio in falhas:
         print(f"  FALHOU  {frase!r}: esperado {esperado}, veio {veio}")
-    return 1 if falhas else 0
+    from testes.seguranca import tentativas
+    if tentativas:
+        print("FALHOU: tentativas de efeitos reais:", tentativas)
+    return 1 if falhas or tentativas else 0
 
 
 if __name__ == "__main__":

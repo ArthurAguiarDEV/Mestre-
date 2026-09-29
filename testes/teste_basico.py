@@ -2,8 +2,8 @@
 
     venv\\Scripts\\python -m testes.teste_basico
 
-Trabalha numa COPIA do projeto (pasta temporaria): seu config.yaml nao e tocado
-e nada abre de verdade (MESTRE_SIMULAR=1). No fim mostra OK / FALHOU para cada item.
+Executa a suite segura de regressao e isolamento em MESTRE_SIMULAR=1.
+A suite legada que criava janelas transparentes fica desativada; veja testes/README.md.
 """
 import os
 import re
@@ -2558,7 +2558,8 @@ print("FIM_PAINEL_25")
 """
 
 
-def main() -> int:
+def _main_legado_com_interface() -> int:
+    raise RuntimeError("Suite legada usa janelas nativas; use main() para testes seguros")
     print("\nTESTE AUTOMATICO DO MESTRE (numa copia; seu config nao e tocado)\n")
     with tempfile.TemporaryDirectory(prefix="mestre_teste_") as tmp:
         pasta = copiar_projeto(Path(tmp))
@@ -2806,5 +2807,19 @@ def main() -> int:
     return 1 if falhas else 0
 
 
+def main() -> int:
+    """Entrada automatica segura: nenhuma janela, dispositivo ou processo real."""
+    import unittest
+    from testes import teste_seguranca
+    suite = unittest.defaultTestLoader.loadTestsFromModule(teste_seguranca)
+    resultado = unittest.TextTestRunner(verbosity=2).run(suite)
+    if not resultado.wasSuccessful():
+        return 1
+    from testes import frases
+    return frases.main()
+
+
 if __name__ == "__main__":
+    if not __package__:
+        sys.path.insert(0, str(PROJETO))
     sys.exit(main())
