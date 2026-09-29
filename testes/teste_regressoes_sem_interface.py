@@ -597,6 +597,57 @@ class ValidacaoSemInterface(unittest.TestCase):
         objeto._val_atualizar_escopo()
         self.assertIn(f'{len(validacao.ler_roteiro())} itens', objeto.rot_val_escopo.texto)
 
+    def test_painel_monta_validacao_sem_abrir_janela(self):
+        """Executa o método real com widgets falsos; detecta nomes locais que ocultam secao()."""
+        origem = Path(__file__).resolve().parents[1] / 'app' / 'painel.py'
+        arvore = ast.parse(origem.read_text(encoding='utf-8'))
+        painel = next(n for n in arvore.body if isinstance(n, ast.ClassDef) and n.name == 'Painel')
+        metodo = next(n for n in painel.body if isinstance(n, ast.FunctionDef) and n.name == '_aba_validacao')
+        falsa = ast.ClassDef(name='PainelSemJanela', bases=[], keywords=[], body=[metodo], decorator_list=[])
+        modulo = ast.fix_missing_locations(ast.Module(body=[falsa], type_ignores=[]))
+
+        class WidgetFalso:
+            def __init__(self, *_args, **_kwargs):
+                self.linhas = []
+
+            def pack(self, **_kwargs):
+                return self
+
+            def bind(self, *_args, **_kwargs):
+                return None
+
+            def insert(self, *_args):
+                self.linhas.append(_args)
+
+        class VariavelFalsa:
+            def __init__(self, value=None):
+                self.valor = value
+
+            def get(self):
+                return self.valor
+
+        widgets = SimpleNamespace(CTkFrame=WidgetFalso, CTkLabel=WidgetFalso,
+                                  CTkButton=WidgetFalso, CTkSegmentedButton=WidgetFalso,
+                                  CTkCheckBox=WidgetFalso, CTkEntry=WidgetFalso)
+        tema_falso = SimpleNamespace(CARTAO='cor', ROSA='cor', TEXTO='cor', TEXTO_FRACO='cor',
+                                     AVISO='cor', SUCESSO='cor', fonte=lambda *_: ('fonte', 12))
+        contexto = {'__name__': 'app._teste_montagem_validacao', '__package__': 'app',
+                    'ctk': widgets,
+                    'tk': SimpleNamespace(StringVar=VariavelFalsa, BooleanVar=VariavelFalsa,
+                                          Listbox=WidgetFalso, MULTIPLE='multiple'),
+                    'tema': tema_falso, 'secao': lambda *_args: WidgetFalso(),
+                    'PERIGO': {}, 'SECUNDARIO': {}}
+        exec(compile(modulo, str(origem), 'exec'), contexto)
+        objeto = contexto['PainelSemJanela']()
+        objeto.nome = objeto.palavra = 'Jarvis'
+        for nome in ('_val_atualizar_botao_claude', '_val_atualizar_escopo', '_val_desenhar',
+                     '_val_comecar', '_val_marcar', '_val_errado', '_val_repetir',
+                     '_val_anterior', '_val_parar', '_val_confirmar_erro',
+                     '_val_abrir_relatorio', '_val_mandar_claude'):
+            setattr(objeto, nome, lambda *_: None)
+        objeto._aba_validacao(WidgetFalso())
+        self.assertEqual(len(objeto.lista_val_grupos.linhas), len(validacao.grupos_disponiveis(validacao.ler_roteiro())))
+
     def test_captura_e_conferencia_de_rotas(self):
         captura = validacao.capturar(self.t0, self.hist, self.ouv)
         self.assertEqual((captura["ouvi"], captura["rota"], captura["fiz"], captura["audio"]),

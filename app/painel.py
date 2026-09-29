@@ -3566,8 +3566,8 @@ class Painel(ctk.CTk):
         self.bt_val_comecar.pack(side="left", padx=10)
         self._val_grupos = validacao.grupos_disponiveis(validacao.ler_roteiro())
         self.lista_val_grupos = tk.Listbox(f, selectmode=tk.MULTIPLE, exportselection=False, height=6)
-        for secao, grupo in self._val_grupos:
-            self.lista_val_grupos.insert("end", f"{validacao.NOMES_SECAO[secao]} › {grupo}")
+        for nome_secao, grupo in self._val_grupos:
+            self.lista_val_grupos.insert("end", f"{validacao.NOMES_SECAO[nome_secao]} › {grupo}")
         self.lista_val_grupos.bind("<<ListboxSelect>>", lambda _: self._val_atualizar_escopo())
         self.rot_val_escopo = ctk.CTkLabel(f, text="", anchor="w", justify="left", wraplength=800,
                                           text_color=tema.TEXTO_FRACO)
