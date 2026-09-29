@@ -19,6 +19,8 @@ import re
 import shutil
 import time
 import hashlib
+import fnmatch
+import subprocess
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -73,6 +75,9 @@ class Item:
     tipo_item: str = "fala"
     etapas: list[Etapa] = field(default_factory=list)
     origem_id: str = ""
+    grupo_id: str = ""
+    caminhos: tuple[str, ...] = ()
+    rotas_grupo: tuple[str, ...] = ()
 
     @property
     def exige_microfone(self) -> bool:
@@ -184,6 +189,7 @@ def ler_roteiro(caminho: Path | None = None, texto: str | None = None) -> list[I
     itens: list[Item] = []
     ids: set[str] = set()
     secao, grupo, em_tabela = "outros", "", False
+    grupo_id, caminhos, rotas_grupo = "", (), ()
     linhas = texto.splitlines()
     for n, linha in enumerate(linhas):
         s = linha.strip()
@@ -196,6 +202,13 @@ def ler_roteiro(caminho: Path | None = None, texto: str | None = None) -> list[I
                 grupo = NOMES_SECAO[secao]
             else:
                 grupo = nome
+            grupo_id, caminhos, rotas_grupo = "", (), ()
+            continue
+        metadados = re.fullmatch(r"<!--\s*validacao-grupo\s+id=([a-zA-Z0-9_-]+)(?:\s+caminhos=([^\s]+))?(?:\s+rotas=([^\s]+))?\s*-->", s)
+        if metadados:
+            grupo_id = metadados.group(1)
+            caminhos = tuple(x for x in (metadados.group(2) or "").split(",") if x)
+            rotas_grupo = tuple(x for x in (metadados.group(3) or "").split(",") if x)
             continue
         if not s.startswith("|"):
             em_tabela = False
@@ -242,7 +255,8 @@ def ler_roteiro(caminho: Path | None = None, texto: str | None = None) -> list[I
         itens.append(Item(secao=secao, grupo=grupo or NOMES_SECAO[secao], frase=primeira.replace("`", ""),
                           falas=falas, o_que=o_que.replace("`", ""), esperado=esperado.replace("`", ""),
                           comandos=comandos, tipo=_tipo_esperado(esperado, comandos, manual), manual=manual,
-                          id=item_id, tipo_item=tipo_item, etapas=etapas))
+                          id=item_id, tipo_item=tipo_item, etapas=etapas, grupo_id=grupo_id,
+                          caminhos=caminhos, rotas_grupo=rotas_grupo))
     return itens
 
 
@@ -261,6 +275,9 @@ class Escopo:
     modo: str
     itens: list[Item]
     grupos: list[tuple[str, str]]
+    motivos: dict[tuple[str, str], list[str]] = field(default_factory=dict)
+    sem_mapeamento: list[str] = field(default_factory=list)
+    falhas_sem_id: int = 0
 
     @property
     def etapas(self) -> int:
@@ -291,6 +308,106 @@ def selecionar_modo(itens: list[Item], modo: str,
     return Escopo(modo, list(itens), grupos_disponiveis(itens))
 
 
+def arquivos_alterados_git(pasta: Path | None = None) -> list[str]:
+    """Arquivos dos commits locais, staged e unstaged; consulta somente o Git local."""
+    pasta = Path(pasta or PASTA_PROJETO)
+    nomes: set[str] = set()
+    for argumentos in (("diff", "--name-only", "--cached", "-z"),
+                       ("diff", "--name-only", "-z"),
+                       ("diff", "--name-only", "-z", "@{upstream}...HEAD")):
+        try:
+            processo = subprocess.run(("git", *argumentos), cwd=pasta, capture_output=True, check=True,
+                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        nomes.update(x.replace("\\", "/") for x in processo.stdout.decode("utf-8", "replace").split("\0") if x)
+    return sorted(nomes)
+
+
+def feedbacks_abertos(arquivo: Path | None = None) -> tuple[set[str], int]:
+    """Somente feedbacks em aberto com ID explícito podem ser relacionados com segurança."""
+    try:
+        texto = Path(arquivo or ARQUIVO_MELHORIAS).read_text(encoding="utf-8")
+    except OSError:
+        return set(), 0
+    ids, sem_id = set(), 0
+    for linha in texto.splitlines():
+        if not re.match(r"^\s*-\s*\[\s*\].*\bFEEDBACK:", linha):
+            continue
+        marcador = re.search(r"<!--\s*validacao-feedback\s+id=([a-zA-Z0-9_-]+)\s*-->", linha)
+        if marcador:
+            ids.add(marcador.group(1))
+        else:
+            sem_id += 1
+    return ids, sem_id
+
+
+def selecionar_direcionado(itens: list[Item], arquivos: list[str] | None = None,
+                           falhas: set[str] | None = None, falhas_sem_id: int | None = None,
+                           grupos_manuais: list[tuple[str, str]] | None = None) -> Escopo:
+    """Seleciona por metadados explícitos; sem vínculo usa só as regressões essenciais."""
+    arquivos = arquivos_alterados_git() if arquivos is None else arquivos
+    if falhas is None or falhas_sem_id is None:
+        ids_lidos, antigos = feedbacks_abertos()
+        falhas = ids_lidos if falhas is None else falhas
+        falhas_sem_id = antigos if falhas_sem_id is None else falhas_sem_id
+    disponiveis = grupos_disponiveis(itens)
+    motivos: dict[tuple[str, str], list[str]] = {}
+
+    def incluir(chave: tuple[str, str], motivo: str) -> None:
+        razoes = motivos.setdefault(chave, [])
+        if motivo not in razoes:
+            razoes.append(motivo)
+
+    grupos_por_chave = {chave: [i for i in itens if (i.secao, i.grupo) == chave] for chave in disponiveis}
+    sem_mapeamento = []
+    caminhos_normalizados = sorted(set(x.replace("\\", "/") for x in arquivos))
+    for arquivo in caminhos_normalizados:
+        encontrados = [chave for chave, linhas in grupos_por_chave.items()
+                       if any(fnmatch.fnmatchcase(arquivo, padrao) for i in linhas for padrao in i.caminhos)]
+        if encontrados:
+            for chave in encontrados:
+                incluir(chave, f"arquivo {arquivo}")
+        else:
+            sem_mapeamento.append(arquivo)
+
+    manuais = set(grupos_manuais or [])
+    desconhecidos = manuais - set(disponiveis)
+    if desconhecidos:
+        raise ValueError(f"Grupo de validação desconhecido: {sorted(desconhecidos)}")
+    for chave in disponiveis:
+        if chave in manuais:
+            incluir(chave, "escolha manual")
+
+    # Uma falha só puxa outro grupo quando sua rota esperada está declarada no
+    # metadado dos grupos afetados. Feedback legado sem ID nunca é associado.
+    rotas_afetadas = {rota for chave, razoes in motivos.items() if any(r.startswith("arquivo ") for r in razoes)
+                      for i in grupos_por_chave[chave] for rota in i.rotas_grupo}
+    ids_existentes = {i.id: i for i in itens}
+    falhas_relevantes: set[str] = set()
+    for id_ in sorted(falhas):
+        item = ids_existentes.get(id_)
+        if item is None:
+            continue
+        chave = (item.secao, item.grupo)
+        if chave in motivos or set(item.comandos) & rotas_afetadas:
+            incluir(chave, f"falha aberta {id_}")
+            falhas_relevantes.add(id_)
+
+    rapidos = set(IDS_RAPIDOS)
+    ausentes = [id_ for id_ in IDS_RAPIDOS if id_ not in ids_existentes or not ids_existentes[id_].exige_microfone]
+    if ausentes:
+        raise ValueError(f"Faltam falas essenciais no roteiro: {', '.join(ausentes)}")
+    for item in itens:
+        if item.id in rapidos:
+            incluir((item.secao, item.grupo), "regressão essencial")
+    escolhidos = [i for i in itens if i.id in rapidos or i.id in falhas_relevantes or
+                 (i.secao, i.grupo) in manuais or
+                 any(m.startswith("arquivo ") for m in motivos.get((i.secao, i.grupo), []))]
+    grupos = [chave for chave in disponiveis if chave in motivos]
+    return Escopo("Direcionado", escolhidos, grupos, motivos, sem_mapeamento, falhas_sem_id)
+
+
 def descrever_escopo(escopo: Escopo) -> str:
     """Resumo para ler antes de iniciar; contagens incluem linhas e etapas independentes."""
     if not escopo.itens:
@@ -299,11 +416,21 @@ def descrever_escopo(escopo: Escopo) -> str:
     falas = sum(i.exige_microfone for i in escopo.itens)
     outros = len(escopo.itens) - falas
     intro = {"Rápido": "Regressões essenciais, sem tarefas físicas longas.",
-             "Direcionado": f"Grupos escolhidos: {', '.join(g for _, g in escopo.grupos)}.",
+             "Direcionado": f"Grupos selecionados: {', '.join(g for _, g in escopo.grupos)}.",
              "Completo": "Todo o roteiro aplicável, incluindo conferências manuais e pré-condições."}[escopo.modo]
-    return (f"{intro} {len(escopo.itens)} itens ({escopo.etapas} etapas): "
+    descricao = (f"{intro} {len(escopo.itens)} itens ({escopo.etapas} etapas): "
             f"{falas} de fala e {outros} para conferir manualmente. "
             "Itens sem fala não serão enviados ao microfone.")
+    if escopo.modo == "Direcionado":
+        razoes = [f"{grupo}: {', '.join(escopo.motivos.get((secao, grupo), []))}"
+                  for secao, grupo in escopo.grupos if escopo.motivos.get((secao, grupo))]
+        if razoes:
+            descricao += " Motivos: " + "; ".join(razoes) + "."
+        if escopo.sem_mapeamento:
+            descricao += " Arquivos sem mapeamento: " + ", ".join(escopo.sem_mapeamento) + "."
+        if escopo.falhas_sem_id:
+            descricao += f" {escopo.falhas_sem_id} feedback(s) antigo(s) sem ID: relação não identificada."
+    return descricao
 
 
 # =====================================================================
@@ -699,6 +826,7 @@ def linha_feedback(item: Item, r: dict) -> str:
         linha += f" (ouvido: {_limpar(c['descartado'])})"
     if c.get("audio"):
         linha += f" [áudio: {c['audio']}]"
+    linha += f" <!-- validacao-feedback id={item.origem_id or item.id} -->"
     return linha
 
 

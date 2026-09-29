@@ -454,6 +454,72 @@ class ValidacaoSemInterface(unittest.TestCase):
         self.assertEqual([i.id for i in validacao.selecionar_modo(list(reversed(itens)), 'Rápido').itens],
                          list(validacao.IDS_RAPIDOS))
 
+    def test_ids_e_grupos_explicitos_sobrevivem_a_renomeacao(self):
+        texto = ('## Novidades\n### Nome antigo\n'
+                 '<!-- validacao-grupo id=grupo-fixo caminhos=app/ouvido.py rotas=_cmd_hora_data -->\n'
+                 '| Frase | Ação | Esperado |\n|---|---|---|\n'
+                 '| `Mestre, hora` <!-- validacao id=item-fixo --> | responde | `_cmd_hora_data` |\n')
+        antes = validacao.ler_roteiro(texto=texto)[0]
+        depois = validacao.ler_roteiro(texto=texto.replace('Nome antigo', 'Nome novo').replace(
+            'Mestre, hora', 'Mestre, horas'))[0]
+        self.assertEqual((antes.id, antes.grupo_id), (depois.id, depois.grupo_id))
+        self.assertEqual(antes.caminhos, ('app/ouvido.py',))
+        self.assertEqual(antes.rotas_grupo, ('_cmd_hora_data',))
+
+    def test_git_considera_staged_e_unstaged_sem_interface(self):
+        with patch.object(validacao.subprocess, 'run', side_effect=[
+            SimpleNamespace(stdout=b'a.py\0'), SimpleNamespace(stdout=b'b.py\0a.py\0'),
+            SimpleNamespace(stdout=b'c.py\0')]) as comando:
+            self.assertEqual(validacao.arquivos_alterados_git(Path('repositorio')), ['a.py', 'b.py', 'c.py'])
+        self.assertEqual(comando.call_args_list[0].args[0],
+                         ('git', 'diff', '--name-only', '--cached', '-z'))
+        self.assertEqual(comando.call_args_list[1].args[0],
+                         ('git', 'diff', '--name-only', '-z'))
+        self.assertEqual(comando.call_args_list[2].args[0],
+                         ('git', 'diff', '--name-only', '-z', '@{upstream}...HEAD'))
+        with patch.object(validacao.subprocess, 'run', return_value=SimpleNamespace(stdout=b'')):
+            self.assertEqual(validacao.arquivos_alterados_git(Path('repositorio')), [])
+
+    def test_direcionado_mapeia_arquivos_falhas_e_regressao_sem_duplicar(self):
+        itens = validacao.ler_roteiro()
+        grupo_janelas = next(i for i in itens if i.caminhos and 'app/comandos/janelas.py' in i.caminhos)
+        falha_mesmo_grupo = grupo_janelas.id
+        falha_por_rota = next(i.id for i in itens if i.grupo != grupo_janelas.grupo and
+                               '_cmd_mover' in i.comandos)
+        escopo = validacao.selecionar_direcionado(
+            itens, ['app/comandos/janelas.py'], {falha_mesmo_grupo, falha_por_rota}, 0)
+        ids = [i.id for i in escopo.itens]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(set(validacao.IDS_RAPIDOS) <= set(ids))
+        self.assertIn(falha_por_rota, ids)
+        self.assertIn(falha_mesmo_grupo, ids)
+        self.assertIn('falha aberta', validacao.descrever_escopo(escopo))
+        self.assertIn('arquivo app/comandos/janelas.py', validacao.descrever_escopo(escopo))
+        self.assertEqual([i.id for i in validacao.selecionar_modo(itens, 'Rápido').itens],
+                         list(validacao.IDS_RAPIDOS))
+        self.assertEqual(len(validacao.selecionar_modo(itens, 'Completo').itens), len(itens))
+
+    def test_direcionado_diff_vazio_e_arquivo_sem_mapa_usam_minimo(self):
+        itens = validacao.ler_roteiro()
+        falha = next(i.id for i in itens if i.id not in validacao.IDS_RAPIDOS)
+        for arquivos in ([], ['arquivo/desconhecido.py']):
+            escopo = validacao.selecionar_direcionado(itens, arquivos, {falha}, 2)
+            self.assertEqual({i.id for i in escopo.itens}, set(validacao.IDS_RAPIDOS))
+            self.assertEqual(escopo.sem_mapeamento, arquivos)
+            self.assertEqual(escopo.falhas_sem_id, 2)
+            self.assertIn('sem ID', validacao.descrever_escopo(escopo))
+            if arquivos:
+                self.assertIn('sem mapeamento', validacao.descrever_escopo(escopo))
+
+    def test_feedback_aberto_tem_id_e_legado_fica_sem_associacao(self):
+        item = validacao.ler_roteiro()[0]
+        linha = validacao.linha_feedback(item, {'captura': {'ouvi': 'teste'}})
+        self.assertIn(f'validacao-feedback id={item.id}', linha)
+        with tempfile.TemporaryDirectory(prefix='mestre_feedback_validacao_') as tmp:
+            arquivo = Path(tmp) / 'MELHORIAS.md'
+            arquivo.write_text(f'- [ ] {linha}\n- [x] {linha}\n- [ ] FEEDBACK: antigo\n', encoding='utf-8')
+            self.assertEqual(validacao.feedbacks_abertos(arquivo), ({item.id}, 1))
+
     def test_pre_condicao_bloqueia_grupo_sem_registrar_falha(self):
         roteiro = ('## Novidades\n### Grupo A\n| Frase | Ação | Esperado |\n|---|---|---|\n'
                    '| Se a rede estiver ligada | necessária | (painel) |\n'
@@ -517,9 +583,16 @@ class ValidacaoSemInterface(unittest.TestCase):
         self.assertFalse(objeto.lista_val_grupos.visivel)
         estado['modo'] = 'Direcionado'
         objeto.lista_val_grupos.indices = (0,)
-        objeto._val_atualizar_escopo()
+        with patch.object(validacao, 'arquivos_alterados_git', return_value=[]):
+            objeto._val_atualizar_escopo()
         self.assertTrue(objeto.lista_val_grupos.visivel)
         self.assertIn(objeto._val_grupos[0][1], objeto.rot_val_escopo.texto)
+        objeto.lista_val_grupos.indices = ()
+        with patch.object(validacao, 'arquivos_alterados_git', return_value=['app/comandos/janelas.py']), \
+                patch.object(validacao, 'feedbacks_abertos', return_value=(set(), 0)):
+            objeto._val_atualizar_escopo()
+        self.assertIn('arquivo app/comandos/janelas.py', objeto.rot_val_escopo.texto)
+        self.assertIn('itens', objeto.rot_val_escopo.texto)
         estado['modo'] = 'Completo'
         objeto._val_atualizar_escopo()
         self.assertIn(f'{len(validacao.ler_roteiro())} itens', objeto.rot_val_escopo.texto)

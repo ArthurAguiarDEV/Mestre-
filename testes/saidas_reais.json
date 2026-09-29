@@ -28,6 +28,7 @@
   "app/sistema.py:subprocess.run",
   "app/sistema.py:webbrowser.open",
   "app/sistema.py:webbrowser.open",
+  "app/validacao.py:subprocess.run",
   "app/voz_natural.py:subprocess.Popen",
   "app/voz_natural.py:subprocess.run",
   "app/voz_natural.py:subprocess.run",

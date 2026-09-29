@@ -3670,7 +3670,10 @@ class Painel(ctk.CTk):
     def _val_escopo(self):
         from . import validacao
         grupos = [self._val_grupos[i] for i in self.lista_val_grupos.curselection()]
-        return validacao.selecionar_modo(validacao.ler_roteiro(), self.var_val_modo.get(), grupos)
+        itens = validacao.ler_roteiro()
+        if self.var_val_modo.get() == "Direcionado":
+            return validacao.selecionar_direcionado(itens, grupos_manuais=grupos)
+        return validacao.selecionar_modo(itens, self.var_val_modo.get(), grupos)
 
     def _val_atualizar_escopo(self):
         from . import validacao
