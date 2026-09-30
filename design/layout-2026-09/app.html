@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mestre · laboratório de interface</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Ir para o conteúdo</a>
+  <header class="lab"><a href="index.html">← Galeria</a><span>ESTUDO DE INTERFACE <b id="concept-name"></b></span><nav aria-label="Escolher proposta"><a href="?modelo=orbita">01 Órbita</a><a href="?modelo=aurora">02 Aurora</a><a href="?modelo=pulso">03 Pulso</a></nav><span class="demo-label">Dados de demonstração</span></header>
+  <div id="shell"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="search-dialog" aria-labelledby="search-title"><div class="dialog-top"><h2 id="search-title">O que você procura?</h2><button class="icon-btn" data-close aria-label="Fechar busca">✕</button></div><label class="search-field"><span>Buscar tela ou funcionalidade</span><input id="search-input" type="search" placeholder="Ex.: microfone, Spotify, testar…" autocomplete="off"></label><div id="search-results"></div></dialog>
+  <dialog id="feedback-dialog" aria-labelledby="feedback-title"><form id="feedback-form"><div class="dialog-top"><h2 id="feedback-title">Sua impressão deste modelo</h2><button type="button" class="icon-btn" data-close aria-label="Fechar opinião">✕</button></div><p>Este comentário fica somente neste navegador. Você pode baixar o resumo e trazer para o Codex.</p><label>O que funcionou bem?<textarea name="liked" placeholder="Ex.: gostei do menu e do contraste." required></textarea></label><label>O que você mudaria?<textarea name="change" placeholder="Ex.: quero botões maiores e outra fonte."></textarea></label><button class="btn primary" type="submit">Guardar e baixar minha preferência</button></form></dialog>
+</body>
+</html>

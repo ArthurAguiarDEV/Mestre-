@@ -46,7 +46,7 @@ class Indicador:
         self._pulso = 0
         self.nome = getattr(executor, "nome", "Mestre")
         self.palavra = str(getattr(executor, "palavra", "mestre")).capitalize()
-        self.borda = tema.misturar("#2a2f3b", tema.ROSA, 0.45)   # contorno na cor de destaque
+        self.borda = tema.misturar("#2a2f3b", tema.COR_INDICADOR, 0.45)   # contorno na cor de destaque
         self._largura = LARGURA
 
         raiz.overrideredirect(True)

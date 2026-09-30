@@ -380,6 +380,7 @@ class Voz:
 
         threading.Thread(target=produzir, daemon=True).start()
         tocou_algo = False
+        n_parte = 0
         while True:
             item = prontos.get()
             if item is None:
@@ -388,11 +389,15 @@ class Voz:
                 log.warning("Voz natural falhou (%s). Usando a voz do Windows.", item)
                 return tocou_algo
             arquivo, temporario = item
+            texto_parte = partes[n_parte] if n_parte < len(partes) else ""
+            n_parte += 1
             if geracao == self._geracao:
                 if primeira:
                     from . import memoria
                     memoria.registrar_tempo("ate_falar", time.time() - inicio)
                     primeira = False
+                from . import avatar
+                avatar.enviar_texto(texto_parte)   # o personagem usa as vogais da frase na boca
                 self._tocar(arquivo)
                 tocou_algo = True
             if temporario:

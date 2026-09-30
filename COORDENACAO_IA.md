@@ -1,24 +1,33 @@
 # Passagem de tarefas entre ChatGPT/Codex e Claude
 
 Este repositório é a fonte comum das tarefas do projeto Mestre. Uma conversa de IA não vê
-automaticamente as outras conversas. Para ler uma tarefa, ela precisa acessar a branch e o
-commit indicados pelo usuário. Um commit só local também não aparece no GitHub.
+automaticamente as outras conversas: o que precisa ser compartilhado fica em arquivo.
+
+Hoje o repasse é **local, em sequência e por arquivos**: cartão, prompt e retorno ficam em
+`tarefas_ia/` neste PC, e só uma IA edita o projeto por vez. Só participam o ChatGPT/Codex
+(coordena e revisa) e o Claude (executa). Repasse por branch ou commit no GitHub acontece
+apenas quando o usuário autorizar, para aquela entrega. O índice do dia a dia é
+`tarefas_ia/README_CENTRAL.md`.
 
 ## Ciclo de uma tarefa
 
-1. O usuário descreve o objetivo. A IA organiza um cartão em `tarefas_ia/` com comportamento
-   esperado, limites e critérios verificáveis. O usuário aprova o cartão antes da implementação.
-2. A IA registra o cartão em commit e publica uma branch de passagem. Ela informa ao usuário
-   o endereço da branch e o hash do commit. Se a publicação falhar, informa que o repasse
-   ainda está apenas no PC.
-3. O implementador lê o cartão **naquele commit** e confirma a base. Trabalha numa branch
-   própria ou cópia isolada. Não edita uma cópia em uso por outra IA.
-4. O implementador executa os testes indicados e registra suas mudanças em commit. A entrega
-   traz branch, hash, arquivos alterados, testes com resultado e o que exige teste humano.
-   Publica a branch de entrega para que o revisor tenha acesso ao commit.
-5. Codex revisa o commit contra o cartão, confere os testes e relata falhas ou dúvidas. O
-   usuário verifica no Windows o que depende de microfone, janelas ou aparência. Só então
-   se decide integrar na branch principal e preparar atualização do Mestre.
+1. O usuário descreve o objetivo. O ChatGPT/Codex organiza um cartão em `tarefas_ia/` com
+   comportamento esperado, limites e critérios verificáveis, mais o prompt para o Claude.
+   O usuário aprova o cartão antes da implementação.
+2. O Codex entrega ao usuário o cartão e o prompt a copiar para o Claude. Nada de commit,
+   push ou branch de passagem nesta etapa.
+3. O Claude lê o cartão, confere branch, HEAD e mudanças locais antes de editar e preserva o
+   que já estava na cópia. Não edita arquivos que outra IA esteja editando.
+4. O Claude executa os testes indicados e salva o retorno em `tarefas_ia/resultados/` com
+   arquivos alterados, testes com resultado real, pendências e o estado `pronto_para_revisao`.
+   Sem commit nem push, salvo autorização específica do usuário para a entrega.
+5. O Codex revisa as alterações contra o cartão, confere os testes e relata falhas ou
+   dúvidas. O usuário verifica no Windows o que depende de microfone, janelas ou aparência.
+   Só então se decide integrar na branch principal e preparar atualização do Mestre.
+6. Commit, push, branch de passagem ou integração só com o **OK para publicar** do usuário
+   (veja `ORQUESTRACAO_IA.md`). A autorização vale para uma entrega; não passa para a
+   seguinte. Quando houver publicação, informe a branch e o hash: um commit só local não
+   aparece no GitHub.
 
 Não tratar commit, teste automático ou resposta de IA como prova de que o comportamento
 funcionou no computador do usuário. O relatório de validação deve registrar o que foi visto.
@@ -31,29 +40,25 @@ funcionou no computador do usuário. O relatório de validação deve registrar 
   commit de entrega. Preserve alterações locais que já estavam na cópia.
 - Não use a branch `claude/noite-2026-09-29` como base da tarefa piloto: há mudanças parciais
   de outra etapa sem revisão. Não misture esse trabalho ao cartão 001.
-- Não integre na `main` nem publique uma versão do aplicativo como parte da entrega do
-  cartão. Entregue uma branch e um commit para revisão.
+- Não integre na `main`, não faça commit nem push e não publique uma versão do aplicativo
+  como parte da entrega, a menos que o cartão traga essa autorização. Entregue o retorno
+  em `tarefas_ia/resultados/` para revisão.
 - Para mudanças de código, execute `venv\Scripts\python -m testes.teste_basico` no Windows.
   Se não houver ambiente pronto, relate o impedimento e os testes que conseguiu executar.
 
-## Estado da fila
+## Estado da fila — verificado em 30/09/2026
 
-- **002 — Centralizar a orquestração de IAs:** aprovado pelo usuário para iniciar.
-  A primeira entrega é a organização de `ORQUESTRACAO_IA.md` e `prompts/`. A
-  automação executável, o ciclo de feedback e a integração com GitHub vêm em
-  cartões seguintes, sempre com aprovação humana antes da publicação.
+Fonte atual: `docs/ESTADO_ATUAL.md` e `tarefas_ia/README_CENTRAL.md`.
 
-- **001 — Orientar testes variados na validação:** aprovado pelo usuário para iniciar o
-  primeiro ciclo. Cartão em `tarefas_ia/001-validacao-variada.md`; aguarda implementação
-  em branch separada e retorno do commit para revisão.
-- **Etapa B2 da noite de 29/09:** interrompida com alterações sem commit na cópia do Claude;
-  precisa de revisão própria antes de qualquer integração. Não faz parte da tarefa 001.
-- **Layout e avatar:** permanecem para avaliação após o primeiro ciclo e uma sessão de
-  testes mais ampla. Nenhum cartão de implementação foi aprovado para eles neste ciclo.
+- 003/004: organização inicial e fluxo com duas IAs implementados e revisados.
+- 005/006/007: Aurora, personagem e integração implementados. Suíte atual: 195 testes e 302 frases; verificação gráfica OK. Aceite físico pendente.
+- B1+B2: a interrupção de 29/09 foi resolvida no histórico (`53087e6`, depois `1fe641b` na integração). A auditoria atual reproduziu sete falhas; não incorporar sem corrigir e revisar.
+- 008: auditoria e organização global, com autorização explícita nesta conversa para arquivos, commits e GitHub. A publicação é de uma branch de revisão, não uma versão final aprovada. Essa autorização não se estende a tarefas futuras.
+- Manus continua desativado; relatórios históricos preservados.
 
 ## Mensagem curta para passar a tarefa
 
-> Leia `COORDENACAO_IA.md` e `tarefas_ia/001-validacao-variada.md` na branch e no commit
-> indicados. Implemente apenas o cartão 001 em uma branch própria. Execute os testes do
-> projeto. Faça um commit, publique a branch e me devolva o hash, os testes e o que devo
-> conferir no Windows. Não integre na `main` nem misture a etapa B2 interrompida.
+> Leia `COORDENACAO_IA.md` e o cartão `tarefas_ia/<número>-<assunto>.md`. Confira branch,
+> HEAD e mudanças locais. Implemente apenas esse cartão, execute os testes do projeto e
+> salve o retorno em `tarefas_ia/resultados/`. Termine em `pronto_para_revisao` e diga o que
+> devo conferir no Windows. Não faça commit nem push e não misture a etapa B2 interrompida.

@@ -17,5 +17,9 @@ Contrato: nao pule etapas. Se uma etapa falhar duas vezes, PARE e explique.
    "Novidades" que ja foram validadas para um "## Historico" no fim do arquivo antes de
    acrescentar as novas (nao acumule leva antiga com a nova).
 5b. Suba `VERSAO` (e `DATA`) em `app/versao.py` uma vez por leva de entregas, para o painel mostrar que mudou.
-6. Se o projeto tem git (`git status` funciona): `git add -A` e `git commit` com uma mensagem curta em portugues do que mudou.
+6. Prepare o relatorio e o diff para revisao. Commit e push so com o pedido explicito
+   `OK para publicar` para esta entrega, conforme ORQUESTRACAO_IA.md. Autorizacao de
+   entrega anterior nao vale para a atual. Quando autorizado, confira `git status` e
+   adicione somente os caminhos revisados desta entrega; nao use `git add -A` numa
+   copia com trabalho de outras etapas. Nunca inclua configuracao ou dados pessoais.
 7. Resumo para o usuario, em portugues simples: o que mudou, o que ele deve testar FALANDO (frases exatas do ROTEIRO_VALIDACAO.md) depois de "Mestre, reinicia", e o que ficou pendente.

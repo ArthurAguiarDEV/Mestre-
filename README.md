@@ -1,5 +1,7 @@
 # Mestre: assistente pessoal por voz (Windows)
 
+**Estado atual e versão para testar:** [auditoria de 30/09/2026](docs/ESTADO_ATUAL.md). Aurora e personagem estão implementados; voz e aceite físico ainda têm pendências.
+
 Diga **"E aí Mestre, bora trabalhar!"** e ele liga a tela, te cumprimenta e abre suas coisas.
 
 👉 **Comece pelo [GUIA_PASSO_A_PASSO.md](GUIA_PASSO_A_PASSO.md)**. Ele explica tudo do zero, sem precisar saber programar.

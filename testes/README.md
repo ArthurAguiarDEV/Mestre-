@@ -45,6 +45,8 @@ compara esse inventário com o código e exige revisão quando uma saída muda.
 | `extensao_brave/background.js` e `conteudo.js` | tabs.create, windows.create/update, foco e reprodução de vídeo | Sem pedidos pela ponte; extensão não é executada pelos testes |
 | `app/painel.py` | 8 chamadas webbrowser: Azure, ElevenLabs, chave de IA, Ollama, projetos, canais e Takeout | webbrowser bloqueado; suíte não constrói painel |
 | `app/avatar.py` e `avatar_janela.py` | Processo do avatar e abertura do painel | Avatar respeita simulação; Popen/Qt bloqueados |
+| `app/personagem/janela.py` | Processo do painel (duplo clique no personagem) | Qt e Popen bloqueados; a janela só abre fora dos testes (`ferramentas/verificar_personagem.py` roda no Windows) |
+| `app/painel_personagem.py` | `subprocess.run` da prévia (PNG feito por `app.personagem.previa`) e `webbrowser.open` da página de teste local | A suíte não constrói o painel; processo e navegador bloqueados |
 | `app/atualizar.py` | pip por subprocess.run | Processo bloqueado; instalação não executada |
 | `app/avisos_pc.py` | PowerShell e janela de eventos Windows | Processo/DLL bloqueados; integração não executada |
 | `app/voz_natural.py` | nvidia-smi, instalação, servidor de voz e taskkill | Processos e áudio bloqueados; código de voz não alterado |
@@ -67,4 +69,6 @@ chegam às APIs do Windows.
   outros módulos legados, como painel e voz, continuam exigindo isolamento.
 - A barreira não é uma sandbox contra código hostil ou uma futura biblioteca
   nativa desconhecida. Novas integrações exigem revisão do inventário e testes.
-- Layout, implementação da voz, Telegram e extensão não foram alterados.
+- Na entrega original de isolamento, o visual não mudou. Desde então, Aurora e
+  personagem alteraram interface e emissão de texto para o avatar. Telegram e extensão
+  continuam exigindo validação própria; estado verificado em `../docs/ESTADO_ATUAL.md`.

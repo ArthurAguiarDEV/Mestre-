@@ -76,10 +76,17 @@ def _mostrar_avatar(cfg: dict, executor: Executor) -> bool:
     tipo = avatar.tipo_escolhido(cfg)
     if tipo not in ("avatar", "texto_avatar"):
         return False
-    processo = avatar.iniciar(getattr(executor, "nome", "Assessor"), str(getattr(executor, "palavra", "assessor")), tipo)
+    nome, palavra = getattr(executor, "nome", "Assessor"), str(getattr(executor, "palavra", "assessor"))
+    modelo = avatar.modelo_escolhido(cfg)
+    processo = avatar.iniciar(nome, palavra, tipo, modelo)
     if processo is None:
         return False
-    return avatar.acompanhar(processo, lambda: executor.rodando) != "falhou"
+    if avatar.acompanhar(processo, lambda: executor.rodando) != "falhou":
+        return True
+    if modelo == "personagem" and executor.rodando:   # o personagem deu erro: cai para o robozinho (e só depois a bolinha)
+        processo = avatar.iniciar(nome, palavra, tipo, "robo")
+        return processo is not None and avatar.acompanhar(processo, lambda: executor.rodando) != "falhou"
+    return False
 
 
 def main() -> None:

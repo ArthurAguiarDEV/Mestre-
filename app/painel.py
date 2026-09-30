@@ -3,7 +3,6 @@
 Abre pelo atalho "Mestre" (app.central), pelo icone perto do relogio, pelo duplo clique no indicador ou falando
 "Mestre, abre o painel".
 """
-import math
 import queue
 import re
 import threading
@@ -15,7 +14,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from . import configuracao, estado, icones, personalidades, segredos, sistema, tema, youtube
+from . import configuracao, estado, icones, layout, personalidades, segredos, sistema, tema, youtube
 from .audio import BLOCO, TAXA, Segmentador, Transcritor, aplicar_ganho, nivel, sugerir_limiar
 from .config import PASTA_LOGS, PASTA_PROJETO
 from .vocabulario import Vocabulario, atalhos_no_disco
@@ -283,12 +282,12 @@ def secao(pagina, texto: str, dica: str = "", recolhida: bool | None = None):
     """
     if recolhida is None:
         recolhida = texto in RECOLHIDAS
-    cartao = ctk.CTkFrame(pagina, fg_color=tema.CARTAO, corner_radius=14, border_width=1, border_color=tema.BORDA)
+    cartao = ctk.CTkFrame(pagina, fg_color=tema.CARTAO, corner_radius=20, border_width=1, border_color=tema.BORDA)
     cartao.pack(fill="x", padx=(4, 10), pady=7)
     topo = ctk.CTkFrame(cartao, fg_color="transparent")
     topo.pack(fill="x", padx=18, pady=(14, 14 if recolhida and not dica else 2))
     ctk.CTkFrame(topo, width=4, height=18, fg_color=tema.ROSA, corner_radius=2).pack(side="left", padx=(0, 10))
-    rotulo = ctk.CTkLabel(topo, text=texto, anchor="w", font=tema.fonte(16, True))
+    rotulo = ctk.CTkLabel(topo, text=texto, anchor="w", font=tema.fonte_titulo(18))
     rotulo.pack(side="left")
     corpo = ctk.CTkFrame(cartao, fg_color="transparent")
     if dica:
@@ -340,12 +339,85 @@ def linha_campo(master, rotulo: str, widget_fabrica, largura_rotulo=230):
     return w
 
 
-RAIL = 68            # trilho de icones (sempre visivel, nunca muda de largura)
-RAIL_ABERTO = 280    # trilho + gaveta com os nomes (a gaveta tem largura fixa: RAIL_ABERTO - RAIL)
-LILAS = "#C3A6F5"
+# --- Teclado: todo botao entra na ordem do Tab, mostra um anel de foco e aceita Enter/Espaco ------------------
+# (o CTkButton e um canvas e por padrao o Tab passa reto por ele). O anel usa a borda do proprio botao.
+def _rolar_ate(w) -> None:
+    """Botao focado pelo teclado dentro de uma pagina rolavel: leva ele para a parte visivel."""
+    pai = getattr(w, "master", None)
+    while pai is not None and not isinstance(pai, ctk.CTkScrollableFrame):
+        pai = getattr(pai, "master", None)
+    if pai is None:
+        return
+    try:
+        canvas = pai._parent_canvas
+        limites = canvas.bbox("all")
+        topo, alto = w.winfo_rooty() - canvas.winfo_rooty(), canvas.winfo_height()
+        if not limites or (0 <= topo and topo + w.winfo_height() <= alto):
+            return
+        canvas.yview_moveto(max(0.0, canvas.canvasy(0) + topo - alto // 3) / max(1, limites[3] - limites[1]))
+    except tk.TclError:
+        pass
+
+
+def _estilizar(botao, **opcoes) -> None:
+    """configure() que nao briga com o anel de foco (guarda a borda \"de repouso\" enquanto ele esta focado)."""
+    guardado = getattr(botao, "_foco_guardado", None)
+    if guardado is not None:
+        if "border_width" in opcoes:
+            guardado[0] = opcoes.pop("border_width")
+        if "border_color" in opcoes:
+            guardado[1] = opcoes.pop("border_color")
+    botao.configure(**opcoes)
+
+
+def _tornar_focavel(botao) -> None:
+    canvas = getattr(botao, "_canvas", None)
+    if canvas is None:
+        return
+    botao._foco_guardado = None
+    canvas.configure(takefocus=lambda _w: 0 if str(botao.cget("state")) == "disabled" else 1)
+
+    def entrou(_e):
+        try:
+            botao._foco_guardado = [botao.cget("border_width"), botao.cget("border_color")]
+            botao.configure(border_width=max(2, botao._foco_guardado[0]), border_color=tema.TEXTO)
+            _rolar_ate(botao)
+        except tk.TclError:
+            pass
+
+    def saiu(_e):
+        guardado, botao._foco_guardado = botao._foco_guardado, None
+        if guardado is not None:
+            try:
+                botao.configure(border_width=guardado[0], border_color=guardado[1])
+            except tk.TclError:
+                pass
+
+    def acionar(_e):
+        botao.invoke()
+        return "break"
+    tk.Misc.bind(canvas, "<FocusIn>", entrou, "+")
+    tk.Misc.bind(canvas, "<FocusOut>", saiu, "+")
+    tk.Misc.bind(canvas, "<Return>", acionar, "+")
+    tk.Misc.bind(canvas, "<space>", acionar, "+")
+
+
+_INIT_BOTAO = ctk.CTkButton.__init__
+
+
+def _botao_com_teclado(self, *args, **kwargs):
+    _INIT_BOTAO(self, *args, **kwargs)
+    _tornar_focavel(self)
+
+
+ctk.CTkButton.__init__ = _botao_com_teclado
+
+LILAS = tema.LILAS
 COR_SITUACAO = {"ouvindo": tema.SUCESSO, "pensando": LILAS, "falando": tema.ROSA, "descansando": tema.TEXTO_FRACO,
                 "pausado": tema.AVISO, "desligado": tema.TEXTO_FRACO}
-ROTULOS_COMANDO = (("OUVI", "#26324a", "#8DB8F7"), ("ENTENDI", "#352a4a", LILAS), ("FIZ", "#1a2a24", tema.SUCESSO))
+ROTULOS_COMANDO = (("OUVI", tema.misturar(tema.CARTAO, tema.AZUL_ROTULO, 0.16), tema.AZUL_ROTULO),
+                   ("ENTENDI", tema.misturar(tema.CARTAO, LILAS, 0.16), LILAS),
+                   ("FIZ", tema.SUCESSO_FUNDO, tema.SUCESSO))
 
 
 def _descendentes(w):
@@ -363,117 +435,19 @@ def _ligar_eventos(w, **eventos) -> None:
 
 def cartao(master, titulo: str, icone: str = "", sub: str = ""):
     """Cartao do Inicio (como os do prototipo): titulo com icone, explicacao curta e o corpo (devolvido)."""
-    c = ctk.CTkFrame(master, fg_color=tema.CARTAO, corner_radius=16, border_width=1, border_color=tema.BORDA)
+    c = ctk.CTkFrame(master, fg_color=tema.CARTAO, corner_radius=22, border_width=1, border_color=tema.BORDA)
     topo = ctk.CTkFrame(c, fg_color="transparent")
-    topo.pack(fill="x", padx=18, pady=(16, 2 if sub else 8))
+    topo.pack(fill="x", padx=20, pady=(18, 2 if sub else 8))
     if icone:
         ctk.CTkLabel(topo, text="", image=icones.ctk_icone(icone, tema.ROSA, 18), width=20).pack(side="left", padx=(0, 8))
-    ctk.CTkLabel(topo, text=titulo, anchor="w", font=tema.fonte(15, True)).pack(side="left")
+    ctk.CTkLabel(topo, text=titulo, anchor="w", font=tema.fonte_titulo(19)).pack(side="left")
     if sub:
         ctk.CTkLabel(c, text=sub, anchor="w", justify="left", wraplength=420, text_color=tema.TEXTO_FRACO,
-                     font=tema.fonte(12)).pack(fill="x", padx=18, pady=(0, 8))
+                     font=tema.fonte(12)).pack(fill="x", padx=20, pady=(0, 8))
     corpo = ctk.CTkFrame(c, fg_color="transparent")
-    corpo.pack(fill="both", expand=True, padx=18, pady=(0, 16))
+    corpo.pack(fill="both", expand=True, padx=20, pady=(0, 18))
     c.corpo = corpo
     return c
-
-
-class Dica:
-    """Balaozinho ao lado do menu (nome e o que tem na pagina). Uma janelinha so, reaproveitada."""
-
-    def __init__(self, raiz):
-        self.raiz, self.janela, self._agendado = raiz, None, None
-
-    def agendar(self, onde, titulo: str, texto: str) -> None:
-        self.cancelar()
-        if tema.testando():
-            return   # (teste automatico: nenhuma janela aparece)
-        self._agendado = self.raiz.after(650, lambda: self._mostrar(onde(), titulo, texto))
-
-    def _mostrar(self, onde, titulo, texto) -> None:
-        self._agendado = None
-        try:
-            if self.janela is None:
-                self.janela = tk.Toplevel(self.raiz)
-                self.janela.overrideredirect(True)
-                self.janela.attributes("-topmost", True)
-                self.janela.configure(bg=tema.BORDA)
-                corpo = tk.Frame(self.janela, bg=tema.CAMPO)
-                corpo.pack(padx=1, pady=1)
-                self._t = tk.Label(corpo, bg=tema.CAMPO, fg=tema.TEXTO, anchor="w", justify="left",
-                                   font=(tema.FONTE, 12 + tema.TAMANHO - 14, "bold"))
-                self._t.pack(fill="x", padx=10, pady=(7, 0))
-                self._x = tk.Label(corpo, bg=tema.CAMPO, fg=tema.TEXTO_FRACO, anchor="w", justify="left", wraplength=260,
-                                   font=(tema.FONTE, 11 + tema.TAMANHO - 14))
-                self._x.pack(fill="x", padx=10, pady=(1, 8))
-            self._t.configure(text=titulo)
-            self._x.configure(text=texto)
-            self.janela.geometry(f"+{onde[0]}+{onde[1]}")
-            self.janela.deiconify()
-            self.janela.lift()
-        except tk.TclError:
-            pass
-
-    def cancelar(self) -> None:
-        if self._agendado:
-            self.raiz.after_cancel(self._agendado)
-            self._agendado = None
-        if self.janela is not None:
-            try:
-                self.janela.withdraw()
-            except tk.TclError:
-                pass
-
-
-class MovimentoGaveta:
-    """Quanto a gaveta com os nomes do menu esta aberta: p = 0 (escondida atras dos icones) ate 1 (aberta).
-
-    Sem Tk (o teste usa direto). O mouse parado sobre o trilho por ESPERA segundos abre; sair da area inteira do
-    menu fecha; voltar no meio do caminho inverte a partir de onde esta (nada pula nem pisca). Depois de um
-    clique num item (ou Esc) fica fechada ate o mouse sair do menu, para a pagina aparecer inteira."""
-    ESPERA = 0.22   # s com o mouse sobre os icones antes de abrir (so passar por cima nao abre)
-    TAU = 0.045     # s: a cada TAU anda ~63% do que falta (rapido no comeco, suave no fim, nos dois sentidos)
-    PASSO_MAX = 0.05   # s: se a tela travar um instante, a gaveta continua de onde estava (nao salta)
-
-    def __init__(self):
-        self.p, self.alvo = 0.0, 0
-        self.segurar = False
-        self._chegou = None
-        self._t = None
-
-    @property
-    def parado(self) -> bool:
-        return self.p == self.alvo
-
-    def acordar(self, agora: float) -> None:
-        self._t = agora
-
-    def abrir(self) -> None:
-        self.alvo, self.segurar = 1, False
-
-    def fechar(self) -> None:
-        self.alvo, self.segurar, self._chegou = 0, True, None
-
-    def passo(self, agora: float, no_trilho: bool, na_gaveta: bool) -> float:
-        dt = 0.0 if self._t is None else min(max(agora - self._t, 0.0), self.PASSO_MAX)
-        self._t = agora
-        dentro = no_trilho or (na_gaveta and self.p > 0)
-        if not dentro:
-            self.segurar, self._chegou = False, None
-        if self.segurar:
-            self.alvo = 0
-        elif self.alvo == 1 or self.p > 0:
-            self.alvo = 1 if dentro else 0   # aberta, abrindo ou fechando: segue o mouse na hora
-        elif no_trilho:
-            if self._chegou is None:
-                self._chegou = agora
-            if agora - self._chegou >= self.ESPERA:
-                self.alvo = 1
-        if self.p != self.alvo and dt > 0:
-            self.p += (self.alvo - self.p) * (1 - math.exp(-dt / self.TAU))
-            if abs(self.alvo - self.p) < 0.004:
-                self.p = float(self.alvo)
-        return self.p
 
 
 # =====================================================================
@@ -495,7 +469,11 @@ class Painel(ctk.CTk):
         self.nome = str(a.get("nome") or "Mestre")
         from .config import palavras_ativacao
         self.palavra = palavras_ativacao(self.cfg)[0].capitalize()   # o que voce FALA para chamar
-        self.title(f"{self.nome} · Central")
+        try:   # copia de teste (COPIA_DE_TESTE.txt na pasta do projeto): a 1a linha identifica a janela
+            self._sufixo_teste = (PASTA_PROJETO / "COPIA_DE_TESTE.txt").read_text(encoding="utf-8").splitlines()[0].strip()
+        except (OSError, IndexError):
+            self._sufixo_teste = ""
+        self.title(f"{self.nome} · Central" + (f" · {self._sufixo_teste}" if self._sufixo_teste else ""))
         self._colocar_icone()
         carregando = ctk.CTkLabel(self, text=f"Abrindo o painel do {self.nome}...", text_color=tema.ROSA,
                                   font=tema.fonte(20, True))
@@ -519,9 +497,13 @@ class Painel(ctk.CTk):
         # nomes das rotinas de quando o painel abriu (ver _salvar_rotinas / configuracao.mesclar_novas_por_nome)
         self._rotinas_iniciais = {str((r or {}).get("nome", "")).strip().lower() for r in (self.cfg.get("rotinas") or [])}
 
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-        self._montar_lateral()
+        self._espaco_alvos: list[dict] = []   # (Seu espaco, organizado / Midias e telas)
+        self._espaco: dict | None = None
+        self._espaco_novo: dict | None = None
+        self._espaco_lendo = False
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self._montar_topo()
         self._montar_conteudo()
         if configuracao.ultimo_conserto:
             self.aviso.configure(text_color=tema.AVISO, text=(
@@ -532,8 +514,7 @@ class Painel(ctk.CTk):
         self.paginas = {nome: (None, info[1]) for nome, info in PAGINAS.items()}
         self._montadas: list[str] = []
         self.mostrar_pagina("Início")
-        self._gaveta.lift()   # conteudo < gaveta < trilho
-        self._trilho.lift()
+        self.after(150, self._ajustar_ao_tamanho)
         self.protocol("WM_DELETE_WINDOW", self._fechar)
         self.after(100, self._atualizar_medidor)
         self.after(1000, self._tique_status)
@@ -563,338 +544,280 @@ class Painel(ctk.CTk):
             w.configure(**opcoes)
             self._ultimos_valores[id(w)] = opcoes
 
-    # --- menu lateral: trilho de icones fixo + gaveta com os nomes que desliza (prototipo B) ----------------
-    # Trilho: 68 px, sempre por cima, nunca muda. Gaveta: largura fixa, montada ja aqui, escondida atras do
-    # trilho; abrir/fechar so muda o x dela. O grid (_rail_espaco, _conteudo e paginas) nunca e tocado.
-    # Cada lista e UM canvas (icones/nomes sao itens desenhados): destacar e rolar nao recriam widgets.
-    def _montar_lateral(self):
+    # --- cabecalho Aurora: marca, estado, busca e modo + as areas (navegacao horizontal) ----------------------
+    # Cada area reune paginas que ja existiam (app/layout.py: AREAS). Nada e recriado ao trocar: a pagina
+    # certa vem para a frente (lift) e a barra de baixo (sub-navegacao) mostra as irmas dela.
+    def _largura_texto(self, texto: str, tamanho: int, negrito: bool = False) -> int:
+        return tema.fonte(tamanho, negrito).measure(texto)
+
+    def _montar_topo(self):
         from .atualizar import versao_atual
         from .ponte import VERSAO_EXTENSAO
         self.versao = versao_atual()
-        escala = ctk.ScalingTracker.get_widget_scaling(self)
+        self._area_atual = None
+        self._nav_compacto = False
+        self._redim_id = None
+        topo = ctk.CTkFrame(self, fg_color=tema.LATERAL, corner_radius=0)
+        topo.grid(row=0, column=0, sticky="ew")
+        self._topo = topo
+        ctk.CTkFrame(topo, height=1, fg_color=tema.BORDA, corner_radius=0).pack(side="bottom", fill="x")
+        linha = ctk.CTkFrame(topo, fg_color="transparent")
+        linha.pack(fill="x", padx=32, pady=(16, 0))
+        # marca: logo + nome (o nome vem da configuracao)
+        self._logo = ctk.CTkImage(icones.logo(tema.COR_INDICADOR, 128), size=(38, 38))
+        ctk.CTkLabel(linha, text="", image=self._logo).pack(side="left", padx=(0, 10))
+        marca = ctk.CTkFrame(linha, fg_color="transparent")
+        marca.pack(side="left")
+        ctk.CTkLabel(marca, text=self.nome, anchor="w", font=tema.fonte_titulo(26)).pack(anchor="w")
+        self.rot_marca_sub = ctk.CTkLabel(marca, text=self._sufixo_teste or "seu assistente pessoal", anchor="w",
+                                          text_color=tema.AVISO if self._sufixo_teste else tema.TEXTO_FRACO,
+                                          font=tema.fonte(11, bool(self._sufixo_teste)))
+        self.rot_marca_sub.pack(anchor="w", pady=(0, 0))
+        direita = ctk.CTkFrame(linha, fg_color="transparent")
+        direita.pack(side="right")
+        self.status_lateral = ctk.CTkLabel(direita, text="", anchor="e", font=tema.fonte(12, True))
+        self.status_lateral.pack(side="left", padx=(0, 14))
+        self.ent_busca = ctk.CTkEntry(direita, width=250, height=38, corner_radius=19, fg_color=tema.CAMPO,
+                                      placeholder_text="Buscar   (Ctrl+K)")
+        self.ent_busca.pack(side="left", padx=(0, 10))
+        self.ent_busca.bind("<KeyRelease>", self._busca_atualizar)
+        self.ent_busca.bind("<Return>", self._busca_enter)
+        self.ent_busca.bind("<Escape>", lambda _e: self._busca_fechar(devolver_foco=True))
+        self.ent_busca.bind("<FocusOut>", lambda _e: self.after(220, self._busca_fechar))
+        self.bt_modo = ctk.CTkButton(direita, text="", height=38, corner_radius=19, compound="left",
+                                     command=self._alternar_modo, **SECUNDARIO)
+        self._pintar_botao_modo()
+        self.bt_modo.pack(side="left")
+        # areas
+        navegacao = ctk.CTkFrame(topo, fg_color="transparent")
+        navegacao.pack(fill="x", padx=32, pady=(10, 0))
+        self._nav: dict[str, tuple] = {}
+        for area, rotulo, _paginas in layout.AREAS:
+            cel = ctk.CTkFrame(navegacao, width=1, height=1, fg_color="transparent")
+            cel.pack(side="left", padx=(0, 4))
+            b = ctk.CTkButton(cel, text=rotulo, height=40, corner_radius=8, fg_color="transparent",
+                              hover_color=tema.ROSA_FUNDO, text_color=tema.TEXTO_FRACO, font=tema.fonte(14),
+                              width=self._largura_texto(rotulo, 14, True) + 30,
+                              command=lambda a=area: self._ir_area(a))
+            b.pack()
+            barra = ctk.CTkFrame(cel, width=1, height=3, corner_radius=2, fg_color="transparent")
+            barra.pack(fill="x", padx=10, pady=(0, 0))
+            self._nav[area] = (b, barra, rotulo)
+        self.rot_versao = ctk.CTkLabel(navegacao, text=f"Versão {self.versao} · extensão {VERSAO_EXTENSAO}",
+                                       anchor="e", text_color=tema.TEXTO_FRACO, font=tema.fonte(11))
+        self.rot_versao.pack(side="right", pady=(0, 6))
+        # resultado da busca: uma caixa por cima do conteudo (nao e janela nova)
+        self._busca_lista = ctk.CTkFrame(self, fg_color=tema.CARTAO, border_width=1, border_color=tema.BORDA,
+                                         corner_radius=16)
+        self._busca_botoes: list[ctk.CTkButton] = []
+        tk.Misc.bind(self, "<Control-k>", self._busca_abrir, "+")
+        tk.Misc.bind(self, "<Control-K>", self._busca_abrir, "+")
+        for i, (area, _r, _p) in enumerate(layout.AREAS, 1):   # Alt+1..8 abrem as areas
+            tk.Misc.bind(self, f"<Alt-Key-{i}>", lambda _e, a=area: self._ir_area(a), "+")
+        tk.Misc.bind(self, "<Configure>", self._ao_redimensionar, "+")
 
-        def px(v):
-            return max(1, round(v * escala))
+    def _pintar_botao_modo(self):
+        noturno = tema.MODO == "claro"   # o botao oferece o OUTRO modo
+        self.bt_modo.configure(text="  Modo noturno" if noturno else "  Modo claro",
+                               image=icones.ctk_icone("lua" if noturno else "sol", tema.TEXTO, 16), width=150)
 
-        self._rail_fechado, self._rail_aberto = px(RAIL), px(RAIL_ABERTO)
-        trilho_l, gaveta_l = self._rail_fechado, self._rail_aberto - self._rail_fechado
-        self._gaveta_largura = gaveta_l
-        self._rail_mov = MovimentoGaveta()
-        self._rail_tique_id = self._rail_montar_id = None
-        self._rail_desloc = 0            # quanto a gaveta ja saiu de tras do trilho (px)
-        self._rail_rolagem = 0.0
-        self._rail_passo_roda = px(60)
-        self._rail_foco = None           # item sob o mouse
-        self._rail_marcados: set[str] = set()
-        self._rail_depois = None         # pagina nova escolhida com a gaveta aberta: monta quando ela fechar
-        self._dica = Dica(self)
-        alto_topo, alto_pe = px(72), px(42)
+    def _ir_area(self, area: str):
+        """Clique numa area: abre a pagina que voce estava vendo nela, ou a primeira."""
+        lembrada = self._pagina_da_area.get(area)
+        self.mostrar_pagina(lembrada or layout.paginas_da_area(area)[0][0])
 
-        self._rail_espaco = tk.Frame(self, width=trilho_l, bg=tema.LATERAL, highlightthickness=0, bd=0)
-        self._rail_espaco.grid(row=0, column=0, sticky="ns")
-        self._gaveta = tk.Frame(self, bg=tema.LATERAL, highlightthickness=0, bd=0)
-        self._gaveta.place(x=trilho_l - gaveta_l, y=0, relheight=1, width=gaveta_l)
-        self._trilho = tk.Frame(self, bg=tema.LATERAL, highlightthickness=0, bd=0)
-        self._trilho.place(x=0, y=0, relheight=1, width=trilho_l)
-        partes = []
-        for dono in (self._trilho, self._gaveta):
-            topo = tk.Frame(dono, bg=tema.LATERAL, highlightthickness=0, bd=0)
-            topo.place(x=0, y=0, relwidth=1, height=alto_topo)
-            pe = tk.Frame(dono, bg=tema.LATERAL, highlightthickness=0, bd=0)
-            pe.place(x=0, rely=1, y=-alto_pe, relwidth=1, height=alto_pe)
-            lista = tk.Canvas(dono, bg=tema.LATERAL, highlightthickness=0, bd=0, yscrollincrement=1)
-            lista.place(x=0, y=alto_topo, relwidth=1, relheight=1, height=-(alto_topo + alto_pe))
-            partes.append((topo, pe, lista))
-        (topo_t, pe_t, self._rail_lista), (topo_g, pe_g, self._gaveta_lista) = partes
-        # marca: icone do programa no trilho, nome na gaveta (mesma altura)
-        self._logo = ctk.CTkImage(icones.logo(tema.ROSA, 128), size=(36, 36))
-        ctk.CTkButton(topo_t, text="", image=self._logo, width=48, height=48,
-                      corner_radius=12, fg_color="transparent", hover_color=tema.CARTAO,
-                      command=self._rail_alternar).pack(side="left", padx=(10, 0), pady=(16, 8))
-        ctk.CTkLabel(topo_g, text=self.nome, anchor="w", height=48,
-                     font=tema.fonte(17, True)).pack(side="left", padx=(8, 0), pady=(16, 8))
-        # rodape: versao do projeto e da extensao
-        ctk.CTkLabel(pe_t, text=self.versao, width=48, height=22, corner_radius=11, fg_color=tema.ROSA_FUNDO,
-                     text_color=tema.ROSA, font=tema.fonte(11, True)).pack(side="left", padx=(10, 0), pady=(6, 14))
-        self.rot_versao = ctk.CTkLabel(pe_g, text=f"Versão {self.versao} · extensão {VERSAO_EXTENSAO}", anchor="w",
-                                       height=22, text_color=tema.TEXTO_FRACO, font=tema.fonte(12))
-        self.rot_versao.pack(side="left", padx=(8, 0), pady=(6, 14))
-        self._rail_desenhar(px)
-        # bordas: a do trilho some com a gaveta aberta (icone e nome viram um destaque so)
-        self._trilho_borda = tk.Frame(self._trilho, bg=tema.BORDA, width=1, highlightthickness=0, bd=0)
-        self._trilho_borda.place(relx=1, x=-1, y=0, relheight=1, width=1)
-        tk.Frame(self._gaveta, bg=tema.BORDA, width=1, highlightthickness=0, bd=0).place(
-            relx=1, x=-1, y=0, relheight=1, width=1)
-        for lista in (self._rail_lista, self._gaveta_lista):
-            lista.bind("<Motion>", lambda e: self._rail_focar(self._rail_linha_em(e.widget, e.y)))
-            lista.bind("<Leave>", lambda _e: self._rail_focar(None))
-            lista.bind("<Button-1>", self._rail_clicar)
-            lista.bind("<MouseWheel>", self._rail_rolar)
-        self._rail_lista.bind("<Configure>", lambda _e: self._rail_rolar_para(self._rail_rolagem))
-        _ligar_eventos(self._trilho, Enter=self._rail_acordar)
-        _ligar_eventos(self._gaveta, Enter=self._rail_acordar)
-        tk.Misc.bind(self, "<Escape>", self._rail_esc, "+")
-
-    def _rail_desenhar(self, px):
-        """Desenha grupos e itens nas duas listas, nas MESMAS alturas (a rolagem move as duas juntas)."""
-        from PIL import Image, ImageDraw, ImageTk
-        t, g = self._rail_lista, self._gaveta_lista
-        trilho_l, gaveta_l = self._rail_fechado, self._gaveta_largura
-        alto_item, alto_pilula, raio = px(44), px(40), px(12)
-        self._rail_fotos: dict = {}
-
-        def pilula(largura, cor, esquerda=True, direita=True):
-            k = 4   # desenha 4x maior e reduz: canto liso em 100/125/150%
-            im = Image.new("RGBA", (largura * k, alto_pilula * k), (0, 0, 0, 0))
-            ImageDraw.Draw(im).rounded_rectangle(
-                (0 if esquerda else -2 * raio * k, 0, largura * k - 1 + (0 if direita else 2 * raio * k),
-                 alto_pilula * k - 1), raio * k, fill=cor)
-            return ImageTk.PhotoImage(im.resize((largura, alto_pilula), Image.LANCZOS))
-
-        # trilho fechado: pilula so do icone; aberto: vai ate a borda e emenda com a da gaveta
-        for chave, cor in (("foco", tema.CARTAO), ("ativo", tema.ROSA_FUNDO)):
-            self._rail_fotos[("curta", chave)] = pilula(px(48), cor)
-            self._rail_fotos[("longa", chave)] = pilula(trilho_l - px(10), cor, direita=False)
-            self._rail_fotos[("gaveta", chave)] = pilula(gaveta_l - px(12), cor, esquerda=False)
-        self._rail_icone_lado = px(21)
-        fonte_px = -px(14 + tema.TAMANHO - 14)
-        self._rail_fontes = ((tema.FONTE, fonte_px), (tema.FONTE, fonte_px, "bold"))
-        fonte_grupo = (tema.FONTE, -px(12 + tema.TAMANHO - 14), "bold")
-        self._rail_linhas: list[tuple[int, int, str]] = []
-        self._rail_desenho: dict[str, dict] = {}
-        y = px(4)
-        for i, (grupo, nomes) in enumerate(GRUPOS_MENU):
-            alto = px(22 if i == 0 else 30)
-            meio = y + alto - px(9)
-            t.create_line(px(24), meio, px(44), meio, fill=tema.BORDA, width=px(2), capstyle="round")
-            g.create_text(px(8), meio, text=grupo, anchor="w", fill=tema.TEXTO_FRACO, font=fonte_grupo)
-            y += alto
-            for nome in nomes:
-                c = y + alto_item // 2
-                self._rail_desenho[nome] = {
-                    "tp": t.create_image(px(10), c, anchor="w", state="hidden"),
-                    "ti": t.create_image(px(34), c, image=self._rail_icone(nome, tema.TEXTO_FRACO)),
-                    "gp": g.create_image(0, c, anchor="w", state="hidden"),
-                    "gt": g.create_text(px(8), c, text=nome, anchor="w", fill=tema.TEXTO,
-                                        font=self._rail_fontes[0]),
-                }
-                self._rail_linhas.append((y, y + alto_item, nome))
-                y += alto_item
-        self._rail_altura = y + px(8)
-        self._rail_barra = g.create_line(0, 0, 0, 0, fill=tema.BORDA, width=px(3), capstyle="round",
-                                         state="hidden")
-        self._rail_barra_x = gaveta_l - px(5)
-        for lista, largura in ((t, trilho_l), (g, gaveta_l)):
-            lista.configure(scrollregion=(0, 0, largura, self._rail_altura))
-
-    def _rail_icone(self, nome: str, cor: str):
-        chave = (nome, cor)
-        if chave not in self._rail_fotos:
-            from PIL import Image, ImageTk
-            lado = self._rail_icone_lado
-            im = icones.imagem(PAGINAS[nome][0], cor).resize((lado, lado), Image.LANCZOS)
-            self._rail_fotos[chave] = ImageTk.PhotoImage(im)
-        return self._rail_fotos[chave]
-
-    def _rail_pintar(self, nome: str):
-        """Destaque de um item: rosa = pagina aberta, cinza = mouse em cima. So troca itens do canvas."""
-        d, t, g = self._rail_desenho[nome], self._rail_lista, self._gaveta_lista
-        ativo, foco = nome in self._rail_marcados, nome == self._rail_foco
-        if ativo or foco:
-            tipo = "ativo" if ativo else "foco"
-            forma = "longa" if self._rail_desloc > 0 else "curta"
-            t.itemconfigure(d["tp"], image=self._rail_fotos[(forma, tipo)], state="normal")
-            g.itemconfigure(d["gp"], image=self._rail_fotos[("gaveta", tipo)], state="normal")
-        else:
-            t.itemconfigure(d["tp"], state="hidden")
-            g.itemconfigure(d["gp"], state="hidden")
-        t.itemconfigure(d["ti"], image=self._rail_icone(nome, tema.ROSA if ativo else
-                                                        tema.TEXTO if foco else tema.TEXTO_FRACO))
-        g.itemconfigure(d["gt"], fill=tema.ROSA if ativo else tema.TEXTO, font=self._rail_fontes[ativo])
-
-    def _marcar_item(self, nome: str, ativo: bool):
-        if (nome in self._rail_marcados) != ativo:
-            (self._rail_marcados.add if ativo else self._rail_marcados.discard)(nome)
-            self._rail_pintar(nome)
-
-    def _rail_linha_em(self, lista, y: int):
-        y = lista.canvasy(y)
-        for y0, y1, nome in self._rail_linhas:
-            if y0 <= y < y1:
-                return nome
-        return None
-
-    def _rail_focar(self, nome):
-        if nome == self._rail_foco:
+    def _ao_redimensionar(self, evento):
+        if evento.widget is not self:
             return
-        antigo, self._rail_foco = self._rail_foco, nome
-        for n in (antigo, nome):
-            if n:
-                self._rail_pintar(n)
-        cursor = "hand2" if nome else ""
-        self._rail_lista.configure(cursor=cursor)
-        self._gaveta_lista.configure(cursor=cursor)
-        self._dica.cancelar()
-        if nome and self._rail_desloc == 0 and self._rail_mov.segurar:
-            # balao so com o menu fechado (depois de um clique ele fica fechado ate o mouse sair)
-            y0 = next(a for a, _b, n in self._rail_linhas if n == nome)
-            self._dica.agendar(lambda: (self._trilho.winfo_rootx() + self._rail_fechado + 8,
-                                        self._rail_lista.winfo_rooty() + y0 - round(self._rail_rolagem)),
-                               nome, PAGINAS[nome][1])
+        if self._redim_id is not None:
+            self.after_cancel(self._redim_id)
+        self._redim_id = self.after(120, self._ajustar_ao_tamanho)
 
-    def _rail_clicar(self, evento):
-        nome = self._rail_linha_em(evento.widget, evento.y)
-        if nome:
-            self._escolher_menu(nome)
+    def _ajustar_ao_tamanho(self):
+        """Janela estreita (ou texto grande): a barra de areas encolhe e o que e enfeite sai; nada some de vez."""
+        self._redim_id = None
+        try:
+            escala = ctk.ScalingTracker.get_widget_scaling(self)
+            largura = self.winfo_width() / escala
+        except tk.TclError:
+            return
+        gasto = sum(self._largura_texto(r, 14, True) + 30 + 4 for _, _, r in self._nav.values()) + 64
+        compacto = largura < max(1120, gasto + 330)
+        if compacto == self._nav_compacto:
+            return
+        self._nav_compacto = compacto
+        tamanho, folga = (13, 14) if compacto else (14, 30)
+        for b, _barra, rotulo in self._nav.values():
+            b.configure(font=tema.fonte(tamanho), width=self._largura_texto(rotulo, tamanho, True) + folga)
+        self.ent_busca.configure(width=170 if compacto else 250)
+        if compacto:
+            self.rot_marca_sub.pack_forget()
+            self.rot_versao.pack_forget()
+        else:
+            self.rot_marca_sub.pack(anchor="w")
+            self.rot_versao.pack(side="right", pady=(0, 6))
 
-    def _rail_rolar(self, evento):
-        self._rail_rolar_para(self._rail_rolagem - evento.delta / 120 * self._rail_passo_roda)
-        self._rail_focar(self._rail_linha_em(evento.widget, evento.y))
+    # --- busca ("Buscar no Mestre", Ctrl+K) -------------------------------------------------------------
+    def _busca_abrir(self, _=None):
+        self.ent_busca.focus_set()
+        self.ent_busca.select_range(0, "end")
         return "break"
 
-    def _rail_rolar_para(self, rolagem: float):
-        visivel = self._rail_lista.winfo_height()
-        self._rail_rolagem = min(max(rolagem, 0.0), max(0, self._rail_altura - visivel))
-        fracao = round(self._rail_rolagem) / self._rail_altura
-        self._rail_lista.yview_moveto(fracao)
-        self._gaveta_lista.yview_moveto(fracao)
-        # marcador discreto na borda da gaveta, so quando a lista nao cabe
-        g, total = self._gaveta_lista, self._rail_altura
-        if visivel <= 1 or total <= visivel:
-            g.itemconfigure(self._rail_barra, state="hidden")
+    def _busca_atualizar(self, evento=None):
+        if evento is not None and evento.keysym in ("Return", "Escape", "Tab", "Shift_L", "Shift_R", "Control_L",
+                                                     "Control_R", "Alt_L", "Alt_R"):
             return
-        alto = max(self._rail_passo_roda // 2, visivel * visivel / total)
-        topo = round(self._rail_rolagem) + (visivel - alto) * self._rail_rolagem / (total - visivel)
-        g.coords(self._rail_barra, self._rail_barra_x, topo + 4, self._rail_barra_x, topo + alto - 4)
-        g.itemconfigure(self._rail_barra, state="normal")
-
-    def _rail_alternar(self):
-        """Clique no icone do programa: abre ou fecha na hora (sem esperar o mouse parar)."""
-        if self._rail_mov.alvo:
-            self._rail_mov.fechar()
-        else:
-            self._rail_mov.abrir()
-        self._rail_acordar()
-
-    def _rail_esc(self, _=None):
-        if self._rail_mov.alvo or self._rail_mov.p:
-            self._rail_mov.fechar()
-            self._rail_acordar()
-
-    def _escolher_menu(self, nome: str):
-        """Clique num icone ou nome: abre a pagina uma vez e recolhe a gaveta (so reabre depois que o mouse sair)."""
-        aberta = self._rail_desloc > 0
-        self._rail_mov.fechar()
-        self._rail_acordar()
-        if self._rail_depois is not None:   # outra pagina nova ainda esperando a gaveta fechar: desiste dela
-            if self._rail_montar_id is not None:
-                self.after_cancel(self._rail_montar_id)
-                self._rail_montar_id = None
-            self._marcar_item(self._rail_depois, False)
-            self._rail_depois = None
-            atual = getattr(self, "pagina_atual", None)
-            if atual:
-                self._marcar_item(atual, True)
-        if aberta and self.paginas[nome][0] is None:
-            # 1a vez desta pagina: marca ja; monta quando a gaveta terminar de fechar (montar trava um instante)
-            atual = getattr(self, "pagina_atual", None)
-            if atual and atual != nome:
-                self._marcar_item(atual, False)
-            self._marcar_item(nome, True)
-            self._rail_depois = nome
+        achadas = layout.buscar(self.ent_busca.get())
+        if not achadas:
+            if self.ent_busca.get().strip():
+                self._busca_mostrar([], sem_resultado=True)
+            else:
+                self._busca_fechar()
             return
-        self.mostrar_pagina(nome)
+        self._busca_mostrar(achadas)
 
-    def _rail_montar_pendente(self):
-        self._rail_montar_id = None
-        nome, self._rail_depois = self._rail_depois, None
-        if nome:
-            self.mostrar_pagina(nome)
+    def _busca_mostrar(self, paginas: list[str], sem_resultado: bool = False):
+        for b in self._busca_botoes:
+            b.destroy()
+        self._busca_botoes = []
+        if sem_resultado:
+            b = ctk.CTkButton(self._busca_lista, text="Nada encontrado. Tente “voz”, “telas” ou “testes”.",
+                              anchor="w", fg_color="transparent", hover=False, text_color=tema.TEXTO_FRACO,
+                              height=36, width=330, state="disabled", text_color_disabled=tema.TEXTO_FRACO)
+            b.pack(padx=8, pady=6)
+            self._busca_botoes.append(b)
+        for pagina in paginas:
+            area = layout.area_de(pagina)
+            rotulo = f"{layout.rotulo_pagina(pagina)}   ·   {layout.rotulo_area(area)}"
+            b = ctk.CTkButton(self._busca_lista, text=rotulo, anchor="w", height=38, width=330, corner_radius=10,
+                              fg_color="transparent", hover_color=tema.ROSA_FUNDO, text_color=tema.TEXTO,
+                              image=icones.ctk_icone(PAGINAS[pagina][0], tema.ROSA, 18), compound="left",
+                              command=lambda p=pagina: self._busca_ir(p))
+            b.pack(padx=8, pady=(6 if not self._busca_botoes else 0, 0))
+            self._busca_botoes.append(b)
+        ctk.CTkFrame(self._busca_lista, height=6, fg_color="transparent").pack()
+        self.update_idletasks()
+        x = self.ent_busca.winfo_rootx() - self.winfo_rootx() - 60
+        y = self.ent_busca.winfo_rooty() - self.winfo_rooty() + self.ent_busca.winfo_height() + 6
+        self._busca_lista.place(x=max(8, x), y=y)
+        self._busca_lista.lift()
+        self._busca_paginas = paginas
 
-    def _rail_acordar(self, _=None):
-        """Mouse entrou no menu (ou clique/Esc): comeca a acompanhar. Parado e longe do menu, nada roda."""
-        if self._rail_tique_id is None:
-            self._rail_mov.acordar(time.perf_counter())
-            self._rail_tique()
+    def _busca_enter(self, _=None):
+        if getattr(self, "_busca_paginas", None) and self._busca_lista.winfo_ismapped():
+            self._busca_ir(self._busca_paginas[0])
 
-    def _rail_tique(self):
-        self._rail_tique_id = None
-        try:
-            x, y = self.winfo_pointerxy()
-            tx, ty, alto = self._trilho.winfo_rootx(), self._trilho.winfo_rooty(), self._trilho.winfo_height()
-        except tk.TclError:
-            return   # janela fechando
-        borda = tx + self._rail_fechado
-        na_altura = ty <= y < ty + alto
-        no_trilho = na_altura and tx <= x < borda
-        na_gaveta = na_altura and borda <= x < borda + self._rail_desloc
-        mov = self._rail_mov
-        self._rail_aplicar(mov.passo(time.perf_counter(), no_trilho, na_gaveta))
-        if not (no_trilho or na_gaveta) and self._rail_foco:
-            self._rail_focar(None)   # a gaveta saiu de baixo do mouse: nada fica destacado
-        if mov.parado and mov.p == 0:
-            if self._rail_depois is not None and self._rail_montar_id is None:
-                self._rail_montar_id = self.after(20, self._rail_montar_pendente)   # deixa a tela pintar antes
-            if not no_trilho:
-                return   # fechada e o mouse fora: para (o <Enter> acorda de novo)
-        self._rail_tique_id = self.after(40 if mov.parado else 15, self._rail_tique)
+    def _busca_ir(self, pagina: str):
+        self._busca_fechar()
+        self.ent_busca.delete(0, "end")
+        self.focus_set()
+        self.mostrar_pagina(pagina)
 
-    def _rail_aplicar(self, p: float):
-        """Posiciona a gaveta. So o x dela muda: trilho, grid e paginas continuam onde estao."""
-        desloc = round(self._gaveta_largura * p)
-        if desloc == self._rail_desloc:
+    def _busca_fechar(self, devolver_foco: bool = False):
+        if self._busca_lista.winfo_ismapped():
+            self._busca_lista.place_forget()
+        self._busca_paginas = []
+        if devolver_foco:
+            self.ent_busca.delete(0, "end")
+            self.focus_set()
+
+    # --- modo claro / noturno: salva, e reabre a Central (o mesmo caminho do "Aplicar" da Aparencia) ----------
+    def _alternar_modo(self):
+        novo = "escuro" if tema.MODO == "claro" else "claro"
+        if hasattr(self, "vars_aparencia"):
+            self.vars_aparencia["modo"].set(novo)
+        if not self.salvar():
             return
-        abriu, fechou = self._rail_desloc == 0, desloc == 0
-        self._rail_desloc = desloc
-        if abriu:
-            self._dica.cancelar()
-            self._gaveta.lift()
-            self._trilho.lift()
-            self._trilho_borda.place_forget()
-        self._gaveta.place_configure(x=self._rail_fechado - self._gaveta_largura + desloc)
-        if fechou:
-            self._trilho_borda.place(relx=1, x=-1, y=0, relheight=1, width=1)
-        if abriu or fechou:   # pilula do trilho: curta (fechado) ou emendada com a da gaveta (aberto)
-            for nome in self._rail_marcados | {self._rail_foco} - {None}:
-                self._rail_pintar(nome)
+        c = configuracao.carregar()
+        configuracao.secao(c, "aparencia")["modo"] = configuracao.aspas(novo)
+        configuracao.salvar(c)
+        self._fechar()
+        sistema.abrir_painel()
 
-    # --- conteudo: cabecalho, pagina e rodape ------------------------------------
+    # --- conteudo: titulo da pagina, sub-navegacao da area, pagina e rodape ----------------------------------
     def _montar_conteudo(self):
         conteudo = ctk.CTkFrame(self, fg_color=tema.FUNDO, corner_radius=0)
-        conteudo.grid(row=0, column=1, sticky="nsew")
+        conteudo.grid(row=1, column=0, sticky="nsew")
         conteudo.grid_columnconfigure(0, weight=1)
-        conteudo.grid_rowconfigure(1, weight=1)
+        conteudo.grid_rowconfigure(2, weight=1)
         self._conteudo = conteudo
         cabecalho = ctk.CTkFrame(conteudo, fg_color="transparent")
-        cabecalho.grid(row=0, column=0, sticky="ew", padx=28, pady=(20, 8))
-        direita = ctk.CTkFrame(cabecalho, fg_color="transparent")
-        direita.pack(side="right", anchor="n", pady=6)
-        self.status_lateral = ctk.CTkLabel(direita, text="", anchor="e", font=tema.fonte(12))
-        self.status_lateral.pack(side="left", padx=(0, 12))
-        ctk.CTkLabel(direita, text=f"v{self.versao}", width=54, height=26, corner_radius=13, fg_color=tema.ROSA_FUNDO,
-                     text_color=tema.ROSA, font=tema.fonte(12, True)).pack(side="left")
-        caixa = ctk.CTkFrame(cabecalho, width=46, height=46, corner_radius=13, fg_color=tema.ROSA_FUNDO)
-        caixa.pack(side="left", padx=(0, 14))
+        cabecalho.grid(row=0, column=0, sticky="ew", padx=32, pady=(22, 6))
+        caixa = ctk.CTkFrame(cabecalho, width=52, height=52, corner_radius=18, fg_color=tema.ROSA_FUNDO)
+        caixa.pack(side="left", padx=(0, 16), anchor="n")
         caixa.pack_propagate(False)
-        self.icone_pagina = ctk.CTkLabel(caixa, text="", image=icones.ctk_icone("casa", tema.ROSA, 22))
+        self.icone_pagina = ctk.CTkLabel(caixa, text="", image=icones.ctk_icone("casa", tema.ROSA, 24))
         self.icone_pagina.pack(expand=True)
         textos = ctk.CTkFrame(cabecalho, fg_color="transparent")
         textos.pack(side="left", fill="x", expand=True)
-        self.titulo_pagina = ctk.CTkLabel(textos, text="", anchor="w", height=30, font=tema.fonte(22, True))
+        self.eyebrow_pagina = ctk.CTkLabel(textos, text="", anchor="w", height=16, text_color=tema.TEXTO_FRACO,
+                                           font=tema.fonte(11, True))
+        self.eyebrow_pagina.pack(fill="x")
+        self.titulo_pagina = ctk.CTkLabel(textos, text="", anchor="w", height=40, font=tema.fonte_titulo(30))
         self.titulo_pagina.pack(fill="x")
-        self.subtitulo_pagina = ctk.CTkLabel(textos, text="", anchor="w", height=18, text_color=tema.TEXTO_FRACO,
+        self.subtitulo_pagina = ctk.CTkLabel(textos, text="", anchor="w", height=20, text_color=tema.TEXTO_FRACO,
                                              font=tema.fonte(13))
         self.subtitulo_pagina.pack(fill="x")
+        # sub-navegacao: so aparece nas areas com mais de uma pagina
+        self._subnav_area = ctk.CTkFrame(conteudo, fg_color="transparent")
+        self._subnav_area.grid(row=1, column=0, sticky="ew", padx=32, pady=(8, 8))
+        self._subnav_area.grid_remove()
+        self._subnavs: dict[str, tuple] = {}
+        self._pagina_da_area: dict[str, str] = {}
 
         rodape = ctk.CTkFrame(conteudo, fg_color=tema.LATERAL, corner_radius=0, height=64)
-        rodape.grid(row=2, column=0, sticky="ew")
+        rodape.grid(row=3, column=0, sticky="ew")
         self.aviso = ctk.CTkLabel(rodape, text="As mudanças só valem depois de salvar.", text_color=tema.TEXTO_FRACO)
         self.aviso.pack(side="left", padx=24, pady=16)
-        ctk.CTkButton(rodape, text=f"✓  Salvar e reiniciar o {self.nome}", height=40, width=240, corner_radius=20,
+        ctk.CTkButton(rodape, text=f"✓  Salvar e reiniciar o {self.nome}", height=42, width=250, corner_radius=21,
                       font=tema.fonte(14, True),
-                      command=lambda: self.salvar(reiniciar=True)).pack(side="right", padx=(6, 24), pady=12)
-        ctk.CTkButton(rodape, text="Salvar", height=40, width=110, corner_radius=20, **SECUNDARIO,
-                      command=self.salvar).pack(side="right", padx=6, pady=12)
+                      command=lambda: self.salvar(reiniciar=True)).pack(side="right", padx=(6, 24), pady=11)
+        ctk.CTkButton(rodape, text="Salvar", height=42, width=110, corner_radius=21, **SECUNDARIO,
+                      command=self.salvar).pack(side="right", padx=6, pady=11)
+
+    def _montar_subnav(self, area: str):
+        quadro = ctk.CTkFrame(self._subnav_area, fg_color="transparent")
+        botoes: dict[str, ctk.CTkButton] = {}
+        for pagina, rotulo in layout.paginas_da_area(area):
+            b = ctk.CTkButton(quadro, text=rotulo, height=36, corner_radius=18, font=tema.fonte(13),
+                              width=self._largura_texto(rotulo, 13) + 32, border_width=1,
+                              command=lambda p=pagina: self.mostrar_pagina(p))
+            b.pack(side="left", padx=(0, 8))
+            botoes[pagina] = b
+        self._subnavs[area] = (quadro, botoes)
+
+    def _pintar_navegacao(self, pagina: str):
+        """Destaca a area (sublinhado) e a irma da sub-navegacao. So mexe em botoes: nada e recriado."""
+        area = layout.area_de(pagina)
+        if area != self._area_atual:
+            if self._area_atual:
+                b, barra, _r = self._nav[self._area_atual]
+                _estilizar(b, text_color=tema.TEXTO_FRACO, font=tema.fonte(14))
+                barra.configure(fg_color="transparent")
+                antigo = self._subnavs.get(self._area_atual)
+                if antigo:
+                    antigo[0].pack_forget()
+            b, barra, _r = self._nav[area]
+            _estilizar(b, text_color=tema.ROSA, font=tema.fonte(14, True))
+            barra.configure(fg_color=tema.ROSA)
+            self._area_atual = area
+            paginas = layout.paginas_da_area(area)
+            if len(paginas) > 1:
+                if area not in self._subnavs:
+                    self._montar_subnav(area)
+                self._subnavs[area][0].pack(fill="x")
+                self._subnav_area.grid()
+            else:
+                self._subnav_area.grid_remove()
+        self._pagina_da_area[area] = pagina
+        if area in self._subnavs:
+            for p, b in self._subnavs[area][1].items():
+                if p == pagina:
+                    _estilizar(b, fg_color=tema.ROSA_FUNDO, text_color=tema.ROSA, border_color=tema.ROSA,
+                                hover_color=tema.ROSA_FUNDO)
+                else:
+                    _estilizar(b, fg_color="transparent", text_color=tema.TEXTO_FRACO, border_color=tema.BORDA,
+                                hover_color=tema.SECUNDARIO_HOVER)
 
     def _garantir_pagina(self, nome: str):
         """Monta a pagina na primeira vez (sob demanda) e guarda: nas proximas vezes so troca."""
@@ -911,37 +834,230 @@ class Painel(ctk.CTk):
         for nome in PAGINAS:
             self._garantir_pagina(nome)
 
+    def _titulo_da_pagina(self, nome: str) -> str:
+        if nome == "Início":
+            apelido = str(self._sec("assistente").get("apelido_usuario") or "").strip()
+            return f"Olá, {apelido}." if apelido else "Olá."
+        return layout.titulo_pagina(nome)
+
     def mostrar_pagina(self, nome: str):
         anterior = getattr(self, "pagina_atual", None)
         if anterior == nome:
             if nome == "Sugestões de melhoria" and hasattr(self, "_sug_linhas"):
                 self._sug_recarregar()
             return
-        if anterior and anterior != nome:
-            self._marcar_item(anterior, False)
         if self.paginas[nome][0] is None and hasattr(self, "titulo_pagina"):
-            # 1a vez: o menu e o titulo respondem ja; a pagina e montada logo em seguida
-            self._marcar_item(nome, True)
-            self._por(self.titulo_pagina, text=nome)
+            # 1a vez: a barra e o titulo respondem ja; a pagina e montada logo em seguida
+            self._pintar_navegacao(nome)
+            self._por(self.eyebrow_pagina, text=layout.rotulo_area(layout.area_de(nome)).upper())
+            self._por(self.titulo_pagina, text=self._titulo_da_pagina(nome))
             self._por(self.subtitulo_pagina, text="Abrindo...")
             self.update_idletasks()
         frame = self._garantir_pagina(nome)
         # as paginas ja montadas ficam todas no mesmo lugar, uma em cima da outra: trocar e so trazer a
         # escolhida para a frente (esconder/mostrar faria o customtkinter redesenhar a pagina inteira)
         if not frame.grid_info():
-            frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
+            frame.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 8))
         frame.lift()
-        self._marcar_item(nome, True)
+        self._pintar_navegacao(nome)
         self.pagina_atual = nome
         icone, descricao = PAGINAS[nome][0], PAGINAS[nome][1]
-        self._por(self.icone_pagina, image=icones.ctk_icone(icone, tema.ROSA, 22))
-        self._por(self.titulo_pagina, text=nome)
+        self._por(self.icone_pagina, image=icones.ctk_icone(icone, tema.ROSA, 24))
+        self._por(self.eyebrow_pagina, text=layout.rotulo_area(layout.area_de(nome)).upper())
+        self._por(self.titulo_pagina, text=self._titulo_da_pagina(nome))
         self._por(self.subtitulo_pagina, text=descricao)
         if nome == "Sugestões de melhoria" and hasattr(self, "_sug_linhas"):
             self._sug_recarregar()
+        if nome in ("Início", "Mídias e telas"):
+            self._espaco_atualizar()
 
     def _sec(self, nome: str) -> dict:
         return self.cfg.get(nome) or {}
+
+    # -----------------------------------------------------------------
+    #  Seu espaco, organizado (Visao geral) e Midias e telas: leem o config e a mesa em segundo plano
+    # -----------------------------------------------------------------
+    def _espaco_atualizar(self):
+        """Le monitores e janelas FORA da linha do Tk (nunca trava o painel); o resultado entra no proximo tique."""
+        if self._espaco_lendo or not self._espaco_alvos:
+            return
+        self._espaco_lendo = True
+        threading.Thread(target=self._espaco_ler, args=(self.cfg,), daemon=True).start()
+
+    def _espaco_ler(self, cfg):
+        try:
+            from .comandos import Executor
+            from .comandos.perfis import perfil_padrao, perfis_configurados
+            try:
+                monitores = sistema.monitores()
+            except Exception:
+                monitores = []   # (sem dados: a tela avisa, nao inventa monitor)
+            try:
+                ativas = sistema.janela_ativa_por_monitor() if monitores else {}
+            except Exception:
+                ativas = {}
+            self._espaco_novo = layout.montar_espaco(cfg, monitores, ativas, list(Executor.STREAMINGS),
+                                                     perfis_configurados(cfg), perfil_padrao(cfg))
+        except Exception:
+            pass
+        finally:
+            self._espaco_lendo = False
+
+    def _aplicar_espaco_se_novo(self):
+        novo, self._espaco_novo = self._espaco_novo, None
+        if novo is not None and novo != self._espaco:
+            self._espaco = novo
+            self._espaco_desenhar()
+
+    def _espaco_alvo(self, **regioes) -> dict:
+        """Registra os quadros de uma pagina que mostram o resumo (telas, pills, servicos, perfil, programas)."""
+        alvo = {"regioes": regioes, "sig": None}
+        self._espaco_alvos.append(alvo)
+        if self._espaco is not None:
+            self._espaco_desenhar()
+        return alvo
+
+    def _espaco_desenhar(self):
+        dados = self._espaco
+        if dados is None:
+            return
+        for alvo in self._espaco_alvos:
+            if alvo["sig"] is dados:
+                continue
+            alvo["sig"] = dados
+            for nome, quadro in alvo["regioes"].items():
+                for filho in quadro.winfo_children():
+                    filho.destroy()
+                getattr(self, f"_espaco_{nome}")(quadro, dados)
+
+    def _espaco_telas(self, quadro, d: dict):
+        if not d["monitores_lidos"]:
+            ctk.CTkLabel(quadro, text="Sem dados das telas agora. O Windows não informou os monitores; "
+                                      "nenhuma tela é assumida.", anchor="w", justify="left", wraplength=760,
+                         text_color=tema.TEXTO_FRACO).pack(fill="x", pady=6)
+            return
+        grade = ctk.CTkFrame(quadro, fg_color="transparent")
+        grade.pack(fill="x")
+        for i, m in enumerate(d["monitores"]):
+            grade.grid_columnconfigure(i, weight=1, uniform="tela")
+            tela = ctk.CTkFrame(grade, fg_color=tema.FUNDO, corner_radius=14, border_width=1, border_color=tema.BORDA)
+            tela.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0 if i == len(d["monitores"]) - 1 else 6))
+            ctk.CTkLabel(tela, text=f"MONITOR {m['numero']}" + ("  ·  principal" if m["principal"] else ""),
+                         anchor="w", text_color=tema.TEXTO_FRACO,
+                         font=ctk.CTkFont(family="Consolas", size=11, weight="bold")).pack(fill="x", padx=14, pady=(12, 4))
+            visor = ctk.CTkFrame(tela, fg_color=tema.ROSA_FUNDO if m["principal"] else tema.CAMPO, corner_radius=10,
+                                 height=84)
+            visor.pack(fill="x", padx=14)
+            visor.pack_propagate(False)
+            ctk.CTkLabel(visor, text="", image=icones.ctk_icone("pc", tema.ROSA if m["principal"] else tema.TEXTO_FRACO,
+                                                                24)).pack(pady=(12, 0))
+            janela = m["janela"]
+            ctk.CTkLabel(visor, text=(janela[:30] + "…" if len(janela) > 30 else janela) or "nenhuma janela em destaque",
+                         text_color=tema.TEXTO if janela else tema.TEXTO_FRACO, font=tema.fonte(12)).pack()
+            rodape = " · ".join(x for x in (m["descricao"], m["resolucao"]) if x)
+            ctk.CTkLabel(tela, text=rodape, anchor="w", text_color=tema.TEXTO_FRACO, font=tema.fonte(11)).pack(
+                fill="x", padx=14, pady=(8, 0))
+            ctk.CTkLabel(tela, text=f"Apelido: {m['apelido']}" if m["apelido"] else "Sem apelido", anchor="w",
+                         text_color=tema.TEXTO if m["apelido"] else tema.TEXTO_FRACO,
+                         font=tema.fonte(11)).pack(fill="x", padx=14, pady=(0, 12))
+
+    def _espaco_pills(self, quadro, d: dict):
+        """Perfil e servicos, sempre com nome escrito (nada depende so de cor)."""
+        linha = ctk.CTkFrame(quadro, fg_color="transparent")
+        linha.pack(fill="x", pady=(2, 0))
+        perfil = ", ".join(d["perfis"]) if d["perfis"] else "nenhum perfil cadastrado"
+        ctk.CTkLabel(linha, text=f"  Perfil: {perfil}  ", image=icones.ctk_icone("perfil", tema.ROSA, 14), compound="left",
+                     height=30, corner_radius=15, fg_color=tema.ROSA_FUNDO, text_color=tema.ROSA,
+                     font=tema.fonte(12, True)).pack(side="left", padx=(0, 8), pady=2)
+        for s in d["servicos"]:
+            ctk.CTkLabel(linha, text=f"  {s['nome']}  ", height=30, corner_radius=15, fg_color=tema.CAMPO,
+                         font=tema.fonte(12)).pack(side="left", padx=(0, 6), pady=2)
+
+    def _espaco_servicos(self, quadro, d: dict):
+        grade = ctk.CTkFrame(quadro, fg_color="transparent")
+        grade.pack(fill="x")
+        destino = {"video": ("YouTube", "Canais e perfis"), "streaming": ("YouTube", "Perfis dos streamings"),
+                   "musica": ("Spotify", "Playlists")}
+        for i, s in enumerate(d["servicos"]):
+            grade.grid_columnconfigure(i % 3, weight=1, uniform="servico")
+            c = ctk.CTkFrame(grade, fg_color=tema.FUNDO, corner_radius=18, border_width=1, border_color=tema.BORDA)
+            c.grid(row=i // 3, column=i % 3, sticky="nsew", padx=6, pady=6)
+            ctk.CTkLabel(c, text=s["nome"], anchor="w", font=tema.fonte_titulo(21)).pack(fill="x", padx=18, pady=(16, 2))
+            ctk.CTkLabel(c, text=s["detalhe"], anchor="w", justify="left", wraplength=210, text_color=tema.TEXTO_FRACO,
+                         image=icones.ctk_icone("perfil", tema.TEXTO_FRACO, 13) if s["tipo"] == "streaming" else None,
+                         compound="left", font=tema.fonte(12)).pack(fill="x", padx=18)
+            pagina, texto = destino[s["tipo"]]
+            ctk.CTkButton(c, text=f"{texto}  ›", height=34, corner_radius=17, font=tema.fonte(12),
+                          command=lambda p=pagina: self.mostrar_pagina(p), **SECUNDARIO).pack(
+                anchor="w", padx=18, pady=(10, 16))
+
+    def _espaco_perfil(self, quadro, d: dict):
+        n = len(d["perfis"])
+        if not n:
+            texto = ("Nenhum perfil cadastrado. Cadastre em Mídias e telas > YouTube (perfis dos streamings) para o "
+                     f"{self.nome} escolher o perfil certo.")
+        elif n == 1:
+            texto = f"Um só perfil cadastrado, {d['perfis'][0]}: é ele que o {self.nome} usa nos streamings."
+        elif d["perfil_padrao"]:
+            texto = (f"Perfil padrão: {d['perfil_padrao']} (o {self.nome} confirma antes de usar). "
+                     f"Cadastrados: {', '.join(d['perfis'])}.")
+        else:
+            texto = f"Perfis cadastrados: {', '.join(d['perfis'])}. Sem perfil padrão: ele pergunta qual usar."
+        ctk.CTkLabel(quadro, text=texto, anchor="w", justify="left", wraplength=780,
+                     image=icones.ctk_icone("perfil", tema.ROSA, 18), compound="left",
+                     font=tema.fonte(14)).pack(fill="x", pady=(2, 6))
+        ctk.CTkButton(quadro, text="Editar perfis  ›", height=34, corner_radius=17, font=tema.fonte(12),
+                      command=lambda: self.mostrar_pagina("YouTube"), **SECUNDARIO).pack(anchor="w")
+
+    def _espaco_programas(self, quadro, d: dict):
+        def resumo(n, singular, plural, amostra):
+            if not n:
+                return f"Nenhum {singular} cadastrado."
+            return f"{n} {singular if n == 1 else plural}: " + ", ".join(amostra) + (" …" if n > len(amostra) else "")
+        for texto in (resumo(d["programas"], "programa", "programas", d["programas_amostra"]),
+                      resumo(d["sites"], "site", "sites", d["sites_amostra"])):
+            ctk.CTkLabel(quadro, text=texto, anchor="w", justify="left", wraplength=780).pack(fill="x", pady=2)
+        apelidos = [f"monitor {m['numero']} = {m['apelido']}" for m in d["monitores"] if m["apelido"]]
+        ctk.CTkLabel(quadro, text=("Apelidos de monitor: " + "; ".join(apelidos)) if apelidos else
+                     "Sem apelidos de monitor (dá para falar “no monitor 2”, “da esquerda”, “da direita”).",
+                     anchor="w", justify="left", wraplength=780, text_color=tema.TEXTO_FRACO).pack(fill="x", pady=2)
+        ctk.CTkButton(quadro, text="Editar programas, sites e monitores  ›", height=34, corner_radius=17,
+                      font=tema.fonte(12), command=lambda: self.mostrar_pagina("Programas e sites"),
+                      **SECUNDARIO).pack(anchor="w", pady=(8, 0))
+
+    def _cartao_espaco(self, master):
+        """"Seu espaço, organizado": as telas e o que cada servico usa, na visao geral (so leitura)."""
+        c = cartao(master, "Seu espaço, organizado", "pc", "Veja serviços, perfil e o destino de cada janela em um só "
+                                                             "lugar. Só leitura: nada é movido daqui.")
+        ctk.CTkButton(c, text="Abrir detalhes  ›", height=32, corner_radius=16, font=tema.fonte(12),
+                      command=lambda: self.mostrar_pagina("Mídias e telas"), **SECUNDARIO).place(
+            relx=1, x=-18, y=16, anchor="ne")
+        telas = ctk.CTkFrame(c.corpo, fg_color="transparent")
+        telas.pack(fill="x")
+        pills = ctk.CTkFrame(c.corpo, fg_color="transparent")
+        pills.pack(fill="x", pady=(12, 0))
+        ctk.CTkLabel(telas, text="Lendo as telas…", anchor="w", text_color=tema.TEXTO_FRACO).pack(fill="x")
+        self._espaco_alvo(telas=telas, pills=pills)
+        return c
+
+    def _aba_midias(self, pagina):
+        f = secao(pagina, "Suas telas", "Cada monitor com a janela em destaque agora e o apelido que você deu. "
+                                       "Só leitura: nenhuma janela é movida daqui (para isso, fale o comando).")
+        telas = ctk.CTkFrame(f, fg_color="transparent")
+        telas.pack(fill="x", padx=(20, 14))
+        ctk.CTkLabel(telas, text="Lendo as telas…", anchor="w", text_color=tema.TEXTO_FRACO).pack(fill="x")
+        ctk.CTkButton(f, text="Atualizar telas", height=34, **SECUNDARIO, command=self._espaco_atualizar).pack(
+            anchor="w", padx=(20, 14), pady=(8, 0))
+        g = secao(pagina, "Perfil", "Quem assiste: o nome cadastrado para os streamings.")
+        perfil = ctk.CTkFrame(g, fg_color="transparent")
+        perfil.pack(fill="x", padx=(32, 18))
+        s = secao(pagina, "Serviços", f"O que o {self.nome} sabe abrir e tocar. O detalhe de cada um fica na aba dele.")
+        servicos = ctk.CTkFrame(s, fg_color="transparent")
+        servicos.pack(fill="x", padx=(20, 14))
+        p = secao(pagina, "Programas e sites", "O que ele abre quando você pede, e os apelidos dos monitores.")
+        programas = ctk.CTkFrame(p, fg_color="transparent")
+        programas.pack(fill="x", padx=(32, 18))
+        self._espaco_alvo(telas=telas, perfil=perfil, servicos=servicos, programas=programas)
 
     # -----------------------------------------------------------------
     #  Inicio: cartoes (status + avatar, fila do pensando, atalhos, ultimos comandos)
@@ -951,16 +1067,17 @@ class Painel(ctk.CTk):
         grade.pack(fill="x", padx=(4, 10), pady=(4, 0))
         grade.grid_columnconfigure((0, 1), weight=1, uniform="inicio")
         self._cartao_status(grade).grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 7))
-        self._cartao_fila(grade).grid(row=1, column=0, sticky="nsew", padx=(0, 7), pady=7)
-        self._cartao_atalhos(grade).grid(row=1, column=1, sticky="nsew", padx=(7, 0), pady=7)
-        self._cartao_comandos(grade).grid(row=2, column=0, columnspan=2, sticky="nsew", pady=7)
+        self._cartao_espaco(grade).grid(row=1, column=0, columnspan=2, sticky="nsew", pady=7)
+        self._cartao_fila(grade).grid(row=2, column=0, sticky="nsew", padx=(0, 7), pady=7)
+        self._cartao_atalhos(grade).grid(row=2, column=1, sticky="nsew", padx=(7, 0), pady=7)
+        self._cartao_comandos(grade).grid(row=3, column=0, columnspan=2, sticky="nsew", pady=7)
         self._inicio_novidades(pagina)
         self._inicio_jeitos_de_chamar(pagina)
         self._inicio_atalhos_uteis(pagina)
         self._aplicar_inicio(self._coletar_inicio())   # (a 1a vez aqui mesmo: a pagina ja abre preenchida)
 
     def _cartao_status(self, master):
-        c = ctk.CTkFrame(master, fg_color=tema.CARTAO, corner_radius=16, border_width=1, border_color=tema.BORDA)
+        c = ctk.CTkFrame(master, fg_color=tema.CARTAO, corner_radius=22, border_width=1, border_color=tema.BORDA)
         linha = ctk.CTkFrame(c, fg_color="transparent")
         linha.pack(fill="x", padx=20, pady=(18, 6))
         # lugar do avatar: por enquanto um desenho parado (o robo animado entra aqui depois)
@@ -971,7 +1088,7 @@ class Painel(ctk.CTk):
         ctk.CTkLabel(self.avatar_area, text="", image=self._avatar_img).pack(expand=True)
         lado = ctk.CTkFrame(linha, fg_color="transparent")
         lado.pack(side="left", fill="both", expand=True, padx=(20, 0))
-        self.status_mestre = ctk.CTkLabel(lado, text="", anchor="w", font=tema.fonte(26, True))
+        self.status_mestre = ctk.CTkLabel(lado, text="", anchor="w", font=tema.fonte_titulo(30))
         self.status_mestre.pack(fill="x", pady=(8, 0))
         self.status_detalhe = ctk.CTkLabel(lado, text="", anchor="w", justify="left", wraplength=600,
                                            text_color=tema.TEXTO_FRACO)
@@ -1066,12 +1183,12 @@ class Painel(ctk.CTk):
 
     def _inicio_novidades(self, pagina):
         f = secao(pagina, f"Novidades da versão {self.versao}", "O que mudou no painel:")
-        dicas = [("Menu com ícones", "passe o mouse na barra da esquerda: ela abre mostrando os nomes"),
-                 ("Início em cartões", "o que ele está fazendo agora, a fila do pensando e os últimos comandos"),
-                 ("Últimos comandos", "OUVI / ENTENDI / FIZ de cada pedido, atualizando sozinho"),
-                 ("Voz em abas", "uma aba por voz: Ativar esta voz, Testar e Usar como reserva"),
-                 ("Voz reserva", "se a voz ativa falhar, ele fala com a reserva que você escolheu"),
-                 ("Painel mais leve", "cada página só é montada quando você abre; trocar de página é na hora")]
+        dicas = [("Visual Aurora", "modo claro (padrão) ou noturno, títulos em Georgia e mais espaço para ler"),
+                 ("Áreas no topo", "Visão geral, Conversa, Voz e escuta, Mídias e telas, Rotinas, Memória, Evolução e Ajustes"),
+                 ("Mídias e telas", "suas telas, o perfil e os serviços de vídeo e música juntos"),
+                 ("Seu espaço, organizado", "as telas e os serviços aqui na visão geral, só para ler"),
+                 ("Busca e teclado", "Ctrl+K busca, Alt+1 a 8 trocam de área, Tab e Enter chegam nos botões"),
+                 ("Nada mudou por dentro", "as mesmas páginas, configurações e salvamento de antes")]
         for frase, explica in dicas:
             linha = ctk.CTkFrame(f, fg_color="transparent")
             linha.pack(fill="x", padx=(32, 18), pady=2)
@@ -1156,6 +1273,7 @@ class Painel(ctk.CTk):
         """A cada ~1 s: o Inicio e a bolinha do topo acompanham o Assessor sozinhos."""
         try:
             self._aplicar_se_novo()
+            self._aplicar_espaco_se_novo()
             self._status()
         finally:
             self.after(1000, self._tique_status)
@@ -1196,7 +1314,7 @@ class Painel(ctk.CTk):
                 segundos = max(0, int(agora - float(p.get("inicio") or agora)))
                 self._por(linha["texto"], text=f"“{str(p.get('pergunta') or '')[:120]}”")
                 self._por(linha["chip"], text=f"pensando {segundos}s" if pensando else "pronto",
-                          fg_color=tema.ROSA_FUNDO if pensando else "#1a2a24",
+                          fg_color=tema.ROSA_FUNDO if pensando else tema.SUCESSO_FUNDO,
                           text_color=LILAS if pensando else tema.SUCESSO)
                 self._por(linha["barra"], progress_color=LILAS if pensando else tema.SUCESSO)
                 linha["barra"].set(min(0.95, segundos / 120) if pensando else 1.0)
@@ -1317,7 +1435,7 @@ class Painel(ctk.CTk):
                "gravação e veja o que o Whisper entendeu. Enquanto o teste está ligado, a escuta dele fica em pausa.")
         medidor = ctk.CTkFrame(f)
         medidor.pack(fill="x", padx=(28, 18), pady=4)
-        self.canvas_nivel = tk.Canvas(medidor, height=26, bg="#1d2029", highlightthickness=0)
+        self.canvas_nivel = tk.Canvas(medidor, height=26, bg=tema.CAMPO, highlightthickness=0)
         self.canvas_nivel.pack(fill="x", padx=10, pady=(10, 4))
         self.rotulo_nivel = ctk.CTkLabel(medidor, text="Teste desligado", anchor="w")
         self.rotulo_nivel.pack(fill="x", padx=10, pady=(0, 8))
@@ -1590,10 +1708,10 @@ class Painel(ctk.CTk):
         limiar = self.var_limiar.get()
         escala = max(limiar * 3, 600)
         v = getattr(self, "_nivel_atual", 0) if self._stream else 0
-        cor = "#ff5c5c" if self._gravando else ("#3ecf8e" if v >= limiar else "#4b5563")
+        cor = "#ff5c5c" if self._gravando else ("#3ecf8e" if v >= limiar else tema.TEXTO_FRACO)
         c.create_rectangle(0, 4, min(1, v / escala) * largura, 22, fill=cor, outline="")
         x = largura / 3
-        c.create_line(x, 0, x, 26, fill="#eceae4", width=2)
+        c.create_line(x, 0, x, 26, fill=tema.TEXTO, width=2)
         if self._stream:
             estado_voz = "FALA detectada" if v >= limiar else "silêncio/ruído"
             self.rotulo_nivel.configure(text=f"Volume agora: {v:.0f}   ·   limite: {limiar:.0f}   ·   {estado_voz}")
@@ -2060,9 +2178,9 @@ class Painel(ctk.CTk):
             self._por(b, image=icones.ctk_icone("ponto", cor, 9) if cor else icones.ctk_icone("vazio", "#000000", 9))
             partes = self._cartoes_motor[chave]
             if chave == ativa:
-                self._por(partes["situacao"], text="  ✓ Voz ativa  ", fg_color="#1a2a24", text_color=tema.SUCESSO)
+                self._por(partes["situacao"], text="  ✓ Voz ativa  ", fg_color=tema.SUCESSO_FUNDO, text_color=tema.SUCESSO)
             elif chave == reserva:
-                self._por(partes["situacao"], text="  Reserva  ", fg_color="#2a2419", text_color=tema.AVISO)
+                self._por(partes["situacao"], text="  Reserva  ", fg_color=tema.AVISO_FUNDO, text_color=tema.AVISO)
             else:
                 self._por(partes["situacao"], text="", fg_color="transparent", text_color=tema.TEXTO_FRACO)
             self._por(partes["ativar"], state="disabled" if chave == ativa else "normal",
@@ -3373,15 +3491,18 @@ class Painel(ctk.CTk):
     def _aba_aparencia(self, pagina):
         f = pagina   # (cada secao abaixo troca f pelo cartao dela)
         atual = {**tema.PADRAO, **{k: str(v) for k, v in self._sec("aparencia").items() if v}}
-        self.vars_aparencia = {k: tk.StringVar(value=atual[k]) for k in ("cor", "fundo", "fonte", "tamanho")}
+        self.vars_aparencia = {k: tk.StringVar(value=atual[k]) for k in ("modo", "cor", "fundo", "fonte", "tamanho")}
         v = self.vars_aparencia
-        f = secao(pagina, "Cores e fonte", "Escolha e veja a prévia ao lado. “Aplicar” salva e reabre a Central com o visual "
+        f = secao(pagina, "Modo, cores e fonte", "Escolha e veja a prévia ao lado. “Aplicar” salva e reabre a Central com o visual "
                                    "novo. A cor de destaque vale também para o indicador e o ícone perto do relógio.")
         corpo = ctk.CTkFrame(f, fg_color="transparent")
         corpo.pack(fill="x", padx=12)
         opcoes = ctk.CTkFrame(corpo, fg_color="transparent")
         opcoes.pack(side="left", fill="both", expand=True)
         nomes_cor = list(tema.CORES)
+        self.var_modo_nome = tk.StringVar(value=tema.MODOS.get(v["modo"].get(), tema.MODOS["claro"]))
+        linha_campo(opcoes, "Modo", lambda p: ctk.CTkSegmentedButton(
+            p, values=list(tema.MODOS.values()), variable=self.var_modo_nome, command=self._escolher_modo), 150)
         linha = linha_campo(opcoes, "Cor de destaque", lambda p: ctk.CTkFrame(p, fg_color="transparent"), 150)
         self.menu_cor = ctk.CTkOptionMenu(linha, values=nomes_cor + ["Personalizada"], width=170,
                                           command=lambda c: self._escolher_cor() if c == "Personalizada" else self._previa())
@@ -3389,7 +3510,7 @@ class Painel(ctk.CTk):
         self.menu_cor.pack(side="left")
         ctk.CTkButton(linha, text="Escolher cor...", width=120, **SECUNDARIO,
                       command=self._escolher_cor).pack(side="left", padx=6)
-        linha_campo(opcoes, "Fundo", lambda p: ctk.CTkOptionMenu(p, values=list(tema.FUNDOS), variable=v["fundo"],
+        linha_campo(opcoes, "Fundo (noturno)", lambda p: ctk.CTkOptionMenu(p, values=list(tema.FUNDOS), variable=v["fundo"],
                                                                  command=lambda _: self._previa()), 150)
         import tkinter.font as tkfont
         instaladas = set(tkfont.families(self))
@@ -3457,6 +3578,12 @@ class Painel(ctk.CTk):
                              "de lugar · duplo clique abre o painel · botão direito: pausar, voltar ao lugar padrão "
                              "ou esconder.", anchor="w", text_color=tema.TEXTO_FRACO,
                      wraplength=640, justify="left").pack(fill="x", padx=(32, 18), pady=(0, 8))
+        from . import painel_personagem   # robozinho OU personagem (homem/mulher, fantasias): seção própria
+        painel_personagem.montar(self, pagina)
+
+    def _escolher_modo(self, nome: str):
+        self.vars_aparencia["modo"].set(next((k for k, x in tema.MODOS.items() if x == nome), "claro"))
+        self._previa()
 
     def _escolher_cor(self):
         from tkinter import colorchooser
@@ -3481,26 +3608,27 @@ class Painel(ctk.CTk):
         self.pv_lateral.configure(fg_color=c["LATERAL"])
         self.pv_marca.configure(text_color=c["ROSA"], font=f(15, True))
         self.pv_item.configure(fg_color=c["ROSA_FUNDO"], text_color=c["ROSA"], font=f(12))
-        self.pv_item2.configure(text_color=tema.TEXTO, font=f(12))
+        self.pv_item2.configure(text_color=c["TEXTO"], font=f(12))
         self.pv_conteudo.configure(fg_color=c["FUNDO"])
-        self.pv_titulo.configure(text_color=tema.TEXTO, font=f(17, True))
-        self.pv_texto.configure(text_color=tema.TEXTO_FRACO, font=f(11))
+        self.pv_titulo.configure(text_color=c["TEXTO"], font=f(17, True))
+        self.pv_texto.configure(text_color=c["TEXTO_FRACO"], font=f(11))
         self.pv_cartao.configure(fg_color=c["CARTAO"])
         self.pv_botao.configure(fg_color=c["ROSA"], text_color=c["TEXTO_NO_ROSA"], font=f(12, True))
-        self.pv_botao2.configure(fg_color=c["SECUNDARIO"], text_color=tema.TEXTO, font=f(12))
-        self.pv_campo.configure(fg_color=c["CAMPO"], text_color=tema.TEXTO_FRACO, font=f(11))
+        self.pv_botao2.configure(fg_color=c["SECUNDARIO"], text_color=c["TEXTO"], font=f(12))
+        self.pv_campo.configure(fg_color=c["CAMPO"], text_color=c["TEXTO_FRACO"], font=f(11))
 
     def _aparencia_padrao(self):
         for k, x in self.vars_aparencia.items():
             x.set(tema.PADRAO[k])
         self.menu_cor.set(tema.PADRAO["cor"])
+        self.var_modo_nome.set(tema.MODOS[tema.PADRAO["modo"]])
         self._previa()
 
     def _aplicar_aparencia(self):
         if not self.salvar():
             return
         try:
-            tema.salvar_icones(tema.paleta({k: x.get() for k, x in self.vars_aparencia.items()})["ROSA"])
+            tema.salvar_icones(tema.paleta({k: x.get() for k, x in self.vars_aparencia.items()})["COR_INDICADOR"])
         except Exception:
             pass   # sem Pillow o icone fica como estava
         self._fechar()
@@ -4504,6 +4632,8 @@ class Painel(ctk.CTk):
             from . import avatar
             tipo = next((k for k, v in avatar.TIPOS.items() if v == self.var_indicador.get()), "texto_avatar")
             configuracao.secao(c, "indicador")["tipo"] = configuracao.aspas(tipo)
+        from . import painel_personagem
+        painel_personagem.salvar(self, c)   # avatar > modelo / jeito / passeio / personagem
 
     def _salvar_sugestoes(self, c):
         from . import sugestoes
@@ -4634,6 +4764,7 @@ PAGINAS = {
     "Conversa":          ("conversa", "Modo conversa, IA que demora (segundo plano) e sua cidade.", Painel._aba_conversa),
     "Projeto":            ("maleta", "Projeto Mestre (Claude) e projetos guiados.", Painel._aba_projeto),
     "YouTube":           ("youtube", "Canais e importação das suas inscrições.", Painel._aba_youtube),
+    "Mídias e telas":    ("pc", "Suas telas, o perfil e os serviços de vídeo e música num só lugar.", Painel._aba_midias),
     "Programas e sites": ("janelas", "O que ele abre quando você pede e em qual monitor.", Painel._aba_programas),
     "Spotify":           ("musica", "Playlists para tocar por voz.", Painel._aba_spotify),
     "Rotinas":           ("rotina", "Uma frase, várias ações em sequência.", Painel._aba_rotinas),
@@ -4648,15 +4779,6 @@ PAGINAS = {
                               Painel._aba_sugestoes),
     "Tempos":            ("chip", "Quanto tempo cada etapa leva: fala, comando, IA e voz.", Painel._aba_tempos),
 }
-
-
-GRUPOS_MENU = [
-    ("ASSISTENTE", ["Início", "Personalidade", "Conversa"]),
-    ("VOZ E OUVIDO", ["Voz", "Áudio"]),
-    ("APPS E SITES", ["YouTube", "Spotify", "Programas e sites", "Rotinas", "Atalhos"]),
-    ("INTEGRAÇÕES", ["Celular"]),
-    ("SISTEMA", ["Histórico", "Melhorias", "Validar atualização", "Sugestões de melhoria", "Tempos", "Aparência"]),
-]
 
 
 def main():

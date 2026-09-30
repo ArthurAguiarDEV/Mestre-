@@ -1,0 +1,140 @@
+<title>Personagem do Assessor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fredoka:wght@500;600&display=swap">
+<style>
+/* Layout: título curto, depois duas colunas (montar o boneco | testar e copiar). O boneco mora no canto da tela e sai arrastando. */
+:root {
+  --bg: #F5F3FB; --surface: #FFFFFF; --surface-2: #EEEAF9; --ink: #221D38; --muted: #5F5980; --line: #DDD8EE;
+  --accent: #C2255C; --accent-ink: #FFFFFF; --mint: #16866F; --focus: #4C3FD0; --sombra: 0 1px 2px rgba(34, 29, 56, .08);
+  --titulo: "Fredoka", "Trebuchet MS", system-ui, sans-serif; --corpo: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15111E; --surface: #1F1A2D; --surface-2: #2A2440; --ink: #F3F0FB; --muted: #B2ABCE; --line: #373053;
+    --accent: #FF7BA5; --accent-ink: #2B0F1C; --mint: #63E0BF; --focus: #A79BFF; --sombra: none; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15111E; --surface: #1F1A2D; --surface-2: #2A2440; --ink: #F3F0FB; --muted: #B2ABCE; --line: #373053;
+  --accent: #FF7BA5; --accent-ink: #2B0F1C; --mint: #63E0BF; --focus: #A79BFF; --sombra: none; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--corpo); font-size: 15px; line-height: 1.5; padding-inline: 16px; padding-block: 22px 300px; }
+* { box-sizing: border-box; }
+.pagina { max-width: 1120px; margin-inline: auto; display: flex; flex-direction: column; gap: 22px; }
+h1 { font-family: var(--titulo); font-weight: 600; font-size: clamp(28px, 5vw, 40px); line-height: 1.1; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--titulo); font-weight: 600; font-size: 20px; margin: 0; }
+h3 { margin: 0; }
+.topo { display: flex; flex-direction: column; gap: 8px; max-width: 70ch; }
+.sub { margin: 0; color: var(--muted); font-size: 16px; }
+.medida { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.medida b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.grade { display: grid; gap: 20px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 900px) { .grade { grid-template-columns: minmax(0, 1fr); } }
+.cartao { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--sombra); padding: 18px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.lado { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.abas { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); margin: -4px -4px 0; padding: 0 4px; }
+.aba { font: 600 15px var(--corpo); color: var(--muted); background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 12px; cursor: pointer; white-space: nowrap; }
+.aba[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.aba:hover { color: var(--ink); }
+button, select, input { font-family: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.conteudo { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.campo { display: flex; flex-direction: column; gap: 8px; }
+.campo-t { font-family: var(--titulo); font-weight: 500; font-size: 16px; }
+.dica, .aviso { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 62ch; }
+.aviso { background: var(--surface-2); border-radius: 10px; padding: 8px 12px; color: var(--ink); }
+.amostras { display: flex; flex-wrap: wrap; gap: 8px; }
+.amostra { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+.amostra[aria-checked="true"] { box-shadow: 0 0 0 3px var(--accent); }
+.grade-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.thumb, .grande, .jeito { background: var(--surface-2); border: 2px solid transparent; border-radius: 12px; cursor: pointer; color: var(--ink); }
+.thumb { padding: 8px 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.thumb:hover, .grande:hover, .jeito:hover { border-color: var(--line); }
+.thumb[aria-pressed="true"], .grande[aria-pressed="true"], .jeito[aria-pressed="true"] { border-color: var(--accent); background: var(--surface); }
+.thumb-n { font-size: 12px; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+.mini { max-width: 100%; }
+.sem { display: grid; place-items: center; width: 72px; height: 96px; font-size: 28px; color: var(--muted); }
+.duas { display: grid; grid-template-columns: repeat(2, minmax(0, 150px)); gap: 12px; }
+.grande { padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; }
+.faixa-linha { display: flex; align-items: center; gap: 12px; }
+.faixa { flex: 1; min-width: 0; accent-color: var(--accent); }
+.valor { font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; font-weight: 700; }
+.jeitos { display: grid; gap: 10px; }
+.jeito { display: grid; gap: 2px; text-align: left; padding: 12px 14px; }
+.jeito-n { font-family: var(--titulo); font-weight: 600; font-size: 17px; }
+.jeito-e { font-size: 12px; color: var(--mint); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.jeito-d { font-size: 13.5px; color: var(--muted); }
+.seletor, .texto { width: 100%; max-width: 380px; font-size: 15px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); }
+.segmentos { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg, .chip, .botao, .botao-2 { font: 600 14px var(--corpo); border-radius: 999px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.seg[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip:hover, .seg:hover, .botao-2:hover { border-color: var(--muted); }
+.botao { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.linha { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.linha .texto { flex: 1 1 220px; }
+.opcao { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.opcao input { accent-color: var(--accent); width: 18px; height: 18px; }
+.rotulo { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0; }
+pre { margin: 0; padding: 12px; background: var(--surface-2); border-radius: 10px; font: 13px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace; overflow-x: auto; }
+.rodape { font-size: 13px; color: var(--muted); max-width: 80ch; }
+.palco { position: fixed; z-index: 50; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+.palco.pegando { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .palco { transition: none; } }
+</style>
+
+<div class="pagina">
+  <header class="topo">
+    <h1>Personagem do Assessor</h1>
+    <p class="sub">Monte o boneco, escolha o jeito dele e veja como ele fala e se mexe. Ele aparece no canto de baixo da tela: arraste-o para onde quiser.</p>
+    <p class="medida">Altura padrão <b>176 px</b> (o bonequinho pixelado do jogo tem uns 55 px). Ajuste em Corpo &gt; Tamanho.</p>
+  </header>
+
+  <div class="grade">
+    <section class="cartao" aria-label="Montar o personagem">
+      <div class="abas" id="abas" role="tablist" aria-label="Partes do personagem"></div>
+      <div class="conteudo" id="conteudo"></div>
+    </section>
+
+    <div class="lado">
+      <section class="cartao" aria-labelledby="t-teste">
+        <h2 id="t-teste">Teste o boneco</h2>
+        <div class="campo"><p class="rotulo">O que o Assessor está fazendo</p><div class="segmentos" id="estados"></div></div>
+        <div class="campo">
+          <p class="rotulo">Fazer falar</p>
+          <div class="linha">
+            <input class="texto" id="frase" type="text" aria-label="Frase para o personagem falar" autocomplete="off">
+            <button class="botao" id="falar" type="button">Falar</button>
+            <button class="botao-2 botao-2" id="sortear-frase" type="button">Frase do jeito dele</button>
+          </div>
+          <label class="opcao"><input type="checkbox" id="usar-voz"> Usar a voz do navegador (se tiver uma em português)</label>
+        </div>
+        <div class="campo"><p class="rotulo">Gestos</p><div class="segmentos" id="gestos"></div></div>
+        <div class="campo">
+          <label class="opcao"><input type="checkbox" id="passear"> Passear sozinho pela tela</label>
+          <label class="opcao"><input type="checkbox" id="seguir-mouse"> Olhar para o mouse</label>
+        </div>
+      </section>
+
+      <section class="cartao" aria-labelledby="t-cfg">
+        <h2 id="t-cfg">Para usar no Assessor</h2>
+        <p class="dica">Este trecho vai no <b>config.yaml</b>. No painel do Assessor, a mesma escolha fica em Aparência &gt; Personagem.</p>
+        <pre id="yaml" aria-label="Trecho do config.yaml"></pre>
+        <div class="linha">
+          <button class="botao" id="copiar" type="button">Copiar</button>
+          <button class="botao-2" id="sortear" type="button">Sortear um visual</button>
+          <button class="botao-2" id="reiniciar" type="button">Voltar ao começo</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <p class="rodape">As fantasias são versões inspiradas nos heróis, desenhadas do zero em cores e formas simples, para uso pessoal. Tudo roda neste navegador: nada é enviado para fora.</p>
+</div>
+
+<canvas id="palco" class="palco" role="img" aria-label="Personagem do Assessor. Arraste para mudar de lugar, clique para ele reagir."></canvas>
+
+<script type="application/json" id="dados">__DADOS_JSON__</script>
+<script>
+__PERSONAGEM_JS__
+</script>
+<script>
+__DEMO_JS__
+</script>

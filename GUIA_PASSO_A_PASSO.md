@@ -655,6 +655,60 @@ ouvindo, roxo pensando, azul-claro falando). Selo verde com ✓ = a resposta pen
 O ícone do programa (atalho, bandeja do relógio e menu do painel) também mudou: é o **"A" com uma onda de voz
 verde** no lugar da barra, na cor de destaque que você escolher na Aparência.
 
+### O personagem (opção: no lugar do robozinho)
+
+Em vez do robô, o Assessor pode ter um **personagem de homem ou mulher**, desenhado liso (sem pixels), com
+uns **176 px de altura** (mais ou menos o triplo do bonequinho de um jogo antigo). Você monta o visual:
+
+- **Corpo:** homem ou mulher, 9 tons de pele, 10 cores de olhos, tamanho (60% a 160%).
+- **Rosto:** formato (redondo, oval, quadrado, coração), olhos (normal, grandão, amendoado, pontinho, cílios longos),
+  sobrancelhas (5), nariz (5) e bochechas (rosadas, bem coradas, sardas ou sem).
+- **Cabelo:** 22 estilos (curto, espetado, topete, social, raspado, careca, moicano, coque alto, repicado, cacheado,
+  black power, dreads, longo, ondulado, franja reta, franja de lado, rabo de cavalo, trança lateral, chanel,
+  maria-chiquinha, coque, dois coques) e 17 cores.
+- **Roupa:** 18 roupas (camiseta, listrada, regata e bermuda, moletom, suéter, camisa, colete, terno, jaqueta,
+  jardineira, esporte, quimono, jaleco, marinheiro, pijama, vestido, blusa e saia, vestido de festa) em 18 cores.
+- **Fantasia:** 52. Marvel (22): Homem de Ferro, Homem-Aranha, Aranha (Miles), Aranha (Gwen), Capitão América, Thor,
+  Loki, Hulk, Pantera Negra, Viúva Negra, Doutor Estranho, Deadpool, Wolverine, Capitã Marvel, Homem-Formiga, Visão,
+  Gavião Arqueiro, Feiticeira Escarlate, Senhor das Estrelas, Simbionte, Tempestade, Ciclope. DC (20): Super-Homem,
+  Supergirl, Batman, Batgirl, Mulher-Maravilha, Flash, Aquaman, Lanterna Verde, Arqueiro Verde, Ciborgue, Shazam, Robin,
+  Asa Noturna, Mulher-Gato, Coringa, Arlequina, Hera Venenosa, Ravena, Besouro Azul, Canário Negro. Clássicas (10):
+  pirata, ninja, astronauta, mago, cavaleiro, vampiro, bombeiro, chef de cozinha, detetive, cowboy.
+  Os heróis são versões *inspiradas*, desenhadas do zero em cores e formas simples, só para uso pessoal.
+- **Acessórios (27):** óculos, óculos escuros, máscara de baile, fone, headset, boné, chapéu, boina, gorro, chapéu de
+  bruxo, coroa, tiara, faixa na testa, orelhas de gato, chifrinhos, auréola, laço, flor, presilha de estrela, brincos,
+  colar, cachecol, gravata-borboleta, bigode, barba, pintinha e curativo.
+
+**Cada personalidade tem o seu jeito** (ele segue a personalidade que você escolheu em Personalidade):
+
+| Personalidade | Jeito do personagem |
+|---|---|
+| Parceiro brasileiro | Solto: acena, dança, pula, assobia e passeia perto do lugar dele. Fala com as mãos |
+| Mordomo elegante | Postura reta e devagar: reverência, ajeita a gravata, quase não sai do lugar. Gestos pequenos |
+| Estilo Jarvis | Flutua com um brilho azul, escaneia e mexe em hologramas; voa pela tela em vez de andar |
+| Coach animado | Energia total: soco no ar, pulos, corrida parada, comemoração; anda rápido pela tela toda |
+| Sério e direto | Braços cruzados, olha o relógio, mexe pouco; fica parado |
+
+Ele **pisca**, **olha para o mouse**, faz gestos sozinho de tempos em tempos (mãos na cintura, coçar a cabeça, apontar,
+bater palmas, joinha, mostrar o músculo...) e, quando o Assessor **fala, a boca mexe junto com a voz** (a forma da boca
+muda a cada sílaba) e **os braços mudam de pose a cada trecho da frase**. Os movimentos têm inércia: o braço dobra no
+cotovelo e chega um pouquinho atrasado, cabelo comprido e capa balançam e ficam para trás quando ele anda.
+Ouvindo, pensando e descansando cada um tem a sua pose. Ele só passeia quando o Assessor está parado.
+
+**Como usar**
+
+1. **Experimente antes:** abra `design/avatar-2026-09/index.html` (duplo clique). O boneco aparece no canto de
+   baixo da tela e você arrasta para onde quiser; monte o visual, escolha o jeito e clique nos gestos.
+   **Para testar dentro do programa sem mexer no seu Assessor:** feche o Assessor e abra o atalho
+   **Mestre - TESTE personagem** da área de trabalho (uma cópia separada, já com o personagem ligado). Para atualizar
+   essa cópia depois de mudanças: `ferramentas\criar_teste_personagem.bat`.
+2. No painel: **Aparência** > **Personagem no lugar do robozinho** > Avatar = **Personagem**. A prévia aparece
+   ao lado. Salve e reinicie (com o Assessor ligado, mudar o visual vale na hora).
+3. **Passeio pela tela:** Automático (cada jeito anda do seu modo), Parado no lugar, Passeia por perto, Passeia
+   pela tela toda ou Flutua livre. Também dá para mudar pelo **botão direito** no personagem.
+4. Clique nele e ele reage; arraste para mudar de lugar (o lugar fica salvo); duplo clique abre o painel.
+5. Voltar ao robozinho: Avatar = **Robozinho**, salve e reinicie. Se o personagem der erro, o robozinho aparece sozinho.
+
 ### A bolinha (opção)
 
 Uma pílula pequena fica **no topo da tela, sempre visível**, mostrando o que o Mestre está fazendo:
@@ -1442,23 +1496,27 @@ O assistente olha sozinho, uma vez por dia, o que aconteceu desde a última olha
 
 A partir daqui a versão tem ponto: depois da 13 vem a **2.5** (o painel mostra "2.5" embaixo da barra de ícones e no selo **v2.5** do canto).
 
-### 32.1 Menu de ícones (barra da esquerda)
-- A barra da esquerda mostra **só os ícones** e nunca muda de tamanho. **Pare o mouse** em cima dela por um instante: os nomes e os grupos deslizam de trás dos ícones, por cima da página. Tire o mouse do menu e eles recolhem. (Só passar rápido por cima não abre.) O ícone do programa no alto também abre/fecha com um clique, e Esc fecha.
-- A página não muda de tamanho nem de posição: o menu só passa por cima da borda esquerda enquanto está aberto.
-- Ao escolher uma página, o menu recolhe e fica fechado até o mouse sair da barra (para você ver a página inteira).
-- A lista não coube na tela (janela pequena ou fonte grande)? Gire a **roda do mouse** em cima dos ícones ou dos nomes.
-- Parou o mouse num ícone com o menu fechado (por exemplo, logo depois de escolher uma página)? Aparece um balãozinho com o nome e o que tem na página. Com o menu aberto, os nomes já aparecem e o balão não.
-- A página aberta fica com o ícone **rosa** (na cor que você escolheu em Aparência).
-- Onde fica cada coisa (de cima para baixo):
+### 32.1 Menu de áreas (barra do topo, visual Aurora)
+- No topo ficam o nome do assistente, o estado dele (Ouvindo, Desligado...), a **busca** (Ctrl+K) e o botão **Modo noturno / Modo claro**. Logo abaixo, as 8 **áreas**; a que você está fica sublinhada.
+- Clique numa área para abrir a página dela. Se a área tem mais de uma página, os botões das irmãs aparecem sob o título (por exemplo, em **Mídias e telas**: Visão geral, YouTube, Spotify e Programas e sites). Voltar a uma área reabre a página em que você estava.
+- **Busca:** Ctrl+K, escreva o que procura (“microfone”, “telas”, “tema”) e Enter abre a primeira; Esc fecha. **Alt+1 a Alt+8** abrem as áreas. **Tab** anda pelos botões (aparece um anel de foco) e Enter ou Espaço aciona.
+- **Modo claro ou noturno:** o padrão é o claro (marfim e ameixa). O botão do topo salva e reabre a Central no outro modo. Em **Ajustes > Aparência** você também escolhe a cor de destaque, o fundo do modo noturno, a fonte e o tamanho do texto (o que você já tinha escolhido continua valendo).
+- Janela pequena ou texto Grande/Maior: a barra do topo encolhe (some a versão e o subtítulo) e nada deixa de aparecer.
+- Onde fica cada coisa:
 
-| Grupo | Ícone → página |
+| Área | Páginas (botões sob o título) |
 |---|---|
-| **Assistente** | 🏠 casa → **Início** · 🙂 rosto → **Personalidade** · 💬 balão → **Conversa** |
-| **Voz e ouvido** | ondas → **Voz** · 🎤 microfone → **Áudio** |
-| **Apps e sites** | ▶ tela com play → **YouTube** · ♫ nota → **Spotify** · 🖥 janela → **Programas e sites** · 🔁 relógio com seta → **Rotinas** · ⚡ raio → **Atalhos** |
-| **Integrações** | 💼 maleta → **Projeto** · 📱 celular → **Celular** |
-| **Sistema** | ☰ linhas → **Histórico** · 💡 lâmpada → **Melhorias** · ✔ círculo com check → **Validar atualização** · ✨ brilho → **Sugestões de melhoria** · 🎨 paleta → **Aparência** |
+| **Visão geral** | Início (estado, **Seu espaço, organizado**, fila, atalhos rápidos, últimos comandos) |
+| **Conversa** | Conversa |
+| **Voz e escuta** | Escuta e reconhecimento (antiga Áudio) · Voz |
+| **Mídias e telas** | Visão geral (suas telas, perfil e serviços) · YouTube · Spotify · Programas e sites |
+| **Rotinas** | Rotinas · Atalhos · Projetos |
+| **Memória** | Histórico e lembranças · Desempenho (antiga Tempos) |
+| **Evolução** | Testar versão (antiga Validar atualização) · Ideias (Melhorias) · Sugestões |
+| **Ajustes** | Aparência · Personalidade · Conexões (Celular) |
 
+- **Seu espaço, organizado** e **Mídias e telas > Visão geral** só mostram (não movem nada): cada monitor com o que o Windows informa (marca, resolução, janela em destaque e o apelido que você deu), o perfil cadastrado para os streamings e os serviços. Se o Windows não informar os monitores, aparece “Sem dados das telas”.
+- Atualizar por .zip, Testar digitando e Teste automático continuam nos **Atalhos rápidos** da Visão geral.
 - Cada página só é montada na primeira vez que você abre (por isso o painel abre mais rápido). Depois, voltar a ela é na hora.
 
 ### 32.2 Início em cartões

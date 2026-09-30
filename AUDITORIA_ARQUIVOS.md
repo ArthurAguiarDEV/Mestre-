@@ -1,3 +1,7 @@
+# Auditoria de arquivos
+
+**Atualização de 30/09/2026:** veja [estado verificado](docs/ESTADO_ATUAL.md). Inventário, hashes e mapa dos 41 movimentos estão em `C:\Ias\auditoria-2026-09-30`. O registro de 29/09 abaixo foi preservado como histórico.
+
 # Auditoria inicial de arquivos
 
 Data: 2026-09-29

@@ -1,7 +1,8 @@
 """Visual do Mestre: cores e fonte do painel, do indicador e do icone.
 
-O padrao e grafite escuro com rosa claro. Voce escolhe outra cor de destaque, outro fundo,
-a fonte e o tamanho do texto no Painel > Aparencia (fica salvo em config.yaml > aparencia).
+Layout Aurora: marfim + ameixa no modo claro (padrao) e um noturno ameixa. Voce escolhe o modo,
+outra cor de destaque, outro fundo (do modo noturno), a fonte e o tamanho do texto no Painel > Ajustes >
+Aparencia (fica salvo em config.yaml > aparencia). Configuracao antiga (cor/fundo/fonte/tamanho) continua valendo.
 """
 import json
 import os
@@ -10,7 +11,10 @@ import tempfile
 from pathlib import Path
 
 # --- Opcoes que aparecem no painel ----------------------------------------------
+AMEIXA = "#7654A0"   # destaque padrao do claro (no noturno vira AMEIXA_NOTURNA)
+AMEIXA_NOTURNA = "#D5B7F0"
 CORES = {            # nome: cor de destaque
+    "Ameixa": AMEIXA,
     "Rosa": "#F5A6C8",
     "Lilás": "#C3A6F5",
     "Azul": "#8DB8F7",
@@ -18,7 +22,8 @@ CORES = {            # nome: cor de destaque
     "Laranja": "#F7B98D",
     "Amarelo": "#F2D67A",
 }
-FUNDOS = {           # nome: (fundo, menu lateral, blocos, campos, borda)
+FUNDOS = {           # (modo noturno) nome: (fundo, cabecalho, blocos, campos, borda)
+    "Ameixa": ("#19171D", "#242129", "#242129", "#302B36", "#463C4F"),
     "Grafite": ("#121216", "#18181e", "#1e1e26", "#262630", "#2c2c38"),
     "Preto": ("#08080a", "#0f0f12", "#16161a", "#1e1e23", "#26262d"),
     "Azul-noite": ("#0e1320", "#131a2a", "#192236", "#212b42", "#2a3550"),
@@ -31,7 +36,9 @@ FONTES = [  # todas vem com o Windows 10/11 (o painel so mostra as que existem n
     "Ink Free", "Comic Sans MS", "Gabriola", "Courier New", "Times New Roman", "Impact",
 ]
 TAMANHOS = {"Normal": 14, "Grande": 16, "Maior": 18}
-PADRAO = {"cor": "Rosa", "fundo": "Grafite", "fonte": "Segoe UI", "tamanho": "Normal"}
+MODOS = {"claro": "Claro", "escuro": "Noturno"}
+PADRAO = {"cor": "Ameixa", "fundo": "Ameixa", "fonte": "Segoe UI", "tamanho": "Normal", "modo": "claro"}
+FONTE_TITULO = "Georgia"   # titulos editoriais (vem com o Windows); o corpo usa a fonte escolhida
 
 FORA_DA_TELA = (-32000, -32000)   # ponto fora de qualquer monitor real
 
@@ -63,6 +70,20 @@ def misturar(cor_a: str, cor_b: str, quanto_b: float) -> str:
     return _hex(*(x + (y - x) * quanto_b for x, y in zip(a, b)))
 
 
+def _luz(cor: str) -> float:
+    def canal(c: float) -> float:
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = _rgb(cor)
+    return 0.2126 * canal(r) + 0.7152 * canal(g) + 0.0722 * canal(b)
+
+
+def _contraste(cor_a: str, cor_b: str) -> float:
+    """Razao de contraste (WCAG) entre duas cores: 4,5 ou mais = texto normal legivel."""
+    claro, escuro = sorted((_luz(cor_a), _luz(cor_b)), reverse=True)
+    return (claro + 0.05) / (escuro + 0.05)
+
+
 def cor_valida(cor: str) -> bool:
     try:
         _rgb(cor)
@@ -72,27 +93,49 @@ def cor_valida(cor: str) -> bool:
 
 
 def paleta(aparencia: dict | None = None) -> dict:
-    """Todas as cores a partir de 4 escolhas (cor, fundo, fonte, tamanho)."""
+    """Todas as cores a partir das escolhas (modo, cor, fundo, fonte, tamanho)."""
     a = {**PADRAO, **{k: v for k, v in (aparencia or {}).items() if v}}
-    destaque = CORES.get(a["cor"], a["cor"] if cor_valida(str(a["cor"])) else CORES["Rosa"])
-    fundo, lateral, cartao, campo, borda = FUNDOS.get(a["fundo"], FUNDOS["Grafite"])
-    r, g, b = _rgb(destaque)
-    claro = (0.299 * r + 0.587 * g + 0.114 * b) > 150
+    modo = "escuro" if str(a["modo"]).lower() in ("escuro", "noturno", "dark") else "claro"
+    bruto = CORES.get(a["cor"], a["cor"] if cor_valida(str(a["cor"])) else AMEIXA)   # a cor que a pessoa escolheu
     fonte = str(a["fonte"]).strip() or PADRAO["fonte"]   # qualquer fonte instalada no PC vale
     if sys.platform != "win32" and fonte in FONTES:
         fonte = "DejaVu Sans"   # (so nos testes fora do Windows)
-    return {
-        "FUNDO": fundo, "LATERAL": lateral, "CARTAO": cartao, "CAMPO": campo, "BORDA": borda,
-        "ROSA": destaque,                                   # (o nome ficou "ROSA", mas e a cor de destaque)
-        "ROSA_CLARO": misturar(destaque, "#FFFFFF", 0.3),
-        "ROSA_FUNDO": misturar(fundo, destaque, 0.14),
-        "ROSA_FORTE": misturar(destaque, "#000000", 0.4),
-        "TEXTO_NO_ROSA": "#1c1117" if claro else "#FFFFFF",
-        "SECUNDARIO": misturar(cartao, "#FFFFFF", 0.06),
-        "SECUNDARIO_HOVER": misturar(cartao, "#FFFFFF", 0.12),
-        "FONTE": fonte,
-        "TAMANHO": TAMANHOS.get(a["tamanho"], 14),
-    }
+    comum = {"FONTE": fonte, "TAMANHO": TAMANHOS.get(a["tamanho"], 14), "MODO": modo, "COR_INDICADOR": CORES["Rosa"] if bruto == AMEIXA else bruto}
+    if modo == "claro":
+        destaque = bruto
+        if bruto != AMEIXA:   # escurece ate o texto branco do botao principal ficar legivel (4,5:1) sobre ela
+            quanto = 0.3
+            while quanto < 0.9 and _contraste("#FFFFFF", misturar(bruto, "#000000", quanto)) < 4.6:
+                quanto += 0.05
+            destaque = misturar(bruto, "#000000", quanto)
+        fundo, lateral, cartao, campo, borda = "#F5F1E9", "#FFFDF8", "#FFFDF8", "#ECE6DD", "#D8D0C5"
+        fundo_destaque = "#EEE5F5" if destaque == AMEIXA else misturar(cartao, destaque, 0.13)
+        return {**comum, "FUNDO": fundo, "LATERAL": lateral, "CARTAO": cartao, "CAMPO": campo, "BORDA": borda,
+                "ROSA": destaque, "ROSA_CLARO": misturar(destaque, "#FFFFFF", 0.18),
+                "ROSA_FUNDO": fundo_destaque, "ROSA_FORTE": misturar(destaque, "#FFFFFF", 0.3),
+                "TEXTO_NO_ROSA": "#FFFFFF", "SECUNDARIO": misturar(cartao, "#000000", 0.08),
+                "SECUNDARIO_HOVER": misturar(cartao, "#000000", 0.14),
+                "TEXTO": "#302D38", "TEXTO_FRACO": "#6B6170", "SUCESSO": "#2E7D5B", "SUCESSO_FUNDO": "#DCEFE5",
+                "AVISO": "#855423", "AVISO_FUNDO": "#F6E7D3", "PERIGO": "#EBCBD1", "PERIGO_HOVER": "#E0B5BE",
+                "LILAS": "#6B4E96", "AZUL_ROTULO": "#2F5C9E"}
+    destaque = AMEIXA_NOTURNA if bruto == AMEIXA else bruto
+    fundo, lateral, cartao, campo, borda = FUNDOS.get(a["fundo"], FUNDOS["Ameixa"])
+    quanto = 0.0   # cor personalizada escura: clareia ate ficar legivel (4,5:1) sobre os blocos
+    while quanto < 0.9 and _contraste(misturar(destaque, "#FFFFFF", quanto), cartao) < 4.5:
+        quanto += 0.05
+    destaque = misturar(destaque, "#FFFFFF", quanto) if quanto else destaque
+    return {**comum, "FUNDO": fundo, "LATERAL": lateral, "CARTAO": cartao, "CAMPO": campo, "BORDA": borda,
+            "ROSA": destaque,                                   # (o nome ficou "ROSA", mas e a cor de destaque)
+            "ROSA_CLARO": misturar(destaque, "#FFFFFF", 0.3),
+            "ROSA_FUNDO": "#3B2D4B" if destaque == AMEIXA_NOTURNA and a["fundo"] == "Ameixa"
+            else misturar(fundo, destaque, 0.14),
+            "ROSA_FORTE": misturar(destaque, "#000000", 0.4),
+            "TEXTO_NO_ROSA": "#1c1117" if _contraste("#1c1117", destaque) >= _contraste("#FFFFFF", destaque) else "#FFFFFF",
+            "SECUNDARIO": misturar(cartao, "#FFFFFF", 0.06),
+            "SECUNDARIO_HOVER": misturar(cartao, "#FFFFFF", 0.12),
+            "TEXTO": "#F5EEF8", "TEXTO_FRACO": "#BCAFC7", "SUCESSO": "#7EE2B8", "SUCESSO_FUNDO": "#1A2A24",
+            "AVISO": "#F2C27A", "AVISO_FUNDO": "#2A2419", "PERIGO": "#5c2432", "PERIGO_HOVER": "#7a3044",
+            "LILAS": "#C3A6F5", "AZUL_ROTULO": "#8DB8F7"}
 
 
 def _ler_aparencia() -> dict:
@@ -107,13 +150,12 @@ def _ler_aparencia() -> dict:
 
 
 # --- Cores em uso (lidas do config ao abrir) ---------------------------------------
-TEXTO = "#EDEAF0"
-TEXTO_FRACO = "#9d98a8"
-PERIGO = "#5c2432"
-PERIGO_HOVER = "#7a3044"
-SUCESSO = "#7EE2B8"
-AVISO = "#F2C27A"
 _p = paleta(_ler_aparencia())
+MODO = _p["MODO"]
+COR_INDICADOR = _p["COR_INDICADOR"]   # cor do indicador/icone: a escolhida pura (padrao Ameixa = o rosa de sempre)
+TEXTO, TEXTO_FRACO, LILAS, AZUL_ROTULO = _p["TEXTO"], _p["TEXTO_FRACO"], _p["LILAS"], _p["AZUL_ROTULO"]
+PERIGO, PERIGO_HOVER = _p["PERIGO"], _p["PERIGO_HOVER"]
+SUCESSO, SUCESSO_FUNDO, AVISO, AVISO_FUNDO = _p["SUCESSO"], _p["SUCESSO_FUNDO"], _p["AVISO"], _p["AVISO_FUNDO"]
 FUNDO, LATERAL, CARTAO, CAMPO, BORDA = _p["FUNDO"], _p["LATERAL"], _p["CARTAO"], _p["CAMPO"], _p["BORDA"]
 ROSA, ROSA_CLARO, ROSA_FUNDO, ROSA_FORTE = _p["ROSA"], _p["ROSA_CLARO"], _p["ROSA_FUNDO"], _p["ROSA_FORTE"]
 TEXTO_NO_ROSA, SECUNDARIO, SECUNDARIO_HOVER = _p["TEXTO_NO_ROSA"], _p["SECUNDARIO"], _p["SECUNDARIO_HOVER"]
@@ -127,6 +169,14 @@ def fonte(tamanho_base: int = 14, negrito: bool = False):
     return ctk.CTkFont(family=FONTE, size=tamanho_base + TAMANHO - 14, weight="bold" if negrito else "normal")
 
 
+def fonte_titulo(tamanho_base: int = 28):
+    """Fonte editorial (Georgia) dos titulos grandes; cresce junto com o tamanho do texto."""
+    import customtkinter as ctk
+
+    familia = FONTE_TITULO if sys.platform == "win32" else "DejaVu Serif"
+    return ctk.CTkFont(family=familia, size=tamanho_base + TAMANHO - 14, weight="normal")
+
+
 def aplicar() -> None:
     """Gera o tema a partir do tema escuro do customtkinter e ativa."""
     import customtkinter as ctk
@@ -137,7 +187,7 @@ def aplicar() -> None:
     mudar = {
         "CTk": {"fg_color": par(FUNDO)},
         "CTkToplevel": {"fg_color": par(FUNDO)},
-        "CTkFrame": {"fg_color": par(CARTAO), "top_fg_color": par(CARTAO), "border_color": par(BORDA), "corner_radius": 12},
+        "CTkFrame": {"fg_color": par(CARTAO), "top_fg_color": par(CARTAO), "border_color": par(BORDA), "corner_radius": 16},
         "CTkButton": {"fg_color": par(ROSA), "hover_color": par(ROSA_CLARO), "text_color": par(TEXTO_NO_ROSA),
                       "border_color": par(BORDA), "corner_radius": 10},
         "CTkLabel": {"text_color": par(TEXTO)},
@@ -171,7 +221,7 @@ def aplicar() -> None:
             tema["CTkFont"][sistema].update(family=FONTE, size=TAMANHO)
     arquivo = Path(tempfile.gettempdir()) / "mestre_tema.json"
     arquivo.write_text(json.dumps(tema), encoding="utf-8")
-    ctk.set_appearance_mode("dark")
+    ctk.set_appearance_mode("light" if MODO == "claro" else "dark")
     ctk.set_default_color_theme(str(arquivo))
 
 
@@ -193,7 +243,7 @@ def desenhar_icone(cor: str | None = None, tamanho: int = 512, simples: bool | N
     import numpy as np
     from PIL import Image, ImageDraw
 
-    cor = cor if cor and cor_valida(cor) else ROSA
+    cor = cor if cor and cor_valida(cor) else COR_INDICADOR
     simples = tamanho <= 40 if simples is None else simples
     g = max(64, tamanho * 4)
     u = g / 256

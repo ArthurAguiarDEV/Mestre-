@@ -1637,7 +1637,7 @@ ok = pn.salvar()
 pn._fechar()
 ap = yaml.safe_load(open("config.yaml", encoding="utf-8"))["aparencia"]
 from app import tema
-cor = tema.paleta(ap)["ROSA"]
+cor = tema.paleta(ap)["COR_INDICADOR"]
 print("APARENCIA", ok, ap, cor)
 if ok and ap["cor"] == "Azul" and ap["fonte"] == "Calibri" and ap["tamanho"] == "Grande" and cor == tema.CORES["Azul"]:
     print("APARENCIA_OK")
@@ -2556,15 +2556,13 @@ ok(len(list(p._descendentes(pn))) == widgets, "Início: atualizar não cria widg
 pn.mostrar_pagina("Voz"); pn.update(); pn.mostrar_pagina("Início"); pn.update()
 t0 = time.time(); pn.mostrar_pagina("Voz"); pn.update(); tempo = time.time() - t0
 ok(pn._montadas == ["Início", "Voz"] and tempo < 0.3, f"Voltar a uma página já aberta é rápido ({tempo:.3f}s)")
-ok(pn._rail_marcados == {"Voz"} and pn.titulo_pagina.cget("text") == "Voz",
-   "Menu: item ativo destacado e título da página")
-x_conteudo = pn._conteudo.winfo_x()
-pn._rail_aplicar(1.0); pn.update()
-ok(pn._gaveta.winfo_x() == pn._rail_fechado and pn._conteudo.winfo_x() == x_conteudo,
-   "Menu de ícones abre (mostrando os nomes) sem mexer na página")
-pn._rail_aplicar(0.0); pn.update()
-ok(pn._gaveta.winfo_x() == pn._rail_fechado - pn._gaveta_largura, "Menu de ícones fecha de novo")
-ok(pn.salvar() and set(pn._montadas) == {"Início", "Voz"}, "Salvar com só algumas páginas abertas")
+ok(pn._area_atual == "voz" and pn.titulo_pagina.cget("text") == "Voz",
+   "Barra de áreas: área ativa destacada e título da página")
+pn.mostrar_pagina("YouTube"); pn.update()
+ok(pn._area_atual == "midias" and pn.eyebrow_pagina.cget("text") == "MÍDIAS E TELAS",
+   "Área Mídias e telas reúne YouTube, Spotify e Programas e sites")
+pn.mostrar_pagina("Voz"); pn.update()
+ok(pn.salvar() and set(pn._montadas) == {"Início", "Voz", "YouTube"}, "Salvar com só algumas páginas abertas")
 ok(not erros, "Painel 2.5 sem erros na tela" + ("".join(erros)[-800:] if erros else ""))
 pn._fechar()
 print("FIM_PAINEL_25")
@@ -2823,12 +2821,13 @@ def _main_legado_com_interface() -> int:
 def main() -> int:
     """Entrada automatica segura: nenhuma janela, dispositivo ou processo real."""
     import unittest
-    from testes import teste_midia_escuta, teste_regressoes_sem_interface, teste_seguranca, teste_streaming_perfis
+    from testes import teste_midia_escuta, teste_personagem, teste_regressoes_sem_interface, teste_seguranca, teste_streaming_perfis
     suite = unittest.TestSuite([
         unittest.defaultTestLoader.loadTestsFromModule(teste_seguranca),
         unittest.defaultTestLoader.loadTestsFromModule(teste_regressoes_sem_interface),
         unittest.defaultTestLoader.loadTestsFromModule(teste_midia_escuta),
         unittest.defaultTestLoader.loadTestsFromModule(teste_streaming_perfis),
+        unittest.defaultTestLoader.loadTestsFromModule(teste_personagem),
     ])
     resultado = unittest.TextTestRunner(verbosity=2).run(suite)
     if not resultado.wasSuccessful():

@@ -2179,6 +2179,34 @@ aparencia:
 # precisa do PySide6), "avatar" (so o robo) ou "bolinha" (a antiga)
 indicador:
   tipo: "texto_avatar"
+# Personagem 2D no lugar do robozinho (painel > Aparencia > Personagem). "modelo": "robo" (padrao) ou "personagem".
+# "jeito": "" = segue a personalidade; ou parceiro | mordomo | jarvis | coach | serio.
+# "passeio": "personalidade" (cada jeito anda de um modo) | fixo | curto | tela | livre.
+# "personagem": genero m/f, pele, cabelo (+ cabelo_cor), olhos_cor, roupa (+ roupa_cor1..3), traje (fantasia;
+# vazio = sem fantasia), acessorios (lista), escala (0.6 a 1.6) e o rosto: rosto (formato), olhos_estilo, sobrancelha,
+# nariz e bochechas. Veja design/avatar-2026-09/index.html para experimentar.
+avatar:
+  modelo: "robo"
+  jeito: ""
+  passeio: "personalidade"
+  personagem:
+    genero: "m"
+    pele: "morena_clara"
+    cabelo: "curto"
+    cabelo_cor: "castanho_escuro"
+    olhos_cor: "castanho"
+    roupa: "camiseta"
+    roupa_cor1: "azul"
+    roupa_cor2: "branco"
+    roupa_cor3: "marinho"
+    traje: ""
+    acessorios: []
+    escala: 1.0
+    rosto: "redondo"
+    olhos_estilo: "normal"
+    sobrancelha: "normal"
+    nariz: "botao"
+    bochechas: "rosadas"
 projetos:
   pasta: "C:/Ias/projetos"
   pesquisar_internet: true

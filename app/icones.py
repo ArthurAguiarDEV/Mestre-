@@ -291,7 +291,33 @@ def _vazio(c):
     pass
 
 
-DESENHOS.update(ponto=_ponto, vazio=_vazio)
+def _lupa(c):
+    c.circulo(10.5, 10.5, 6)
+    c.linha((15, 15), (20.5, 20.5))
+
+
+def _sol(c):
+    c.circulo(12, 12, 4)
+    for x1, y1, x2, y2 in ((12, 2.5, 12, 5), (12, 19, 12, 21.5), (2.5, 12, 5, 12), (19, 12, 21.5, 12),
+                           (5.3, 5.3, 7, 7), (17, 17, 18.7, 18.7), (5.3, 18.7, 7, 17), (17, 7, 18.7, 5.3)):
+        c.linha((x1, y1), (x2, y2))
+
+
+def _lua(c):
+    c.linha(*_pontos_arco(12, 12, 8.5, 249.4, 20.6, 36), *_pontos_arco(17.7, 6.3, 9, 75, 195, 24))
+
+
+def _seta(c):
+    c.linha((4, 12), (20, 12))
+    c.linha((14, 6), (20, 12), (14, 18))
+
+
+def _perfil(c):
+    c.circulo(12, 8, 4)
+    c.linha((4.5, 21), (4.5, 19), *_pontos_arco(12, 19, 7.5, 180, 360, 12), (19.5, 21))
+
+
+DESENHOS.update(ponto=_ponto, vazio=_vazio, lupa=_lupa, sol=_sol, lua=_lua, seta=_seta, perfil=_perfil)
 
 
 @lru_cache(maxsize=16)

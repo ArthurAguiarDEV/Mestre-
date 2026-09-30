@@ -47,9 +47,19 @@ compartilhado deve estar em arquivo, commit ou relatório.
 
 ## Como IAs externas entram
 
-ChatGPT/Codex coordena e revisa. Claude implementa. Se não houver API ou conector,
-o sistema gera um pacote de contexto para copiar/colar, sem fingir que consultou
-uma IA externa.
+ChatGPT/Codex coordena e revisa. Claude implementa. São as duas únicas IAs que recebem
+tarefas: o gerador `agentes_crewai/central_tarefas.py` cria prompts só para elas. Manus está
+desativado (material em `tarefas_ia/arquivo/`). O Ollama continua como motor de IA local
+do assistente e do protótipo CrewAI, mas não é destinatário de tarefas.
+
+O repasse é local e por arquivos (veja `COORDENACAO_IA.md`). Se não houver API ou
+conector, o sistema gera um pacote de contexto para copiar/colar, sem fingir que
+consultou uma IA externa. Quando o Claude termina o cartão, devolve o relatório em
+`tarefas_ia/resultados/` com o estado `pronto_para_revisao`; o Codex revisa e só depois
+a melhoria segue para `pronto_para_testar`.
+
+Sonnet/Opus são modelos do Claude. Para o ChatGPT/Codex, use o modelo configurado no app.
+Recomendação escrita em prompt não altera o modelo nem o esforço do chat: ajuste no seletor.
 
 ## Regras de segurança
 

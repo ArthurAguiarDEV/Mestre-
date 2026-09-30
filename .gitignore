@@ -14,3 +14,20 @@ recebidos/
 config.yaml
 config.yaml.bak
 config.yaml.antes_do_conserto
+
+# Dados pessoais: preservados no PC; fora dos proximos commits
+aprendido.yaml
+MELHORIAS.md
+segredos.json
+.env
+.env.*
+agentes_crewai/resultado.md
+.agents/
+.codex/
+
+# Filas geradas e historico local de prompts (podem conter ditados pessoais)
+/tarefas_ia/fila/
+/tarefas_ia/prompts_prontos/
+/tarefas_ia/execucoes/
+/tarefas_ia/arquivo/
+/tarefas_ia/resultados/20*.md

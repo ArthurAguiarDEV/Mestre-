@@ -355,21 +355,22 @@ def posicao_valida(pos, telas: list, largura: int = LADO_JANELA, altura: int = L
     return any(e <= cx < d and t <= cy < b for e, t, d, b in telas)
 
 
-def arquivo_posicao() -> Path:
+def arquivo_posicao(modelo: str = "avatar") -> Path:
+    """Lugar salvo na tela: o robô usa avatar.json e o personagem (outro tamanho) personagem.json."""
     base = os.environ.get("MESTRE_SEGREDOS") or os.environ.get("APPDATA") or str(Path.home() / ".config")
-    return Path(base) / "Mestre" / "avatar.json"
+    return Path(base) / "Mestre" / f"{modelo}.json"
 
 
-def ler_posicao():
+def ler_posicao(modelo: str = "avatar"):
     try:
-        dados = json.loads(arquivo_posicao().read_text(encoding="utf-8"))
+        dados = json.loads(arquivo_posicao(modelo).read_text(encoding="utf-8"))
         return int(dados["x"]), int(dados["y"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
 
-def salvar_posicao(pos) -> None:
-    arq = arquivo_posicao()
+def salvar_posicao(pos, modelo: str = "avatar") -> None:
+    arq = arquivo_posicao(modelo)
     try:
         if pos is None:
             arq.unlink(missing_ok=True)
@@ -382,6 +383,13 @@ def salvar_posicao(pos) -> None:
 
 # --- configuração: texto+robô (padrão), só robô ou bolinha -----------------------------------------
 TIPOS = {"texto_avatar": "Texto + robô", "avatar": "Só robô", "bolinha": "Bolinha"}
+MODELOS = {"robo": "Robozinho", "personagem": "Personagem (homem/mulher, fantasias)"}   # quem faz o papel do "avatar"
+
+
+def modelo_escolhido(cfg: dict) -> str:
+    """"robo" é o padrão (também quando o config é antigo e não tem `avatar > modelo`)."""
+    m = str((cfg.get("avatar") or {}).get("modelo") or "").strip().lower()
+    return m if m in MODELOS else "robo"
 
 
 def tipo_escolhido(cfg: dict) -> str:
@@ -407,9 +415,14 @@ def _python_sem_janela() -> str:
     return str(pythonw) if pythonw.exists() else sys.executable
 
 
-def iniciar(nome: str = "Assessor", palavra: str = "assessor", tipo: str = "texto_avatar"):
+def modulo_da_janela(modelo: str) -> str:
+    return "app.personagem.janela" if modelo == "personagem" else "app.avatar_janela"
+
+
+def iniciar(nome: str = "Assessor", palavra: str = "assessor", tipo: str = "texto_avatar", modelo: str = "robo"):
     """Abre o avatar num processo separado. None = não deu (sem PySide6, teste automático...): use a bolinha.
-    tipo = "texto_avatar" (balão de texto + robô menor, padrão) ou "avatar" (só o robô)."""
+    tipo = "texto_avatar" (balão de texto + robô menor, padrão) ou "avatar" (só o robô).
+    modelo = "robo" (padrão) ou "personagem" (app/personagem: homem/mulher, fantasias, personalidades)."""
     global _processo, ATIVO
     if os.environ.get("MESTRE_SIMULAR") == "1":
         return None   # teste automático: nada aparece na tela
@@ -419,7 +432,7 @@ def iniciar(nome: str = "Assessor", palavra: str = "assessor", tipo: str = "text
     from .config import PASTA_PROJETO
     try:
         _processo = subprocess.Popen(
-            [_python_sem_janela(), "-m", "app.avatar_janela", "--pai", str(os.getpid()), "--nome", nome,
+            [_python_sem_janela(), "-m", modulo_da_janela(modelo), "--pai", str(os.getpid()), "--nome", nome,
              "--palavra", palavra, "--tipo", tipo],
             cwd=str(PASTA_PROJETO), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError as erro:
@@ -476,6 +489,19 @@ def enviar_nivel(valor: float) -> None:
         if _sock is None:
             _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         _sock.sendto(f"{max(0.0, min(1.0, valor)):.3f}".encode(), ("127.0.0.1", PORTA_NIVEL))
+    except OSError:
+        pass
+
+
+def enviar_texto(frase: str) -> None:
+    """A frase que vai ser falada (o personagem usa as vogais para a forma da boca). Barato e sem erro."""
+    global _sock
+    if not ATIVO or not frase:
+        return
+    try:
+        if _sock is None:
+            _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        _sock.sendto(("t:" + frase[:400]).encode("utf-8"), ("127.0.0.1", PORTA_NIVEL))
     except OSError:
         pass
 

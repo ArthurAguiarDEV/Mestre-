@@ -63,7 +63,7 @@ class Avatar(QWidget):
         self.pai = args.pai
         self.nome, self.palavra = args.nome, args.palavra.capitalize()
         self.arq_estado = Path(args.estado) if args.estado else estado.ARQUIVO_AGORA
-        self.claro, self.meio, self.escuro = tons_do_rosa(tema.ROSA)
+        self.claro, self.meio, self.escuro = tons_do_rosa(tema.COR_INDICADOR)
         self.anim = avatar.Animador()
         self.dados: dict = {}
         self.balao_texto = ""

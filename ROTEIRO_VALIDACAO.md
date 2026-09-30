@@ -35,6 +35,28 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 
 ## 1. Novidades (desta leva)
 
+### Personagem no lugar do robozinho (homem/mulher, fantasias, jeito de cada personalidade)
+<!-- validacao-grupo id=grupo-personagem-avatar caminhos=app/personagem/janela.py,app/personagem/animacao.py,app/personagem/passeio.py,app/personagem/render_qt.py,app/painel_personagem.py,app/avatar.py,app/main.py,app/voz.py rotas=_cmd_hora_data -->
+
+| Frase/ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (visual) Abra `design/avatar-2026-09/index.html` (duplo clique) e arraste o boneco pela tela <!-- validacao id=item-215 --> | Ele sai do canto de baixo e fica onde você largar; um clique nele faz ele reagir | (visual) |
+| (visual) Na página, troque Corpo, Cabelo, Roupa, Fantasia (Homem de Ferro, Homem-Aranha, Super-Homem, Batman, Flash) e Extras <!-- validacao id=item-216 --> | O boneco muda na hora; o trecho "Para usar no Assessor" acompanha as escolhas | (visual) |
+| (visual) Na página, aba Jeito: escolha cada um dos cinco jeitos e deixe 30 segundos parado <!-- validacao id=item-217 --> | Parceiro acena e dança; Mordomo faz reverência; Jarvis flutua com brilho azul e escaneia; Coach pula e corre; Sério cruza os braços e olha o relógio | (visual) |
+| (painel) Aparência > Personagem: Avatar = Personagem, escolha o visual e salve <!-- validacao id=item-218 --> | A prévia ao lado muda a cada escolha, sem travar o painel; salvar não dá erro | (painel) |
+| (visual) Reinicie: `Mestre, reinicia` <!-- validacao id=item-219 --> | O personagem (não o robô) aparece acima do relógio, com uns 176 px de altura, e o balão de texto em cima | (visual) |
+| `Mestre, que horas são` <!-- validacao id=item-220 --> | Ele fala e a boca abre e fecha junto com a voz, mudando de forma a cada sílaba; o corpo gesticula no ritmo da voz | `_cmd_hora_data` |
+| (visual) Deixe o Assessor ouvindo em silêncio por 1 minuto <!-- validacao id=item-221 --> | O personagem pisca, olha para o mouse, faz gestos do jeito da personalidade e passeia (o Sério fica parado) | (visual) |
+| (visual) Faça uma pergunta que a IA demora para responder <!-- validacao id=item-222 --> | Ele para de andar, fica pensando (balão "Pensando") e depois fala; não passeia enquanto pensa ou fala | (visual) |
+| (visual) Arraste o personagem para outro monitor e solte, depois `Mestre, reinicia` <!-- validacao id=item-223 --> | Ele volta no mesmo lugar; botão direito > Voltar ao lugar padrão leva ele de volta para cima do relógio | (visual) |
+| (visual) Botão direito no personagem > Passeio > Parado no lugar <!-- validacao id=item-224 --> | Para de andar na hora e a escolha fica salva no config | (visual) |
+| (painel) Com o Assessor ligado, mude fantasia ou cabelo em Aparência > Personagem e salve <!-- validacao id=item-225 --> | O personagem na tela muda em poucos segundos, sem reiniciar | (painel) |
+| (visual) Aparência > Personagem: volte para Avatar = Robozinho, salve e reinicie <!-- validacao id=item-226 --> | O robozinho volta como antes (nada quebrou) | (visual) |
+| (visual) Feche o Assessor e abra o atalho **Mestre - TESTE personagem** da área de trabalho <!-- validacao id=item-227 --> | Abre a Central da cópia de teste; ligando o assistente, o personagem aparece acima do relógio com o balão (o seu Assessor de uso não muda) | (visual) |
+| (visual) Olhe o personagem parado e falando (`Mestre, que horas são`) <!-- validacao id=item-228 --> | O movimento é liso, sem trancos; o braço dobra no cotovelo sem emenda, balança um pouco atrasado e muda de pose a cada trecho da fala; cabelo comprido e capa balançam | `_cmd_hora_data` |
+| (visual) Na página de teste, aba Rosto: troque formato, olhos, sobrancelhas, nariz e bochechas <!-- validacao id=item-229 --> | O rosto muda a cada escolha; com fantasia de máscara o rosto fica redondo e o olho é o da máscara | (visual) |
+| (visual) Na página, abas Cabelo, Roupa, Fantasia e Extras <!-- validacao id=item-230 --> | 22 cabelos, 18 roupas, 52 fantasias (Marvel, DC e Clássicas: pirata, ninja, astronauta...) e 27 acessórios, todos desenhando certo | (visual) |
+
 ### Validação: o que fazer em destaque, etapa com o esperado certo e Rápido dinâmico
 <!-- validacao-grupo id=grupo-validacao-instrucoes-etapas-rapido-dinamico caminhos=app/validacao.py,app/painel.py,app/comandos/ia.py -->
 
@@ -96,23 +118,23 @@ sem comando esperado, difícil de conferir por script; ficou só um aviso aponta
 | (Telegram) escreva `Mestre oque tá tocando` <!-- validacao id=item-184 --> | Responde no próprio Telegram o que está tocando | (Telegram) |
 | (Telegram) escreva `Mestre dormir ou suspender` e depois `cancela` <!-- validacao id=item-185 --> | Pergunta "Tem certeza...?" e depois cancela | (Telegram) |
 
-### Painel: menu lateral desliza como no protótipo B
+### Painel: navegação Aurora (áreas no topo, modo claro e noturno)
 <!-- validacao-grupo id=grupo-painel-menu-lateral-desliza-como-no-prototipo-b caminhos=app/painel.py -->
 
-A barra de ícones (68 px) fica sempre fixa. Os nomes e grupos ficam numa "gaveta" já montada atrás
-dos ícones e só deslizam para o lado; a página não muda de tamanho nem de lugar.
+As páginas de sempre agora ficam em 8 áreas na barra do topo (Visão geral, Conversa, Voz e escuta, Mídias e telas,
+Rotinas, Memória, Evolução e Ajustes). Uma área com mais de uma página mostra os botões das irmãs logo abaixo.
 
 | Frase/ação | O que deve acontecer | Comando esperado |
 |---|---|---|
-| (painel) Pare o mouse na barra de ícones por um instante <!-- validacao id=item-001 --> | Os nomes e grupos deslizam de trás dos ícones, suaves e já prontos (sem texto aparecendo aos pedaços); a página fica parada | (painel) |
-| (painel) Só passe o mouse rápido por cima da barra <!-- validacao id=item-002 --> | Não abre | (painel) |
-| (painel) Tire o mouse do menu (para a página) <!-- validacao id=item-003 --> | Fecha deslizando; a página não se mexe | (painel) |
-| (painel) Abra e feche 10 vezes seguidas; e entre/saia rápido no meio do movimento <!-- validacao id=item-004 --> | Inverte de onde está, sem piscar, sem travar e sem deslocar a página | (painel) |
-| (painel) Passe o mouse pelos itens com o menu aberto <!-- validacao id=item-005 --> | O destaque acompanha na hora (ícone + nome num destaque só) | (painel) |
-| (painel) Clique num ícone e depois num nome <!-- validacao id=item-006 --> | Abre a página uma vez; o menu recolhe e só reabre depois que o mouse sair e voltar | (painel) |
-| (painel) Depois do clique, com o mouse ainda na barra, pare em outro ícone <!-- validacao id=item-007 --> | Aparece o balãozinho (só com o menu fechado) | (painel) |
-| (painel) Janela no tamanho mínimo: gire a roda do mouse sobre os ícones ou nomes <!-- validacao id=item-008 --> | A lista rola (ícones e nomes juntos) até "Aparência"; sem barra de rolagem grande (só um fio discreto na gaveta) | (painel) |
-| (visual) Repita com o Windows em escala 125% e 150% <!-- validacao id=item-009 --> | Ícones, nomes e destaques alinhados, nada cortado | (visual) |
+| (painel) Abra a Central e olhe o topo <!-- validacao id=item-001 --> | Aparecem as 8 áreas, a atual sublinhada, o nome do assistente, o estado (Ouvindo, Desligado...), a busca e o botão de modo; o visual começa claro (marfim e ameixa) se você nunca trocou o modo | (painel) |
+| (painel) Clique em Voz e escuta <!-- validacao id=item-002 --> | Abre Escuta e reconhecimento e aparecem os botões Escuta e reconhecimento e Voz logo abaixo do título | (painel) |
+| (painel) Clique em Mídias e telas <!-- validacao id=item-003 --> | Mostra Suas telas (as reais, ou o aviso Sem dados das telas), o Perfil cadastrado e os Serviços; botões Visão geral, YouTube, Spotify e Programas e sites | (painel) |
+| (painel) Troque de área e de página dez vezes seguidas <!-- validacao id=item-004 --> | Troca na hora, sem piscar nem travar; voltar a uma área reabre a página em que você estava | (painel) |
+| (painel) Aperte Ctrl+K, digite `microfone` e Enter <!-- validacao id=item-005 --> | A busca lista Escuta e reconhecimento primeiro; Enter abre a página; Esc fecha a lista sem abrir nada | (painel) |
+| (painel) Use Tab para andar pelos botões e Enter (ou Espaço) num deles <!-- validacao id=item-006 --> | Um anel de foco aparece no botão da vez, na ordem do topo para baixo; Enter e Espaço acionam; a página rola sozinha até o botão focado | (painel) |
+| (painel) Aperte Alt+1, Alt+4 e Alt+8 <!-- validacao id=item-007 --> | Abre Visão geral, Mídias e telas e Ajustes | (painel) |
+| (painel) Arraste a janela até o tamanho mínimo <!-- validacao id=item-008 --> | As 8 áreas continuam visíveis e legíveis (a barra encolhe), nada de controle escondido; o resto da página rola | (painel) |
+| (visual) Repita com o Windows em escala 125% e 150% e com o texto Grande ou Maior em Aparência <!-- validacao id=item-009 --> | Títulos, botões e cartões alinhados, nada cortado | (visual) |
 
 ### Painel > Sistema > Tempos: quanto tempo cada etapa leva
 <!-- validacao-grupo id=grupo-painel-sistema-tempos-quanto-tempo-cada-etapa-le caminhos=app/memoria.py -->
@@ -206,10 +228,10 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 
 | Frase | O que deve acontecer | Comando esperado |
 |---|---|---|
-| (painel) Abra a Central pelo atalho <!-- validacao id=item-057 --> | Abre rápido, no Início; a barra da esquerda mostra só ícones e a versão "2.5" | (painel) |
-| (painel) Pare o mouse na barra de ícones da esquerda <!-- validacao id=item-058 --> | Os nomes e os grupos deslizam suaves (sem travar) por cima da página; tire o mouse e eles recolhem | (painel) |
-| (painel) Clique num ícone e pare o mouse em outro ícone <!-- validacao id=item-059 --> | Aparece um balãozinho com o nome e o que tem na página (só com o menu fechado) | (painel) |
-| (painel) Clique em várias páginas e volte a elas <!-- validacao id=item-060 --> | A página aberta fica destacada em rosa; voltar a uma página já aberta é na hora | (painel) |
+| (painel) Abra a Central pelo atalho de teste <!-- validacao id=item-057 --> | Abre rápido na Visão geral (Olá, com o seu apelido); o topo mostra as 8 áreas e a versão | (painel) |
+| (painel) Clique em Modo noturno (e depois em Modo claro) <!-- validacao id=item-058 --> | A Central reabre no outro modo, com tudo legível; a escolha fica salva ao fechar e abrir de novo | (painel) |
+| (painel) Na Visão geral, olhe Seu espaço, organizado <!-- validacao id=item-059 --> | Mostra as telas lidas do Windows com a janela em destaque de cada uma (ou Sem dados das telas), o perfil e os serviços; só leitura: nenhuma janela se mexe | (painel) |
+| (painel) Clique em várias páginas e volte a elas <!-- validacao id=item-060 --> | A área e o botão da página ficam destacados; voltar a uma página já aberta é na hora | (painel) |
 | (painel) Início, com o Assessor ligado: fale `Mestre, que horas são` <!-- validacao id=item-061 --> | O cartão de status muda (Ouvindo → Pensando/Falando) e o comando aparece em "Últimos comandos" com OUVI / ENTENDI / FIZ, sem clicar em nada | (painel) |
 | (painel) Início: `Mestre, me explica a teoria da relatividade` <!-- validacao id=item-062 --> | A pergunta aparece em "Fila do pensando" com o tempo contando; some quando termina | (painel) |
 | (painel) Início > Atalhos rápidos: Pausar, depois Retomar <!-- validacao id=item-063 --> | O status vira "Pausado" e volta para "Ouvindo" | (painel) |
