@@ -536,7 +536,7 @@ def imprimir_microfones() -> None:
     print(f"\nMicrofone padrao do Windows: {sd.default.device[0]}\n")
 
 
-PALAVRAS_PADRAO = ["Ollama", "IPM", "Atende.Net", "Claude", "Claude Code", "skill", "prompt", "Spotify",
+PALAVRAS_PADRAO = ["Ollama", "Claude", "Claude Code", "skill", "prompt", "Spotify",
                    "YouTube", "playlist", "painel", "melhorias", "finalizei"]
 
 

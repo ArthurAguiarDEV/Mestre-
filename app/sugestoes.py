@@ -166,7 +166,7 @@ def analisar(historico: list[dict], ouvidas: list[dict], desde: float, palavra: 
 
     # 2) cairam na IA mas tem cara de comando  3) nao entendi
     pedidos = [h for h in hist if h.get("tipo") == "comando" and h.get("rota") != "_cmd_feedback"]
-    viraram = [h for h in hist if h.get("tipo") == "ia virou comando"]
+    viraram = [h for h in hist if h.get("tipo") in ("ia executou comando", "ia virou comando")]
     na_ia: "OrderedDict[str, list]" = OrderedDict()
     nao_entendi = []
     for h in pedidos:
@@ -176,7 +176,7 @@ def analisar(historico: list[dict], ouvidas: list[dict], desde: float, palavra: 
         if rota == "ia":
             verbo = _primeiro_verbo(entendi or _sem_palavra(frase, variacoes))
             if verbo:
-                virou = [v for v in viraram if 0 <= _ts(v) - _ts(h) <= 120]
+                virou = [v for v in viraram if -10 <= _ts(v) - _ts(h) <= 120]   # (o "executou" vem antes do pedido)
                 info = f"entendi “{entendi}”" + (f" · a IA depois fez {virou[0].get('rota')}" if virou else "")
                 na_ia.setdefault(verbo, []).append({"data": _data(h), "frase": frase, "info": info})
         elif rota == "nao_entendi":

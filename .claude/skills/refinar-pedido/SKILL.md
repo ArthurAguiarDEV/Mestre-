@@ -13,7 +13,7 @@ juntas, repetições e palavras de transcrição ("né", "tipo assim", "entendeu
 
 0. **Corrija a transcrição primeiro.** Use a skill **corrigir-transcricao** (se ela não estiver
    disponível, siga as mesmas regras: corrigir escrita e nomes próprios sem mudar o sentido,
-   ex.: "OLA" → Ollama, "EPM" → IPM, "cloud code" → Claude Code). Mostre o resultado em
+   ex.: "OLA" → Ollama, "EPM" → empresa, "cloud code" → Claude Code). Mostre o resultado em
    **"Entendi assim:"** (curto) antes dos cartões, para ele conferir se você entendeu certo.
 1. **Separe as ideias.** Um pedido falado costuma ter 3–8 ideias diferentes. Liste cada uma
    separadamente, uma frase cada, na ordem em que apareceram.

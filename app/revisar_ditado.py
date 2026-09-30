@@ -58,7 +58,7 @@ class Revisao(ctk.CTk):
         self.caixa.pack(fill="both", expand=True, padx=20, pady=(0, 16))
         sugerido = self.dados.get("sugerido") or ""
         secundario = dict(fg_color=tema.SECUNDARIO, hover_color=tema.SECUNDARIO_HOVER, text_color=tema.TEXTO)
-        for destino, texto in (("projeto", f"Projeto {nome} (Claude Code)"), ("ipm", "Agente IPM"),
+        for destino, texto in (("projeto", f"Projeto {nome} (Claude Code)"),
                                ("salvar", "Só salvar nas melhorias"), ("copiar", "Copiar")):
             estilo = {} if destino == sugerido or (not sugerido and destino == "projeto") else secundario
             ctk.CTkButton(botoes, text=texto, height=38, **estilo,

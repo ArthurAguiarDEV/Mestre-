@@ -17,7 +17,7 @@
 8. **Etapa 5**: [Testar falando](#etapa-5--testar-falando)
 9. **Etapa 6**: ["Acordar o PC" por voz (energia e senha)](#etapa-6--acordar-o-pc-por-voz)
 10. **Etapa 7**: [Ligar sozinho com o Windows](#etapa-7--ligar-sozinho-com-o-windows)
-11. **Etapa 8**: [Ligar o seu Agente IPM do Claude](#etapa-8--ligar-o-seu-agente-ipm-do-claude)
+11. **Etapa 8**: [Integrações do projeto](#etapa-8-integrações-do-projeto)
 12. **Etapa 9** (opcional): [Dar um "cérebro" grátis ao Mestre (Ollama)](#etapa-9-opcional--cérebro-grátis-com-ollama)
 13. **Etapa 10** (opcional, pago): [Usar o Claude como cérebro](#etapa-10-opcional-pago--claude-como-cérebro)
 14. **Etapa 11** (versão 2): [Atualizar sem perder suas configurações](#etapa-11--atualizar-para-a-versão-2)
@@ -60,7 +60,6 @@ Exemplos reais:
 |---|---|
 | "E aí Mestre, bora trabalhar!" | Liga a tela, dá bom dia e abre Gmail e Claude |
 | "Mestre, abre o último vídeo do Manual do Mundo" | Acha o vídeo mais recente do canal e abre |
-| "Mestre, pergunta pro agente IPM como classificar um chamado de folha" | Abre seu projeto no Claude, cola a pergunta e envia |
 | "Mestre, me lembra de beber água em 20 minutos" | Avisa por voz daqui a 20 minutos |
 | "Mestre, desliga a tela" | Apaga o monitor e continua ouvindo |
 
@@ -139,7 +138,7 @@ O Mestre só liga **depois que você entra no Windows** (faz login). Mantenha o 
 | `MELHORIAS.md` | Ideias anotadas por voz para o Claude Code (Etapa 14) | Se quiser |
 | `CLAUDE.md` | Manual do projeto para o Claude Code | Não precisa |
 | `ferramentas\9_escolher_voz.bat` | Ouve e escolhe a voz do Mestre (Etapa 13) | Sim |
-| `perfis/` | Instruções da IA (inclusive a do agente IPM) | Sim, Etapa 8 |
+| `perfis/` | Instruções da IA (inclusive a do projeto do Claude) | Sim, Etapa 8 |
 | `notas/` | Suas anotações por voz | Só lê |
 | `respostas/` | Respostas longas da IA | Só lê |
 | `logs/mestre.log` | "Diário" do que o Mestre fez (para achar erros) | Só se der erro |
@@ -266,76 +265,7 @@ Aqui configuramos o esquema **"tela apagada, PC acordado"** explicado na [seçã
 
 ---
 
-## Etapa 8: Ligar o seu Agente IPM do Claude
-
-### Entenda primeiro
-Os **Projetos do claude.ai** (como o seu agente IPM) **não têm uma "porta de acesso" (API)** para outros programas. Por isso existem dois caminhos:
-
-| | **Modo "site"** (padrão) | **Modo "cérebro"** |
-|---|---|---|
-| Como funciona | O Mestre abre **seu projeto no claude.ai**, cola a pergunta e envia | O Mestre usa uma **cópia** das instruções do projeto e responde **por voz** |
-| Usa o Claude de verdade? | ✅ Sim, com todas as instruções e arquivos do projeto | Só se usar a API paga (Etapa 10). Grátis = Ollama (Etapa 9) |
-| Resposta | Na tela do Claude | Falada (e na tela, se for longa) |
-| Custo | Grátis (usa sua conta do Claude) | Ollama: grátis / API: pago |
-| Configuração | 2 minutos | 15 a 30 minutos |
-
-👉 **Comece pelo modo "site".**
-
-### 8.1 Modo "site" (recomendado)
-1. No PC, abra **claude.ai** no navegador **padrão** e faça login (marque "manter conectado").
-2. Entre no seu projeto **Agente IPM**.
-3. Clique na **barra de endereço**, copie o link (`Ctrl+C`). Vai ser algo como:
-   `https://claude.ai/project/0199a1b2-c3d4-...`
-4. Abra o `config.yaml` com o Bloco de Notas (botão direito > Abrir com > Bloco de Notas).
-5. Ache a seção **`agente_ipm:`** e troque o `link_projeto`:
-   ```yaml
-     link_projeto: "https://claude.ai/project/0199a1b2-c3d4-..."
-   ```
-6. Salve (`Ctrl+S`) e reinicie o Mestre.
-7. Teste: *"Mestre, pergunta pro agente IPM como abrir um chamado de erro na folha"*.
-
-✅ O Claude abre no projeto e, após ~7 segundos, a pergunta é colada e enviada.
-
-**Ajustes:**
-- Se colar **antes** da página carregar: aumente `segundos_para_carregar` para `10`.
-- Se preferir revisar antes de enviar: `enviar_automaticamente: false` (ele só cola).
-- Só *"Mestre, abre o agente IPM"* abre o projeto sem perguntar nada.
-
-### 8.1b O agente IPM no dia a dia (versão 2)
-
-Três jeitos de mandar um caso para o agente, conforme o tamanho:
-
-| Situação | O que falar | O que acontece |
-|---|---|---|
-| **Pergunta rápida** | *"Mestre, agente IPM, como classifico um chamado de erro na folha?"* | Abre o projeto, cola e envia |
-| **Caso longo** (ditado) | *"Mestre, ditado pro agente IPM"* → fale o caso em várias frases → *"pronto"* | Ele vai dizendo "anotado" a cada frase e envia tudo junto no final |
-| **Texto de tela** (erro, log, e-mail) | Selecione o texto e aperte `Ctrl+C` → *"Mestre, manda o que eu copiei pro agente IPM e pergunta como resolver"* | Envia sua instrução + o texto copiado |
-
-Durante o ditado:
-- *"apaga a última"* → remove a última frase ditada.
-- *"cancela"* → desiste sem enviar.
-- Você **não** precisa falar "Mestre" entre as frases. Ele fica esperando por até 30 segundos de silêncio.
-
-**Para ouvir a resposta:** quando o Claude terminar, clique no botão **Copiar** que aparece embaixo da resposta e diga *"Mestre, lê pra mim"*. Se a resposta for longa, ele fala o começo e abre o resto na tela.
-
-**Outros jeitos de chamar o agente:** "agente IPM", "Claude da IPM", "assistente IPM"... Para ensinar outros, veja a Etapa 12.
-
-**Dica de fluxo de trabalho:**
-1. *"Mestre, bora trabalhar"* (a rotina já pode abrir o Atende.Net e o projeto IPM, basta colocar os links nela).
-2. Achou um erro? Copie a mensagem → *"Mestre, manda o que eu copiei pro agente IPM e redige um chamado P031"*.
-3. Resposta pronta → **Copiar** → *"Mestre, lê pra mim"*.
-
-### 8.2 Modo "cérebro" (resposta falada)
-1. Faça a **Etapa 9** (Ollama, grátis) ou a **Etapa 10** (Claude API, pago).
-2. Copie as instruções do projeto: siga o arquivo `perfis\agente_ipm\COMO_PREENCHER.txt`.
-3. No `config.yaml`, mude `modo: "site"` para `modo: "cerebro"`.
-4. Reinicie o Mestre e pergunte.
-
-> As **skills** que você já tem no Claude (*chamado-p031* e *arquivos-integracao-ipm*) podem ser copiadas para `perfis\agente_ipm\conhecimento\` como texto, para o modo cérebro seguir o mesmo padrão.
-
----
-
-## Etapa 9 (opcional): Cérebro grátis com Ollama
+## Etapa 8: Integrações do projeto\r\n\r\nA integração antiga foi removida por segurança. O Mestre envia melhorias somente para o projeto atual do Claude configurado em **Projeto**.\r\n\r\n---\r\n\r\n## Etapa 9 (opcional): Cérebro grátis com Ollama
 
 Sem cérebro, o Mestre só entende os **comandos da lista**. Com o cérebro, ele **conversa e responde qualquer pergunta**.
 
@@ -357,7 +287,7 @@ O **Ollama** roda uma IA **no seu PC, de graça, sem internet**.
    ```
 5. Reinicie o Mestre e pergunte: *"Mestre, me explica o que é inflação em uma frase"*.
 
-> ⚖️ **Honestamente:** a IA local é boa para o dia a dia, mas **bem mais fraca que o Claude** em análises complexas como as do IPM. Por isso o modo "site" é o padrão para o agente IPM.
+> ⚖️ **Honestamente:** a IA local é boa para o dia a dia, mas **bem mais fraca que o Claude** em análises complexas como as do trabalho. Por isso o modo "site" é o padrão para o projeto do Claude.
 
 ---
 
@@ -387,7 +317,7 @@ Você já tem a versão 1 instalada. Para atualizar **sem perder** o que configu
 2. Baixe o arquivo **`mestre_atualizacao_v2.zip`**.
 3. Botão direito > **Extrair tudo...** > escolha a **mesma pasta** onde o Mestre está (ex.: `C:\Mestre`). Assim a pasta `mestre` de dentro do zip cai em cima da sua.
 4. Quando o Windows perguntar, escolha **"Substituir os arquivos no destino"**.
-   - O zip de atualização **não traz** o `config.yaml`, então seu link do agente IPM, seus canais e suas rotinas ficam como estão.
+   - O zip de atualização **não traz** o `config.yaml`, então seu link do projeto do Claude, seus canais e suas rotinas ficam como estão.
 5. Rode `ferramentas\2_testar_por_texto.bat` e digite: `pô mestre, bota aí o youtube`. Na janela deve aparecer `Entendi como: 'abre ai o youtube'`.
 
 Não precisa instalar nada de novo, porque as bibliotecas são as mesmas.
@@ -572,7 +502,7 @@ Chega de editar YAML no Bloco de Notas. Abra o painel de um destes jeitos:
 | **Áudio** | Escolher o microfone, **testar e calibrar** (Etapa 17), ajustar sensibilidade, ganho e modelo do Whisper |
 | **Voz** | Escolher a voz numa lista, ajustar velocidade e tom com barras, **ouvir antes de salvar** |
 | **Conversa** | Tempo do modo conversa, sua cidade (clima), personalidade e as frases que ele sorteia |
-| **Agente IPM** | Modo, link do projeto, tempo de espera e envio automático |
+| **projeto do Claude** | Modo, link do projeto, tempo de espera e envio automático |
 | **YouTube** | Lista de canais e os botões para **importar suas inscrições** (Etapa 19) |
 | **Programas e sites** | Adicionar programas com o botão **"Procurar programa no PC..."** e sites |
 | **Rotinas** | Criar e editar rotinas: frases, ações numa lista com ↑ ↓ ✕ (Etapa 20) |
@@ -803,7 +733,7 @@ Também dá para falar direto: *"Mestre, como tá o tempo?"*, *"vai chover?"*, *
 Desistiu no meio? *"cancela a rotina"* sai sem salvar nada.
 
 **Ideias para a sua rotina de trabalho** (monte no painel):
-- Abrir o **Atende.Net** e o **projeto do agente IPM** (ação "Abrir site").
+- Abrir o **site externo** e o **projeto do projeto do Claude** (ação "Abrir site").
 - Abrir a **pasta dos arquivos de integração** (ação "Abrir pasta").
 - **Volume** baixo e "desligar a tela" numa rotina "modo reunião".
 
@@ -821,7 +751,7 @@ Você fala as ideias soltas, do jeito que vem (como faz aqui comigo). A skill **
 
 Ela é usada em **dois lugares**:
 1. **No Claude Code do seu PC (automático):** a skill fica em `.claude\skills\refinar-pedido` dentro da pasta do Mestre. Quando você diz *"Mestre, aplica as melhorias"*, o Claude Code refina cada ideia, **mostra para você confirmar** e só depois programa. Também dá para chamar à mão, dentro do Claude Code: `/refinar-pedido <sua ideia>`.
-2. **No claude.ai (aqui no chat):** envie o arquivo **`refinar-pedido.zip`** no mesmo lugar onde você enviou as skills do IPM (Configurações do claude.ai, na parte de Skills). Aí, em qualquer conversa, peça *"refina esse pedido: …"*.
+2. **No claude.ai (aqui no chat):** envie o arquivo **`refinar-pedido.zip`** no mesmo lugar onde você enviou as skills do trabalho (Configurações do claude.ai, na parte de Skills). Aí, em qualquer conversa, peça *"refina esse pedido: …"*.
 
 ### Projetos parecidos (grátis, no GitHub)
 Pesquisei projetos abertos com a mesma ideia. O que aproveitamos de cada um:
@@ -847,8 +777,8 @@ Antes, uma pausa de 0,8 segundo encerrava a frase: se você parasse para pensar,
   1. *"Mestre, vou ditar"*.
   2. Fale à vontade, com pausas para pensar. Ele anota **em silêncio**, e o indicador mostra *"Ditando · 3 trechos"*.
   3. *"apaga a última"* tira o último trecho; *"cancela"* desiste de tudo.
-  4. *"pronto"* encerra. Ele pergunta: *"Mando pro agente IPM, salvo como melhoria, anoto ou copio?"*
-- Atalhos que já dizem o destino: *"Mestre, ditado pro agente IPM"* e *"Mestre, ditar uma melhoria"*.
+  4. *"pronto"* encerra. Ele pergunta: *"Mando pro projeto do Claude, salvo como melhoria, anoto ou copio?"*
+- Atalhos que já dizem o destino: *"Mestre, ditado pro projeto do Claude"* e *"Mestre, ditar uma melhoria"*.
 - O ditado termina sozinho depois de 60 segundos de silêncio (ajustável em Painel > Áudio).
 
 É o jeito de fazer **dentro do Mestre** o que você faz aqui no chat: ditar a ideia inteira, que vira um item de melhoria para o Claude Code.
@@ -969,18 +899,18 @@ Abra a Central (atalho **Mestre**) > **Atualizar o Mestre (.zip)** e escolha o *
 | Você fala | Vai para |
 |---|---|
 | "manda", "pro projeto", "pro Claude Code", "pras melhorias" | **Projeto Mestre**: salva no `MELHORIAS.md`, abre a conversa do Claude Code e cola o texto |
-| "pro agente", "pro IPM" | **Agente IPM** |
+| "pro agente", "pro trabalho" | **projeto do Claude** |
 | "só salva" | Só a lista de melhorias |
 | "copia" | Área de transferência (Ctrl+V) |
 | "cancela" | Descarta |
 
 Também funciona:
 - *"Mestre, vou ditar"*: no fim, ele pergunta o destino;
-- *"Mestre, ditado pro agente IPM"*: já vai para o agente.
+- *"Mestre, ditado pro projeto do Claude"*: já vai para o agente.
 
 Detalhes:
 - **Silêncio:** se você ficar 3 minutos calado, ele fecha o ditado **sem perder o texto**. O tempo muda em Painel > Áudio.
-- **Onde ajustar a conversa:** o link fica em Painel > **IPM e projeto**. Já vem apontando para esta conversa do Claude Code.
+- **Onde ajustar a conversa:** o link fica em Painel > **trabalho e projeto**. Já vem apontando para esta conversa do Claude Code.
 - **Texto inteiro:** o que você fala enquanto ele transcreve o trecho anterior também entra. Antes, isso se perdia.
 - **Acentos:** o texto sai do jeito que foi falado, com acentos e pontuação.
 
@@ -1014,7 +944,7 @@ A **prévia** muda na hora. **Aplicar** reabre a Central com o visual novo, e o 
 Canais, programas, sites e atalhos agora têm **◀ Anterior · Página 3 de 48 · Próxima ▶**. A busca filtra **enquanto você digita**, sem precisar de Enter; **✕ Limpar** volta tudo.
 
 ### 24.7 Skills: corrigir a transcrição e refinar
-- Nova skill **corrigir-transcricao**: arruma o texto ditado (ex.: "OLA" → Ollama, "EPM" → IPM, "cloud code" → Claude Code) sem mudar o sentido.
+- Nova skill **corrigir-transcricao**: arruma o texto ditado (ex.: "OLA" → Ollama, "EPM" → trabalho, "cloud code" → Claude Code) sem mudar o sentido.
 - A **refinar-pedido** passou a chamar essa correção primeiro. A resposta começa com **"Entendi assim:"**, e depois vêm os cartões.
 - **No Claude Code do projeto** já vale sozinho: a regra está no `CLAUDE.md`, e um lembrete automático roda a cada mensagem.
 - **No claude.ai:** envie os dois .zip (`corrigir-transcricao.zip` e o `refinar-pedido.zip` novo) no mesmo lugar de antes (Configurações do claude.ai, parte de Skills). O novo substitui o antigo.
@@ -1043,7 +973,7 @@ No fim do ditado de melhorias, *"manda"* faz o Mestre:
 
 O texto chega com o aviso para eu corrigir a transcrição e refinar.
 - **Deixe o app aberto nesta conversa**: ele cola na conversa que estiver aberta.
-- **Se clicar no lugar errado**, ajuste em Painel > **IPM e projetos** > "Onde fica a caixa de texto".
+- **Se clicar no lugar errado**, ajuste em Painel > **Projeto** > "Onde fica a caixa de texto".
 - **Outras opções:** *Claude Code no terminal* (o mais garantido, numa conversa nova) ou *Navegador*.
 - **Se nada aparecer:** o texto fica **copiado**; é só dar Ctrl+V.
 
@@ -1053,7 +983,7 @@ O texto chega com o aviso para eu corrigir a transcrição e refinar.
   - *"repete a resposta"*;
   - *"lê as últimas respostas"*;
   - *"o que você respondeu sobre relatividade?"*.
-- **Memória:** *"lembra que eu trabalho na IPM de manhã"* fica guardado, e a IA usa isso nas respostas.
+- **Memória:** *"lembra que eu trabalho na trabalho de manhã"* fica guardado, e a IA usa isso nas respostas.
   - *"o que você lembra de mim?"* lê a lista;
   - *"esquece que…"* apaga.
   - **Por assunto:** os fatos ficam separados em `memoria/fatos/` (pessoas, projetos, preferências, casa,
@@ -1081,7 +1011,7 @@ Se o Spotify ignorar o Play, é um clique. Tocar uma música exata sem clicar ex
    - ele abre pesquisas prontas no navegador.
 5. Ou diga **"quatro"** / *"nenhum, manda pro Claude"*. Ele pergunta o destino:
    - **Claude Code**: abre o Claude Code **na pasta do projeto**;
-   - **agente IPM**;
+   - **projeto do Claude**;
    - **chat novo** no claude.ai, já com o plano.
 6. Depois:
    - *"abre o projeto App de Receitas"*;
@@ -1089,7 +1019,7 @@ Se o Spotify ignorar o Play, é um clique. Tocar uma música exata sem clicar ex
    - *"o que falta no projeto App de Receitas?"*;
    - *"quais são os meus projetos?"*.
 
-A pasta dos projetos muda em Painel > **IPM e projetos**.
+A pasta dos projetos muda em Painel > **Projeto**.
 
 ### 25.7 Páginas e fontes
 - **Páginas:** trocar de página agora é instantâneo, sem piscar, e a lista volta para o topo.
@@ -1135,14 +1065,14 @@ Se um dia o YouTube mudar os botões e algo parar de funcionar, é só avisar.
 
 ### 26.5 Envio automático ao app Claude
 - **Como ele envia agora:** acha a **caixa de mensagem dentro do app**, pelo recurso de acessibilidade do Windows, em vez de clicar numa posição da tela. Depois cola e envia.
-- **Para testar:** Painel > **IPM e projetos** > **"Testar envio para o app Claude"**.
+- **Para testar:** Painel > **Projeto** > **"Testar envio para o app Claude"**.
 - **Se não aparecer nada:** mande para o Claude o último print da pasta `logs\diagnostico`.
 
 ### 26.6 Avisos curtinhos no "pensando"
 Agora são *"Segundo plano."* e *"Pronto, chefe."*, já prontos no cache (saem sem atraso). Em Painel > Conversa > **Aviso do pensando** dá para trocar por um **bipe**, que é ainda mais curto.
 
 ### 26.7 Transcrição melhor
-Painel > Áudio > **"Palavras que ele deve conhecer"**: Ollama, IPM, Claude Code e outras. O reconhecimento de voz erra menos essas palavras. Acrescente as suas.
+Painel > Áudio > **"Palavras que ele deve conhecer"**: Ollama, trabalho, Claude Code e outras. O reconhecimento de voz erra menos essas palavras. Acrescente as suas.
 
 ## Etapa 27: Versão 9
 
@@ -1168,7 +1098,7 @@ Por que não dá para ter os dois ao mesmo tempo? O Brave e o Chrome não deixam
 ### 27.4 Envio ao app Claude
 - **Como funciona agora:** o Mestre **maximiza** o app Claude no monitor principal antes de colar. Então a caixa de mensagem fica sempre no mesmo lugar.
 - **Sem clique às cegas:** ele coloca o cursor na caixa **sem clicar**. Se precisar clicar, clica **uma vez só**.
-- **O mais garantido:** Painel > **IPM e projetos** > **"Ensinar onde fica a caixa"**. Em 5 segundos, pare o mouse em cima da caixa de mensagem do Claude e clique em **Salvar**. A partir daí ele usa exatamente esse lugar.
+- **O mais garantido:** Painel > **Projeto** > **"Ensinar onde fica a caixa"**. Em 5 segundos, pare o mouse em cima da caixa de mensagem do Claude e clique em **Salvar**. A partir daí ele usa exatamente esse lugar.
 - **Para conferir:** **"Testar envio para o app Claude"**.
 
 ### 27.5 Volume só do Spotify
@@ -1470,8 +1400,14 @@ Quando chega algo do celular, o indicador fica **azul** por alguns segundos (*"�
 ### 31.9 Validar a atualização dentro do painel
 Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por frase:
 1. Depois de atualizar, fale *"assessor, reinicia"* (o assistente precisa estar **ligado**: é ele quem ouve).
-2. Painel > **Sistema** > **Validar atualização**. Escolha **Rápido** (4 falas essenciais), **Direcionado** (seleção pelos arquivos alterados e feedbacks abertos; você também pode marcar grupos) ou **Completo** (todo o roteiro). O painel mostra o que entra, por quê e quantos itens haverá antes de **▶ Começar**. Arquivos sem relação cadastrada são sinalizados e mantêm as 4 falas essenciais. O **Rápido** repete sempre as mesmas 4 verificações; para variar, use o **Direcionado** e marque grupos (sem nenhuma área nova, a página avisa que o plano fica só nas 4 essenciais). Ao concluir o Rápido aparece **Escolher áreas no Direcionado**, que apenas prepara a tela: a nova validação só começa no seu clique em **▶ Começar**.
-3. Aparece uma frase (ex.: *Fale: "Assessor, que horas são"*) e o que deve acontecer. **Fale normalmente**, como no dia a dia.
+2. Painel > **Sistema** > **Validar atualização**. Escolha **Rápido**, **Direcionado** (seleção pelos arquivos alterados e feedbacks abertos; você também pode marcar grupos) ou **Completo** (todo o roteiro). O **Rápido** tem as 4 falas essenciais (hora, YouTube, volume e anotação) e acrescenta sozinho até **8 falas** ligadas ao que mudou no código (arquivos alterados) e aos **FEEDBACKs abertos dos últimos 3 dias**: o que deu errado há pouco volta para o teste. Só entram linhas de falar (nada de tarefa física). O painel mostra o que entra, por quê e quantos itens haverá antes de **▶ Começar**. Arquivos sem relação cadastrada são sinalizados e mantêm as 4 falas essenciais. Para testar áreas inteiras, use o **Direcionado** e marque grupos (sem nenhuma área nova, a página avisa que o plano fica só nas 4 essenciais). Ao concluir o Rápido aparece **Escolher áreas no Direcionado**, que apenas prepara a tela: a nova validação só começa no seu clique em **▶ Começar**.
+3. Em cima, em letras grandes, aparece **o que fazer agora**, sempre com o verbo na frente:
+   - **FALE:** a frase para falar (ex.: *FALE: "Assessor, que horas são"*). **Fale normalmente**, como no dia a dia;
+   - **FAÇA ANTES:** algo para preparar antes de falar (ex.: *Desligue o Bluetooth da caixinha*);
+   - **QUANDO:** o momento certo de falar (ex.: *no meio da resposta*, *logo depois*);
+   - **ESPERE**, **OBSERVE**, **FAÇA** ou **CONFIRA ANTES** nas linhas sem fala;
+   - **ATENÇÃO:** um detalhe da linha (ex.: *sem a palavra*, *também vale: coloca no fone*).
+   Embaixo ficam **DEVE ACONTECER**, o **COMANDO ESPERADO** e, nos testes de duas falas, **EM SEGUIDA** (a próxima fala, para você já saber o que vem).
 4. Em 1 ou 2 segundos aparecem três linhas:
    - **OUVI**: o que o reconhecimento de voz escreveu;
    - **ENTENDI**: a frase depois do vocabulário e **qual comando atendeu** (ex.: `_cmd_hora_data`);
@@ -1482,7 +1418,7 @@ Em vez de conferir o `ROTEIRO_VALIDACAO.md` na mão, o painel te guia frase por 
 7. Ao parar (ou no fim da lista) sai o relatório `exportacoes/validacao_AAAA-MM-DD_HHMM.md`. Ele começa com um resumo, separa aprovados, falhas, bloqueados, pulados e não executados, e aponta testes físicos pendentes. Commit, versão, modo, quantidade de itens e hash do roteiro ficam nos detalhes técnicos. Se a sessão for interrompida, o relatório é parcial. Cada ❌ de uma frase falada entra na lista de Melhorias, salvo se o mesmo feedback aberto já estiver lá; possíveis repetições incertas ficam sinalizadas para você conferir. Botão **Abrir o relatório** para ver.
 8. Teve falha? O botão **🛠 Mandar para o Claude corrigir** fica ativo (sem falha nenhuma, ele fica desativado). Clique nele: o painel salva o pedido em `exportacoes/pedido_correcao_*.md` e abre uma janela de terminal já com o **Claude Code** rodando (você continua acompanhando e aprovando tudo normalmente, como sempre). Se o Claude Code não estiver instalado no PC, o painel avisa e copia o pedido para você colar onde quiser.
 
-Linhas de painel, observação, pré-condição, espera ou teste automático não têm frase para falar: faça o que a tela diz e marque o resultado. Se uma pré-condição não estiver atendida, marque **Bloqueado**; os próximos itens daquele grupo aparecem como bloqueados no relatório, sem contar como falha do produto. Sequências de falas independentes aparecem uma etapa por vez. Enquanto a validação está aberta, o assistente guarda o áudio de cada frase em `logs/validacao/` (só as últimas 120).
+Linhas de painel, observação, pré-condição, espera ou teste automático não têm frase para falar: faça o que a tela diz e marque o resultado. Se uma pré-condição não estiver atendida, marque **Bloqueado**; os próximos itens daquele grupo aparecem como bloqueados no relatório, sem contar como falha do produto. Sequências de falas independentes aparecem uma etapa por vez (**ETAPA 1 de 2**, **ETAPA 2 de 2**), cada uma com **o seu** comando esperado: em *"que horas são" e, no meio da resposta, "abre o Spotify"*, a 1ª etapa espera a hora e a 2ª o Spotify. Quando a 2ª fala tem de ser dita **no meio da resposta**, a próxima etapa aparece na hora (sem a pausa de 1,5 s) e vale mesmo que você fale antes de ela aparecer. Se o comando foi feito pela IA (a frase não era um comando conhecido e a IA escolheu um), o painel avisa: *"a IA a transformou em _cmd_..."*. É o que explica um "comando repetido" (ex.: a IA abrir o YouTube de novo numa pergunta). Enquanto a validação está aberta, o assistente guarda o áudio de cada frase em `logs/validacao/` (só as últimas 120).
 
 #### Modo contínuo (o jeito mais rápido)
 A caixinha **Modo contínuo** já vem marcada. Com ela:
@@ -1520,7 +1456,7 @@ A partir daqui a versão tem ponto: depois da 13 vem a **2.5** (o painel mostra 
 | **Assistente** | 🏠 casa → **Início** · 🙂 rosto → **Personalidade** · 💬 balão → **Conversa** |
 | **Voz e ouvido** | ondas → **Voz** · 🎤 microfone → **Áudio** |
 | **Apps e sites** | ▶ tela com play → **YouTube** · ♫ nota → **Spotify** · 🖥 janela → **Programas e sites** · 🔁 relógio com seta → **Rotinas** · ⚡ raio → **Atalhos** |
-| **Integrações** | 💼 maleta → **IPM e projetos** · 📱 celular → **Celular** |
+| **Integrações** | 💼 maleta → **Projeto** · 📱 celular → **Celular** |
 | **Sistema** | ☰ linhas → **Histórico** · 💡 lâmpada → **Melhorias** · ✔ círculo com check → **Validar atualização** · ✨ brilho → **Sugestões de melhoria** · 🎨 paleta → **Aparência** |
 
 - Cada página só é montada na primeira vez que você abre (por isso o painel abre mais rápido). Depois, voltar a ela é na hora.
@@ -1712,6 +1648,67 @@ Cada linha mostra a **média** e o **pior caso** das últimas 50 vezes, e quanta
 Clique em **"Atualizar"** para reler (não trava o painel: ele lê em segundo plano). Quanto mais você
 usa o Assessor, mais completa fica a lista.
 
+## Etapa 38: Qual vídeo, qual serviço e qual tela
+
+**Antes de testar:** painel > **YouTube** > recarregue a extensão do Brave (versão **2.4**) e dê **F5** nas abas de vídeo.
+
+### 38.1 Pausar o vídeo certo
+- *"Mestre, pausa o vídeo **da Netflix**"* (ou *"pausa a Disney"*, *"pausa o Prime Video"*, *"continua o filme na HBO Max"*): age **só** naquele serviço, sem perguntar.
+- *"Mestre, pausa o vídeo"* sem dizer onde:
+  - com **um** vídeo tocando (em qualquer serviço), pausa esse, sem perguntar;
+  - com vídeo tocando em **dois serviços**, ele **pergunta**: *"Tem vídeo tocando no YouTube e na Netflix. Qual você quer pausar?"*. Responda *"a Netflix"*;
+  - o mesmo serviço em **duas telas**: pergunta *"No monitor 1 ou no 2?"*;
+  - **nenhum** vídeo aberto no Brave: pergunta se pode usar o **pause geral** do computador (assim ele não pausa o Spotify ou uma chamada sem querer). Responda *"sim"* ou *"não"*.
+
+### 38.2 Qual serviço
+- *"Mestre, quero assistir Fallout"* (sem dizer onde): ele **pergunta** *"Em qual serviço?"*. Ele nunca escolhe sozinho.
+- *"Mestre, toca …"* sem dizer onde continua sendo **música** (Spotify), como antes.
+
+### 38.3 Usar a janela aberta ou abrir outra
+- *"Mestre, abre a Netflix"* com a Netflix já aberta: usa a aba que já existe.
+- *"… **no monitor 2**"* com ela **já no monitor 2**: só mostra essa aba (não abre outra).
+- *"… no monitor 2"* com ela em **outro** monitor: leva a aba para o monitor 2 (sozinha numa janela).
+- *"Mestre, abre a Netflix **numa janela nova**"* (vale para YouTube e *"toca … na Disney numa janela nova"*): abre **outra** janela, sem mexer na que já existe.
+- *"Mestre, joga a Netflix **pro outro monitor**"*: com 2 monitores vai para o outro direto; com 3, ele pergunta qual.
+
+## Etapa 39: Perfil do streaming e pedidos com mais de uma parte
+
+**Antes de testar:** painel > **YouTube** > recarregue a extensão do Brave (versão **2.5**) e dê **F5** nas abas de vídeo.
+Depois, no mesmo painel, seção **Perfis dos streamings**: escreva os nomes dos perfis que existem dentro da Netflix,
+Disney... separados por vírgula (ex.: *Arthur, Mestre, Magnífico*) e, se quiser, o **perfil padrão**. Salve.
+Aqui ficam **só os nomes**: login e senha você faz no próprio site, uma vez, no Brave.
+
+> Perfil do **streaming** (Arthur, Mestre...) é diferente do perfil do **Brave** (página Programas e sites). Um não mexe no outro.
+
+### 39.1 Dizer o perfil
+- *"Mestre, toca Loki na Disney **no perfil Mestre**"*: na tela *"Quem está assistindo?"* ele clica **exatamente** no perfil
+  Mestre (nunca no primeiro da lista). Se o perfil não aparece lá, ele avisa e **não** dá play.
+- A Disney já aberta e ele não sabe em qual perfil: pergunta *"A Disney já está aberta. Ela está no perfil Mestre?"*.
+  Responda *"sim"* (ele guarda isso enquanto estiver ligado) ou *"não"* (ele não mexe em nada).
+- A aba está num perfil e você pediu outro: ele avisa e **não troca sozinho**. Troque o perfil na tela e fale de novo.
+
+### 39.2 Sem dizer o perfil
+- Sem perfil padrão: *"Qual perfil na Netflix? Arthur, Mestre ou Magnífico?"*.
+- Com perfil padrão (ex.: Arthur): *"Devo usar o perfil Arthur na Disney?"*. *"Sim"* usa; *"não"* pergunta os outros.
+- A aba que ele já confirmou num perfil é usada direto (sem perguntar de novo).
+
+### 39.3 Continuar de onde parou
+- *"Mestre, continua The Office na Netflix no perfil Arthur"*: clica só em **Continuar/Retomar**. Se não achar, avisa e
+  **não** começa do início (para começar, fale *"clica em assistir"*).
+- *"Mestre, abre minha série"* / *"continua a série que eu estava vendo"*: com um só serviço aberto usa ele; com mais de um
+  pergunta qual. Abre no perfil certo e pede o nome da série (não dá play em nada sozinho).
+
+### 39.4 Janelas: nada pela metade
+- *"Mestre, separa o YouTube e a Disney"*: ele **pergunta** os monitores antes de mexer. Responda *"YouTube no 1 e Disney no 2"*
+  ou *"só separar"* (cada um na sua janela, sem mudar de monitor).
+- *"Mestre, joga a Netflix"* (sem dizer o monitor): *"Para qual monitor vai Netflix? O 1 ou o 2?"*.
+- YouTube aberto em **duas janelas** e *"joga o YouTube pro monitor 2"*: *"Tem YouTube em mais de uma janela: no monitor 1
+  e no 2. Qual eu uso?"*.
+- Se uma das partes não está aberta (*"separa o YouTube pro monitor 2 e a Netflix pro 1"* sem Netflix), ele avisa e **não
+  faz nenhuma** das partes.
+- Em qualquer pergunta: *"cancela"* desiste; resposta sem sentido (*"talvez"*) não faz nada. Resposta que chega depois de
+  1 minuto e meio também não faz nada (as janelas podem ter mudado): fale o pedido de novo.
+
 ---
 
 ## Personalizar
@@ -1772,7 +1769,7 @@ Os exemplos abaixo são só um ponto de partida: fale do seu jeito ("pô, bota a
 | **Rotinas** | "bora trabalhar" · "hora do café" · "bora relaxar" · "boa noite" |
 | **YouTube** | "abre o último vídeo do Manual do Mundo" · "abre o canal Nerdologia" · "toca lofi no YouTube" · "pesquisa receita de bolo no YouTube" · "abre o YouTube" |
 | **Mídia** | "pausa" · "continua" |
-| **Agente IPM** | "agente IPM, ..." · "ditado pro agente IPM" (… "pronto") · "manda o que eu copiei pro agente IPM" · "abre o agente IPM" |
+| **projeto do Claude** | "projeto do Claude, ..." · "ditado pro projeto do Claude" (… "pronto") · "manda o que eu copiei pro projeto do Claude" · "abre o projeto do Claude" |
 | **Área de transferência** | "lê pra mim" · "lê o que eu copiei" |
 | **Rotina falada** | "vou te mostrar uma nova rotina" → comandos → "pronto" → a frase de chamar · "cancela a rotina" |
 | **Ensinar** | "aprende um atalho" · "quando eu falar X, [comando]" · "quais são os atalhos" · "esquece o atalho X" |
@@ -1808,8 +1805,8 @@ Os exemplos abaixo são só um ponto de partida: fale do seu jeito ("pô, bota a
 | Muito lento para responder | Troque `modelo_whisper` para `"base"` ou `"tiny"` |
 | Liga sozinho com frases parecidas | Tire variações de `variacoes_aceitas` (deixe só `"mestre"`) |
 | O último vídeo não abre | O YouTube muda às vezes. Atualize: abra o cmd na pasta do Mestre e rode `venv\Scripts\pip install -U yt-dlp` |
-| Agente IPM cola a pergunta antes da hora | Aumente `segundos_para_carregar` |
-| Agente IPM não cola nada | Deixe o Claude logado no navegador **padrão**. Se o cursor não estiver na caixa de mensagem, clique nela uma vez |
+| projeto do Claude cola a pergunta antes da hora | Aumente `segundos_para_carregar` |
+| projeto do Claude não cola nada | Deixe o Claude logado no navegador **padrão**. Se o cursor não estiver na caixa de mensagem, clique nela uma vez |
 | Tela não acorda | Alguns monitores demoram. A tela pode ter entrado em suspensão: refaça a Etapa 6.1 como administrador |
 | Não entende meu jeito de falar | Veja na janela a linha `Entendi como: ...`. Adicione o seu jeito em `vocabulario.yaml` (sinônimos) ou ensine um atalho por voz |
 | Responde coisas que a TV fala | Diminua `conversa > janela_segundos` para `5` (ou `0` para desligar o modo conversa) |
@@ -1829,7 +1826,7 @@ Os exemplos abaixo são só um ponto de partida: fale do seu jeito ("pô, bota a
 
 ## Próximos passos
 
-**Fase 1 (agora):** Mestre no PC, comandos por voz, rotinas e agente IPM pelo site. ✅
+**Fase 1 (agora):** Mestre no PC, comandos por voz, rotinas e projeto do Claude pelo site. ✅
 
 **Fase 2:** mais integrações
 - Agenda do Google (*"Mestre, o que tenho hoje?"*)

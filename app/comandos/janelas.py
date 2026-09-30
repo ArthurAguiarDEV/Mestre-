@@ -156,15 +156,20 @@ class JanelasMixin:
                 return resto.strip(), numero
         return texto, None
 
+    ARTIGO_ALVO = r"(?:(?:a|o|as|os|essa|esse|esta|este|aquela|aquele|minha|meu)\s+)?"
+    TIPO_ALVO = r"(?:(?:aba|janela|site|programa|app|aplicativo|guia)\s+)?"
+    DE_ALVO = r"(?:(?:do|da|de|com o|com a)\s+)?"
+
     def _clausula_de_mover(self, parte: str) -> dict | None:
         """Uma ordem: {"verbo", "alvo", "monitor", "separar"} ou None."""
-        artigo = r"(?:(?:a|o|as|os|essa|esse|esta|este|aquela|aquele|minha|meu)\s+)?"
-        tipo = r"(?:(?:aba|janela|site|programa|app|aplicativo|guia)\s+)?"
-        de = r"(?:(?:do|da|de|com o|com a)\s+)?"
+        artigo, tipo, de = self.ARTIGO_ALVO, self.TIPO_ALVO, self.DE_ALVO
         m = re.match(rf"^{self.VERBOS_MOVER}\s+{artigo}{tipo}{de}(.+)$", parte)
         if m:
             verbo, resto = m.groups()
             alvo, numero = self._extrair_monitor(resto)
+            outro = re.match(rf"^(.*?)\s*\b{self._PREP_MONITOR}\s+(?:o\s+|a\s+)?(?:outro\s+monitor|outra\s+tela)$", resto)
+            if not numero and outro:   # "joga a Netflix pro outro monitor": qual é o outro, decide depois
+                alvo, numero = outro.group(1), "outro"
         else:   # "o YouTube deixa no principal", "a Netflix joga pro monitor 2"
             m = re.match(rf"^{artigo}{tipo}{de}(.+?)\s+{self.VERBOS_MOVER}\s+(.+)$", parte)
             if not m:
@@ -244,31 +249,214 @@ class JanelasMixin:
         ext.pedir("juntar", {"abas": [a["aba"]["id"]], "destino": b["aba"]["id"]}, espera=6)
         return True
 
+    # sem monitor na frase ("separa o YouTube e a Disney", "joga a Netflix"): o Mestre pergunta o que falta
+    VERBOS_SEM_MONITOR = (r"(separa|separar|separe|joga|jogar|jogue|move|mover|mova|leva|levar|leve|"
+                          r"transfere|transferir|transfira)")
+    SO_SEPARAR = (r"\b(so|apenas|somente) (separa|separar|separe|separando)\b|\bsem (mudar|mover|trocar)( de)?"
+                  r"( monitor| tela)?\b|\bdeixa (onde|como) (esta|estao|ta|tao)\b")
+
     def _cmd_mover(self, t: str) -> bool:
-        ordens = self._ordens_de_mover(self._pedido_puro())
+        """Mover/separar janelas e abas. Monta a ordem INTEIRA antes de mexer: alvo que não está aberto,
+        janela ambígua ou monitor que faltou = pergunta (ou avisa) e nada é feito pela metade."""
+        puro = self._pedido_puro()
+        ordens = self._ordens_de_mover(puro)
+        abas = None
         if not ordens:
-            return False
-        abas = self._abas_abertas()
-        achados = [self._achar_janela_ou_aba(o["alvo"], abas) for o in ordens]
+            if not re.match(rf"^(?:(?:quero que (?:voce|vc) |quero |por favor |pode )+)?{self.VERBOS_SEM_MONITOR}\s", puro):
+                return False
+            abas = self._abas_abertas()
+            ordens = self._ordens_sem_monitor(puro, abas)
+            if not ordens:
+                return False
+        abas = self._abas_abertas() if abas is None else abas
+        opcoes = [self._janelas_do_alvo(o["alvo"], abas) for o in ordens]
+        faltando = [o["alvo"] for o, op in zip(ordens, opcoes) if not op]
+        if faltando:
+            if len(ordens) == 1 and ordens[0]["monitor"] not in (None, "outro") and \
+                    self._abrir_no_monitor(ordens[0]["alvo"], ordens[0]["monitor"]):
+                return True
+            nomes = " e ".join(self._original(f) for f in faltando)
+            self.voz.falar(f"Não achei {nomes} aberto." + (" Não mexi em nada." if len(ordens) > 1 else ""))
+            return True
+        self._resolver_janelas(ordens, opcoes, abas, [], time.time())
+        return True
+
+    def _ordens_sem_monitor(self, puro: str, abas: list[dict]) -> list[dict] | None:
+        """ "separa o YouTube e a Disney" -> duas ordens (monitor None = perguntar). Só vale se TODOS os alvos
+        estão abertos ou são nomes conhecidos (serviço, site, programa); senão não é comigo (None)."""
+        puro = re.sub(r"^(quero que (voce|vc) |quero |por favor |pode )+", "", puro)
+        m = re.match(rf"^{self.VERBOS_SEM_MONITOR}\s+(.+)$", puro)
+        if not m:
+            return None
+        verbo, resto = m.groups()
+        ordens = []
+        for k, pedaco in enumerate(p for p in re.split(r"\s*,\s*|\s+e\s+", resto) if p.strip()):
+            if k:
+                pedaco = re.sub(rf"^{self.VERBOS_MOVER}\s+", "", pedaco)
+            clausula = self._clausula_de_mover(f"{verbo} {pedaco}")
+            if clausula:
+                ordens.append(clausula)
+                continue
+            alvo = re.sub(rf"^{self.ARTIGO_ALVO}{self.TIPO_ALVO}{self.DE_ALVO}", "", pedaco).strip()
+            ordens.append({"verbo": verbo, "alvo": alvo, "monitor": None, "separar": verbo.startswith("separ"),
+                           "deixar": False})
+        conhecido = lambda alvo: bool(   # noqa: E731
+            self._janelas_do_alvo(alvo, abas) or self._servico_falado(alvo) or
+            melhor_correspondencia(alvo, self.cfg.get("sites") or {}) or
+            melhor_correspondencia(alvo, self.cfg.get("programas") or {}))
+        return ordens if ordens and all(conhecido(o["alvo"]) for o in ordens) else None
+
+    def _resolver_janelas(self, ordens: list[dict], opcoes: list[list[dict]], abas: list[dict], achados: list[dict],
+                          criado: float) -> None:
+        """Resolve uma ordem de cada vez (janela ambígua = pergunta qual), depois os monitores que faltam
+        (pergunta), e só então executa tudo."""
+        i = len(achados)
+        if i < len(ordens):
+            op = opcoes[i]
+            if len(op) == 1:
+                self._resolver_janelas(ordens, opcoes, abas, achados + [op[0]], criado)
+                return
+            nome = self._original(ordens[i]["alvo"])
+            por_monitor: dict = {}
+            for achado in op:
+                monitor = self._monitor_da_aba(achado["aba"], abas) if achado["tipo"] == "aba" else None
+                por_monitor.setdefault(monitor, []).append(achado)
+            telas = sorted(m for m in por_monitor if m)
+            if len(telas) < 2 or None in por_monitor or any(len(por_monitor[m]) > 1 for m in telas):
+                self.voz.falar(f"Tem mais de uma janela com {nome} e não sei qual. Deixe a certa na frente e fale: "
+                               "joga essa janela pro monitor 2. Não mexi em nada.")
+                return
+
+            def responder(resposta: str):
+                if not self._plano_valendo(criado):
+                    return
+                n = self._monitor_da_resposta(resposta)
+                if n in por_monitor:
+                    self._resolver_janelas(ordens, opcoes, abas, achados + [por_monitor[n][0]], criado)
+                elif re.match(r"^(cancela|cancelar|esquece|deixa pra la|deixa|para|parar|sai|nada|nenhum|nenhuma)$",
+                              normalizar(resposta)):
+                    self.falar("cancelado")
+                else:
+                    self.voz.falar("Não peguei qual. Não mexi em nada.")
+            responder.aceita_nao = True
+            self.perguntar(f"Tem {nome} em mais de uma janela: no monitor " + " e no ".join(map(str, telas)) +
+                           ". Qual eu uso?", responder, espera=15)
+            return
+        sem_monitor = [k for k, o in enumerate(ordens) if o["monitor"] is None]
+        if sem_monitor:
+            self._perguntar_monitores(ordens, achados, sem_monitor, criado)
+            return
+        self._executar_ordens(ordens, achados)
+
+    def _perguntar_monitores(self, ordens: list[dict], achados: list[dict], sem_monitor: list[int], criado: float) -> None:
+        numeros = [m["numero"] for m in sistema.monitores()]
+        nomes = [self._original(ordens[k]["alvo"]) for k in sem_monitor]
+        separar = all(ordens[k]["separar"] for k in sem_monitor)
+        so_separar = " Ou fala: só separar." if separar else ""
+        if len(sem_monitor) == 1:
+            opcoes = (" O " + " ou o ".join(map(str, numeros)) + "?") if len(numeros) >= 2 else ""
+            pergunta = f"Para qual monitor vai {nomes[0]}?{opcoes}{so_separar}"
+        else:
+            exemplo = " e ".join(f"{n} no {numeros[k % len(numeros)] if numeros else k + 1}" for k, n in enumerate(nomes))
+            pergunta = (f"{'Separo' if separar else 'Movo'} {' e '.join(nomes)}. Qual monitor pra cada um? "
+                        f"Fala por exemplo: {exemplo}.{so_separar}")
+
+        def responder(resposta: str):
+            if not self._plano_valendo(criado):
+                return
+            n = normalizar(resposta)
+            if re.match(r"^(cancela|cancelar|esquece|deixa pra la|deixa|para|parar|sai|nada|nenhum|nenhuma)$", n):
+                self.falar("cancelado")
+                return
+            if separar and re.search(self.SO_SEPARAR, n):
+                escolha = [None] * len(sem_monitor)
+            else:
+                escolha = self._monitores_da_resposta(n, [ordens[k]["alvo"] for k in sem_monitor])
+                if not escolha or any(m is None or (numeros and m not in numeros) for m in escolha):
+                    self.voz.falar("Não peguei os monitores. Não mexi em nada.")
+                    return
+            abertas = {a.get("id") for a in self._abas_abertas()}
+            if any(a["tipo"] == "aba" and a["aba"].get("id") not in abertas for a in achados):
+                self.voz.falar("Uma das abas fechou. Não mexi em nada.")
+                return
+            novas = [dict(o) for o in ordens]
+            for k, m in zip(sem_monitor, escolha):
+                novas[k]["monitor"] = m
+            self._executar_ordens(novas, achados)
+        responder.aceita_nao = True
+        self.perguntar(pergunta, responder, espera=20)
+
+    def _monitor_da_resposta(self, resposta: str) -> int | None:
+        """ "no dois", "monitor 2", "o da esquerda", "youtube no 1" (o fim da frase) -> número do monitor."""
+        palavras = normalizar(resposta).split()
+        for k in (3, 2, 1):
+            if len(palavras) < k:
+                continue
+            falado = re.sub(r"^(e |eh |o |a )?(do |da |no |na |pro |pra |para o |para a |para |em |ao )", "",
+                            " ".join(palavras[-k:]))
+            numero = self._monitor_falado(falado, True)
+            if numero:
+                return numero
+        return None
+
+    def _monitores_da_resposta(self, n: str, alvos: list[str]) -> list[int | None] | None:
+        """ "youtube no 1 e disney no 2" (ou "no 1 e no 2", na ordem que perguntou) -> [1, 2]."""
+        if len(alvos) == 1:
+            return [self._monitor_da_resposta(n)]
+        pedacos = [p for p in re.split(r"\s*,\s*|\s+e\s+", n) if p.strip()]
+        palavras = [[w for w in normalizar(a).split() if len(w) > 2] for a in alvos]
+        escolha: list[int | None] = [None] * len(alvos)
+        sem_nome = []
+        for pedaco in pedacos:
+            de_quem = [k for k, ws in enumerate(palavras) if ws and any(re.search(rf"\b{re.escape(w)}", pedaco) for w in ws)]
+            if len(de_quem) > 1:
+                return None
+            if de_quem:
+                escolha[de_quem[0]] = self._monitor_da_resposta(pedaco)
+            else:
+                sem_nome.append(self._monitor_da_resposta(pedaco))
+        if all(m is None for m in escolha) and len(sem_nome) == len(alvos):
+            return sem_nome   # "no 1 e no 2": na ordem em que perguntei
+        return escolha if not sem_nome else None
+
+    def _executar_ordens(self, ordens: list[dict], achados: list[dict]) -> None:
         # duas ordens para abas da MESMA janela: essa janela tem de ser separada
-        if len(ordens) == 2 and all(a and a["tipo"] == "aba" for a in achados) and \
+        if len(ordens) == 2 and all(a["tipo"] == "aba" for a in achados) and \
                 achados[0]["aba"]["janela"] == achados[1]["aba"]["janela"]:
             for o in ordens:
                 o["separar"] = o["separar"] or not o["deixar"]
             if all(o["deixar"] for o in ordens):
                 ordens[0]["separar"] = True
-        falhas = []
+        abas = None
         for ordem, achado in zip(ordens, achados):
-            if not achado:
-                falhas.append(ordem["alvo"])
+            if ordem["monitor"] == "outro":
+                abas = self._abas_abertas() if abas is None else abas
+                self._mover_pro_outro_monitor(achado, ordem, abas)
                 continue
             self._mover_achado(achado, ordem)
-        if falhas:
-            nomes = " e ".join(self._original(f) for f in falhas)
-            if len(ordens) == 1 and self._abrir_no_monitor(ordens[0]["alvo"], ordens[0]["monitor"]):
-                return True
-            self.voz.falar(f"Não achei {nomes} aberto.")
-        return True
+
+    def _mover_pro_outro_monitor(self, achado: dict, ordem: dict, abas: list[dict]) -> None:
+        """ "pro outro monitor": com 2 monitores é o que ela não está; com mais, pergunta qual."""
+        numeros = [m["numero"] for m in sistema.monitores()]
+        if len(numeros) < 2:
+            self.voz.falar("Só tem um monitor ligado.")
+            return
+        atual = (self._monitor_da_aba(achado["aba"], abas) if achado["tipo"] == "aba"
+                 else sistema.monitor_da_janela(achado.get("hwnd") or sistema.janela_da_frente()))
+        outros = [n for n in numeros if n != atual]
+        if len(outros) == 1:
+            self._mover_achado(achado, {**ordem, "monitor": outros[0]})
+            return
+
+        def responder(resposta: str):
+            falado = re.sub(r"^(e |eh )?(o |a )?(do |da |no |na |pro |pra |para o )?(monitor |tela )?(numero )?", "",
+                            normalizar(resposta))
+            numero = self._monitor_falado(falado, True)
+            if numero:
+                self._mover_achado(achado, {**ordem, "monitor": numero})
+            else:
+                self.voz.falar("Não peguei o monitor. Fala de novo: joga pro monitor 2, por exemplo.")
+        self.perguntar("Para qual monitor? O " + " ou o ".join(map(str, outros)) + "?", responder, espera=12)
 
     def _abas_abertas(self) -> list[dict]:
         ext = self._extensao()
@@ -370,13 +558,18 @@ class JanelasMixin:
         return _host(str(sites[chave])) if chave else ""
 
     def _achar_janela_ou_aba(self, alvo: str, abas: list[dict] | None = None) -> dict | None:
-        """{"tipo": "frente"|"aba"|"janela", ...} para o nome falado, ou None."""
+        """{"tipo": "frente"|"aba"|"janela", ...} para o nome falado, ou None (várias janelas: a da frente)."""
+        return next(iter(self._janelas_do_alvo(alvo, abas)), None)
+
+    def _janelas_do_alvo(self, alvo: str, abas: list[dict] | None = None) -> list[dict]:
+        """Todas as janelas onde o nome falado está: uma aba por janela do navegador (a da frente dela), da
+        mais provável para a menos; sem aba, a janela do programa. Mais de uma = o comando precisa perguntar."""
         alvo = normalizar(alvo)
         if alvo in self.ESTA_JANELA:
-            return {"tipo": "frente", "hwnd": sistema.janela_da_frente(), "nome": "essa janela"}
+            return [{"tipo": "frente", "hwnd": sistema.janela_da_frente(), "nome": "essa janela"}]
         palavras = [w for w in alvo.split() if len(w) > 1]
         if not palavras:
-            return None
+            return []
         dominio = self._dominio_do_site(alvo) or ("youtube.com" if "youtube" in alvo else "")
 
         def combina(texto: str) -> bool:
@@ -385,9 +578,11 @@ class JanelasMixin:
 
         candidatas = [aba for aba in abas or [] if (dominio and _mesmo_site(aba.get("url", ""), dominio))
                       or combina(aba.get("titulo", "")) or combina(_host(aba.get("url", "")).replace(".", " "))]
-        if candidatas:   # a que esta na frente da janela, depois a usada por ultimo
-            aba = max(candidatas, key=lambda a: (a.get("ativa", False), a.get("ultimo_acesso", 0)))
-            return {"tipo": "aba", "aba": aba, "nome": alvo}
+        if candidatas:   # por janela: a que esta na frente dela, depois a usada por ultimo
+            por_janela: dict = {}
+            for aba in sorted(candidatas, key=lambda a: (a.get("ativa", False), a.get("ultimo_acesso", 0)), reverse=True):
+                por_janela.setdefault(aba.get("janela"), aba)
+            return [{"tipo": "aba", "aba": aba, "nome": alvo} for aba in por_janela.values()]
         # janelas do Windows (programas; e o navegador sem a extensao, pelo titulo da aba da frente)
         programas = self.cfg.get("programas") or {}
         chave = melhor_correspondencia(alvo, programas)
@@ -395,11 +590,11 @@ class JanelasMixin:
         janelas = sistema.janelas_abertas()
         for j in janelas:
             if exe and j["exe"] == exe:
-                return {"tipo": "janela", "hwnd": j["hwnd"], "nome": alvo}
+                return [{"tipo": "janela", "hwnd": j["hwnd"], "nome": alvo}]
         for j in janelas:
             if combina(j["titulo"]) or combina(j["exe"].removesuffix(".exe")):
-                return {"tipo": "janela", "hwnd": j["hwnd"], "nome": alvo}
-        return None
+                return [{"tipo": "janela", "hwnd": j["hwnd"], "nome": alvo}]
+        return []
 
     def _mover_achado(self, achado: dict, ordem: dict) -> None:
         numero = ordem["monitor"]
@@ -414,6 +609,8 @@ class JanelasMixin:
                 log.warning("Extensao nao %s a aba: %s", "separou" if separar else "focou", erro)
                 r = {}
             hwnd = sistema.janela_pelo_titulo(r.get("titulo") or aba.get("titulo", ""))
+        if numero is None:
+            return   # "só separar": fica no monitor onde está
         if not hwnd and achado["tipo"] != "frente":
             log.info("Nao achei a janela de %s", achado.get("nome"))
             return
@@ -421,16 +618,32 @@ class JanelasMixin:
             return   # "deixa o YouTube no principal" e ele ja esta la
         sistema.mover_janela_para_monitor(hwnd, numero)
 
+    @staticmethod
+    def _preferencia_de_aba(aba: dict) -> tuple:
+        """Mesma página em várias abas: a da frente, depois a que toca som, depois a usada por último."""
+        return aba.get("ativa", False), aba.get("audivel", False), aba.get("ultimo_acesso", 0)
+
     def _site_ja_aberto(self, nome: str, url: str) -> bool:
         """ "abre a Netflix" com a Netflix já aberta numa aba: usa ela (e manda para o monitor pedido,
-        sozinha numa janela) em vez de abrir outra."""
-        if not self._extensao():
+        sozinha numa janela) em vez de abrir outra. "... numa janela nova": abre outra, sempre."""
+        if not self._extensao() or sistema.JANELA_NOVA:
             return False
         dominio = _host(str(url))
-        abas = [a for a in self._abas_abertas() if dominio and _mesmo_site(a.get("url", ""), dominio)]
+        todas = self._abas_abertas()
+        abas = [a for a in todas if dominio and _mesmo_site(a.get("url", ""), dominio)]
         if not abas:
             return False
-        aba = max(abas, key=lambda a: (a.get("ativa", False), a.get("ultimo_acesso", 0)))
+        if sistema.MONITOR_ALVO:   # já está aberto no monitor pedido: só usa essa aba
+            ali = [a for a in abas if self._monitor_da_aba(a, todas) == sistema.MONITOR_ALVO]
+            if ali:
+                try:
+                    self._extensao().pedir("focar", max(ali, key=self._preferencia_de_aba)["id"], espera=4)
+                except Exception as erro:
+                    log.info("Extensao nao focou a aba: %s", erro)
+                    return False
+                self.voz.falar(f"{nome.capitalize()} já estava aberto no monitor {sistema.MONITOR_ALVO}.")
+                return True
+        aba = max(abas, key=self._preferencia_de_aba)
         achado = {"tipo": "aba", "aba": aba, "nome": nome}
         if sistema.MONITOR_ALVO:
             self._mover_achado(achado, {"monitor": sistema.MONITOR_ALVO, "separar": True, "deixar": False})

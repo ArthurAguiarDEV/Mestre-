@@ -13,7 +13,8 @@ from .. import sistema, youtube
 from ..config import PASTA_PROJETO
 from ..texto import achar_numero, contem, melhor_correspondencia, normalizar
 
-from .base import _ordinal, _nome_do_canal, _tirar_enfeites
+from .base import _mesmo_site, _ordinal, _nome_do_canal, _tirar_enfeites
+from .perfis import perfil_da_frase
 
 log = logging.getLogger(__package__)  # "app.comandos", o mesmo logger de antes da divisao
 
@@ -49,7 +50,7 @@ class VideoMixin:
         return self._youtube or None
 
     def _abrir_youtube(self, url: str) -> None:
-        yt = self._yt()
+        yt = None if sistema.JANELA_NOVA else self._yt()   # "numa janela nova": não reusa a aba do YouTube
         if yt:
             try:
                 yt.abrir(url, sistema.monitor(sistema._monitor_desejado()) if sistema._monitor_desejado() else None)
@@ -61,6 +62,140 @@ class VideoMixin:
             except Exception as erro:
                 log.warning("Navegador do Mestre falhou (%s); abrindo no navegador normal", erro)
         sistema.abrir_site(url)
+
+    # =================================================================
+    #  "pausa o vídeo da Netflix", "pausa a Disney", "continua o filme": qual serviço, aba e monitor
+    # =================================================================
+    PAUSAR_VIDEO = r"(pausa|pausar|pause|para|pare|segura)"
+    CONTINUAR_VIDEO = r"(continua|continuar|continue|despausa|despausar|solta|da play|volta a tocar)"
+    COISA_DE_VIDEO = r"(video|serie|filme|episodio|desenho|anime)"
+    ARTIGO_SERVICO = {"YouTube": "o", "Netflix": "a", "Disney": "a", "Prime Video": "o", "HBO Max": "a", "Globoplay": "o"}
+
+    def _servicos_de_video(self) -> dict:
+        """nome -> (domínio, jeitos de falar): o YouTube e os streamings."""
+        return {"YouTube": ("youtube.com", r"youtube"), **{n: (d, j) for n, (d, _, j) in self.STREAMINGS.items()}}
+
+    def _no(self, servico: str, prep: str = "n") -> str:
+        """ "na Netflix", "no YouTube" (prep "d": "da Netflix", "do YouTube")."""
+        return f"{prep}{self.ARTIGO_SERVICO.get(servico, 'o')} {servico}"
+
+    def _servico_da_aba(self, aba: dict) -> str | None:
+        return next((n for n, (dominio, _) in self._servicos_de_video().items()
+                     if _mesmo_site(aba.get("url", ""), dominio)), None)
+
+    def _servico_falado(self, texto: str) -> str | None:
+        return next((n for n, (_, jeitos) in self._servicos_de_video().items()
+                     if re.search(rf"\b({jeitos})\b", normalizar(texto))), None)
+
+    def _cmd_controle_video(self, t: str) -> bool:
+        """Pausar/continuar sabendo QUAL vídeo: o serviço dito, senão o único que está tocando; com mais de
+        um, pergunta. Só YouTube (ou sem a extensão) passa para o _cmd_youtube_controle, como sempre."""
+        puro, monitor = self._monitor_da_frase(self._pedido_puro())
+        jeitos = "|".join(j for _, j in self._servicos_de_video().values())
+        achado = re.fullmatch(rf"(?P<verbo>{self.PAUSAR_VIDEO}|{self.CONTINUAR_VIDEO})"
+                              rf"(?: (?:o|a|esse|essa|este|esta))?(?: (?P<coisa>{self.COISA_DE_VIDEO}))?"
+                              rf"(?: (?:da|do|na|no|em|pela|pelo))?(?: (?:o|a))?(?: (?P<servico>{jeitos}))?"
+                              r"(?: (?:ai|agora|por favor))?", puro)
+        if not achado or not (achado.group("coisa") or achado.group("servico")):
+            return False
+        pausar = bool(re.fullmatch(self.PAUSAR_VIDEO, achado.group("verbo")))
+        servico = self._servico_falado(achado.group("servico") or "")
+        if servico == "YouTube":
+            return False   # o _cmd_youtube_controle cuida (aba certa, monitor, teclas de mídia)
+        ext = self._extensao()
+        if not ext:
+            if not servico:
+                return False   # sem a extensão não dá para saber o que toca: o de sempre (YouTube/teclas)
+            self.voz.falar(f"Pra controlar o vídeo {self._no(servico)} eu preciso da extensão no Brave.")
+            return True
+        abas = self._abas_abertas()
+        de_video: dict[str, list[dict]] = {}   # serviço -> abas dele (só as do monitor dito, se disse)
+        for aba in abas:
+            s = self._servico_da_aba(aba)
+            if s and (monitor is None or self._monitor_da_aba(aba, abas) == monitor):
+                de_video.setdefault(s, []).append(aba)
+        if servico:
+            if not pausar and not de_video.get(servico) and servico in self.STREAMINGS:
+                return False   # "continua a série na Disney" sem a Disney aberta: abrir e continuar (_cmd_streaming)
+            self._video_no_servico(servico, de_video.get(servico, []), abas, pausar, monitor)
+            return True
+        tocando = {s: [a for a in lista if a.get("audivel")] for s, lista in de_video.items()} if pausar else {}
+        tocando = {s: lista for s, lista in tocando.items() if lista}
+        vale = tocando or de_video
+        if not vale:
+            if monitor is not None:
+                return False
+            self.perguntar("Não achei vídeo aberto no navegador. Quer que eu use o pause geral do computador?",
+                           self._responder_pause_geral, espera=12)
+            return True
+        if list(vale) == ["YouTube"]:
+            return False
+        if len(vale) == 1:
+            s = next(iter(vale))
+            self._video_no_servico(s, vale[s], abas, pausar, monitor)
+            return True
+        nomes = [self._no(s) for s in vale]
+        lista_falada = ", ".join(nomes[:-1]) + " e " + nomes[-1]
+        self.perguntar(f"Tem vídeo {'tocando' if tocando else 'aberto'} {lista_falada}. "
+                       f"Qual você quer {'pausar' if pausar else 'continuar'}?",
+                       lambda r, v=vale, p=pausar, a=abas: self._responder_qual_video(r, v, p, a), espera=12)
+        return True
+
+    def _responder_qual_video(self, resposta: str, vale: dict, pausar: bool, abas: list[dict]) -> None:
+        servico = self._servico_falado(resposta)
+        if servico not in vale:
+            self.voz.falar("Não peguei qual. Fala de novo: pausa o vídeo da Netflix, por exemplo.")
+        elif servico == "YouTube":
+            self._youtube_pausar(pausar)
+        else:
+            self._video_no_servico(servico, vale[servico], abas, pausar, None)
+
+    def _responder_pause_geral(self, resposta: str) -> None:
+        if re.match(r"^(sim|pode|isso|quero|claro|usa|use|manda|ok|beleza|por favor)\b", normalizar(resposta)):
+            sistema.midia("tocar_pausar")
+        else:
+            self.voz.falar("Tá bom. Não mexi em nada.")
+
+    def _youtube_pausar(self, pausar: bool) -> None:
+        """A escolha foi o YouTube: o caminho de sempre do YouTube (aba que toca, monitor, pergunta)."""
+        acao = "pausar" if pausar else "continuar"
+        yt = self._yt()
+        if not yt:
+            sistema.midia("tocar_pausar")
+        elif "aba_alvo" in vars(yt) and self._extensao():
+            self._youtube_na_aba_certa(yt, acao, acao + " o video", None)
+        else:
+            self._acao_youtube_protegida(yt, acao, acao + " o video")
+
+    def _video_no_servico(self, servico: str, candidatas: list[dict], abas: list[dict], pausar: bool,
+                          monitor: int | None) -> None:
+        """Pausa/continua o vídeo da aba do serviço (a que toca; mais de uma em telas diferentes: pergunta)."""
+        from ..ponte import desatualizada
+        ext = self._extensao()
+        if not candidatas:
+            self.voz.falar(f"Não achei aba {self._no(servico, 'd')}" + (f" no monitor {monitor}." if monitor else "."))
+            return
+        if desatualizada(getattr(ext, "versao", "")):
+            self.voz.falar("A extensão do Brave está desatualizada. Recarregue ela: o passo a passo está no painel, "
+                           "na página YouTube.")
+            return
+        if pausar and any(a.get("audivel") for a in candidatas):
+            candidatas = [a for a in candidatas if a.get("audivel")]
+        dominio = self._servicos_de_video()[servico][0]
+
+        def continuar(aba_id):
+            try:
+                r = ext.pedir("video", {"aba": aba_id, "dominio": dominio, "pausar": pausar}, espera=5)
+            except Exception as erro:
+                log.info("Extensao nao controlou o video %s: %s", self._no(servico), erro)
+                r = "erro"
+            if r == "sem_video":
+                self.voz.falar(f"Não achei vídeo {self._no(servico)}.")
+            elif r == "ja":
+                self.voz.falar("Já estava pausado." if pausar else "Já estava tocando.")
+            elif r not in ("ok", True):
+                self.voz.falar(f"Não consegui {'pausar' if pausar else 'continuar'} {self._no(servico)}.")
+        self._escolher_aba(candidatas, abas, servico, monitor, continuar)
 
     SELECAO_YOUTUBE = ("abrir_n", "abrir_titulo", "canal_n", "titulos")   # escolher algo QUE ESTA na tela
     CONTROLE_DO_QUE_TOCA = ("pausar", "pular", "proximo", "continuar")
@@ -444,68 +579,236 @@ class VideoMixin:
                       r"pesquise|quero ver|quero assistir|play|da play|inicia|iniciar|comeca|comecar)"
     TIPOS_DE_VIDEO = r"(a |o )?(serie|seriado|filme|desenho|anime|documentario|novela|episodio|temporada)"
 
+    # "abre minha série", "continua a série que eu estava vendo": não tem título (não procura "minha")
+    SEM_TITULO = r"(minha|meu|minhas|meus|aquela|aquele|essa|esse|(o |a )?que eu (estava|tava) (vendo|assistindo))"
+    CONTINUAR_SERIE = r"\b(continua|continuar|continue|retoma|retomar|de onde (eu )?parei)\b"
+    PAUSA_STREAMING = 1.5   # entre as tentativas na página (os testes põem 0)
+
     def _cmd_streaming(self, t: str) -> bool:
-        puro = self._pedido_puro()
+        """Separa serviço, título, perfil ("no perfil Arthur"), monitor e ação (tocar ou continuar). O que
+        faltar e tiver mais de uma possibilidade vira pergunta antes de abrir qualquer coisa."""
+        puro, perfil_falado = perfil_da_frase(self._pedido_puro())
         qual = next((nome for nome, (_, _, jeitos) in self.STREAMINGS.items()
                      if re.search(rf"\b(na|no|pela|pelo|da|do|em) ({jeitos})\b", puro)), None)
+        sem_preposicao = False
+        if not qual and perfil_falado:   # "abre a Netflix no perfil Mestre"
+            qual = next((nome for nome, (_, _, jeitos) in self.STREAMINGS.items()
+                         if re.search(rf"\b({jeitos})\b", puro)), None)
+            sem_preposicao = bool(qual)
         tem_tipo = re.search(rf"\b{self.TIPOS_DE_VIDEO}\b", puro)
-        if not re.search(rf"\b{self.VERBOS_ASSISTIR}\b", t + " " + puro) or not (qual or tem_tipo):
+        # "quero assistir Fallout": é vídeo mesmo sem dizer onde (pergunta o serviço; "toca X" continua sendo música)
+        quer_assistir = re.match(r"^(eu )?(quero |vou |bora )?(assistir|assiste|assista|continuar assistindo|"
+                                 r"continua assistindo)\b", puro)
+        if not re.search(rf"\b{self.VERBOS_ASSISTIR}\b", t + " " + puro) or not (qual or tem_tipo or quer_assistir):
             return False
+        continuar = bool(re.search(self.CONTINUAR_SERIE, puro))
         titulo = puro
         if qual:
-            titulo = re.sub(rf"\b(na|no|pela|pelo|da|do|em) ({self.STREAMINGS[qual][2]})\b( que (esta|ta) )?"
+            prep = "((na|no|pela|pelo|da|do|em) )?" if sem_preposicao else "(na|no|pela|pelo|da|do|em) "
+            titulo = re.sub(rf"\b{prep}({self.STREAMINGS[qual][2]})\b( que (esta|ta) )?"
                             r"( aberta| aberto)?( (na|no) (janela|monitor|tela) \w+)?", " ", titulo)
         titulo = re.sub(rf"\b(quero |eu quero |pode )?{self.VERBOS_ASSISTIR}\b|\b{self.TIPOS_DE_VIDEO}\b|"
-                        r"\b(de onde parei|do comeco|agora|pra mim|por favor|ai|tocar|assistindo)\b", " ", titulo)
+                        r"\b(de onde (eu )?parei|do comeco|agora|pra mim|por favor|ai|tocar|assistindo)\b", " ", titulo)
         palavras = titulo.split()
         while palavras and palavras[0] in ("a", "o", "as", "os", "de", "do", "da", "e", "que"):   # so nas pontas
             palavras.pop(0)
         while palavras and palavras[-1] in ("a", "o", "as", "os", "de", "do", "da", "e", "que"):
             palavras.pop()
         titulo = " ".join(palavras)
+        if re.fullmatch(self.SEM_TITULO, titulo):
+            titulo = ""
         if not titulo:
-            return False
+            if not (tem_tipo or perfil_falado):
+                return False
+            self._streaming_sem_titulo(qual, perfil_falado, continuar)
+            return True
         titulo = self._original(titulo)
         if not qual:
-            self.perguntar(f"Em qual? Netflix, Disney, Prime, HBO ou Globoplay?",
-                           lambda r, tt=titulo: self._responder_streaming(r, tt), espera=15)
+            # nunca escolhe o serviço sozinho (nem pelo histórico): pergunta
+            self.perguntar("Em qual serviço? Netflix, Disney, Prime, HBO Max, Globoplay ou YouTube?",
+                           lambda r, tt=titulo, pf=perfil_falado, c=continuar: self._responder_streaming(r, tt, pf, c),
+                           espera=15)
             return True
-        self._tocar_no_streaming(qual, titulo)
+        self._escolher_perfil(qual, perfil_falado,
+                              lambda perfil, aba: self._tocar_no_streaming(qual, titulo, perfil, aba, continuar))
         return True
 
-    def _responder_streaming(self, resposta: str, titulo: str) -> None:
+    def _responder_streaming(self, resposta: str, titulo: str, perfil_falado: str | None = None,
+                             continuar: bool = False) -> None:
         n = normalizar(resposta)
-        qual = next((nome for nome, (_, _, jeitos) in self.STREAMINGS.items() if re.search(rf"\b({jeitos})\b", n)), None)
-        if qual:
-            self._tocar_no_streaming(qual, titulo)
+        qual = self._servico_falado(n)
+        if qual == "YouTube":
+            self.voz.falar(f"Procurando {titulo} no YouTube.")
+            self._abrir_youtube(youtube.buscar_video(titulo) or youtube.url_busca(titulo))
+        elif qual:
+            self._escolher_perfil(qual, perfil_falado,
+                                  lambda perfil, aba: self._tocar_no_streaming(qual, titulo, perfil, aba, continuar))
         else:
             self.voz.falar("Não peguei o streaming. Fala de novo: toca a série na Disney, por exemplo.")
 
-    def _tocar_no_streaming(self, qual: str, titulo: str) -> None:
+    def _streaming_sem_titulo(self, qual: str | None, perfil_falado: str | None, continuar: bool) -> None:
+        """ "abre minha série", "continua a série na Disney", "abre a Netflix no perfil Mestre": abre o serviço
+        (um só aberto = ele; senão pergunta qual) no perfil certo e pede o nome. Não dá play em nada."""
+        if not qual:
+            abertos = sorted({s for s in map(self._servico_da_aba, self._abas_abertas()) if s in self.STREAMINGS})
+            if len(abertos) == 1:
+                qual = abertos[0]
+            else:
+                def responder(resposta: str):
+                    escolhido = self._servico_falado(resposta)
+                    if escolhido in self.STREAMINGS:
+                        self._streaming_sem_titulo(escolhido, perfil_falado, continuar)
+                    else:
+                        self.voz.falar("Não peguei o serviço. Não abri nada.")
+                opcoes = abertos or list(self.STREAMINGS)
+                self.perguntar("Em qual serviço? " + ", ".join(opcoes[:-1]) + " ou " + opcoes[-1] + "?",
+                               responder, espera=15)
+                return
+        self._escolher_perfil(qual, perfil_falado,
+                              lambda perfil, aba: self._abrir_no_perfil(qual, perfil, aba, continuar))
+
+    def _abrir_no_perfil(self, qual: str, perfil: str | None, aba: int | None, continuar: bool) -> None:
+        """Abre (ou traz para a frente) o serviço e, com a extensão, escolhe o perfil. Sem título: não toca nada."""
+        dominio = self.STREAMINGS[qual][0]
+        inicio = f"https://{'' if dominio.count('.') > 1 else 'www.'}{dominio}/"
+        ext = self._extensao()
+        if not ext:
+            sistema.abrir_site(inicio)
+            self.voz.falar(f"Abri {self._no(qual, '')}. " + (
+                f"Sem a extensão eu não consigo conferir o perfil. Escolha o perfil {perfil} na tela." if perfil else
+                "Fala o nome da série que eu procuro."))
+            return
+        if not aba and not sistema.JANELA_NOVA:   # já aberto: usa a aba (não recarrega o que está tocando)
+            existentes = [a for a in self._abas_abertas() if _mesmo_site(a.get("url", ""), dominio)]
+            aba = max(existentes, key=self._preferencia_de_aba)["id"] if existentes else None
+        if aba and not sistema.JANELA_NOVA:
+            abas = self._abas_abertas()
+            achada = next((a for a in abas if a.get("id") == aba), None)
+            if achada and sistema.MONITOR_ALVO and self._monitor_da_aba(achada, abas) != sistema.MONITOR_ALVO:
+                self._mover_achado({"tipo": "aba", "aba": achada, "nome": qual},
+                                   {"monitor": sistema.MONITOR_ALVO, "separar": True, "deixar": False})
+            else:
+                try:
+                    ext.pedir("focar", aba, espera=4)
+                except Exception as erro:
+                    log.info("Extensao nao focou a aba do streaming: %s", erro)
+        else:
+            aba = self._aba_do_streaming(ext, dominio, inicio)
+        self._em_segundo_plano(self._depois_de_abrir_no_perfil, ext, aba, qual, perfil, continuar)
+
+    def _em_segundo_plano(self, funcao, *args) -> None:
+        threading.Thread(target=funcao, args=args, daemon=True).start()
+
+    def _depois_de_abrir_no_perfil(self, ext, aba, qual: str, perfil: str | None, continuar: bool) -> None:
+        if perfil and not self._garantir_perfil(ext, aba, qual, perfil, self.PAUSA_STREAMING):
+            return
+        self.voz.falar(f"Abri {self._no(qual, '')}" + (f" no perfil {perfil}" if perfil else "") +
+                       (". Fala o nome da série que eu continuo de onde parou." if continuar else
+                        ". Fala o nome do que você quer assistir."))
+
+    def _garantir_perfil(self, ext, aba, servico: str, perfil: str, pausa: float) -> str | None:
+        """Na aba do serviço: tela "Quem está assistindo?" = clica no perfil pelo NOME exato ("escolhi");
+        aba já confirmada nesse perfil = segue ("ja"). Não conseguiu confirmar = avisa e para (None)."""
+        dominio = self._servicos_de_video()[servico][0]
+        nao_achou = 0
+        for _ in range(8):
+            time.sleep(pausa)
+            try:
+                r = ext.pedir("perfil", {"aba": aba, "dominio": dominio, "nome": perfil}, espera=6)
+            except Exception as erro:
+                log.info("Extensao nao conferiu o perfil: %s", erro)
+                r = None
+            r = r if isinstance(r, dict) else {}
+            aba = r.get("aba") or aba
+            resultado = r.get("resultado")
+            if resultado == "selecionei":
+                self._lembrar_perfil(aba, servico, perfil)
+                return "escolhi"
+            if resultado == "nao_achei":
+                nao_achou += 1
+                if nao_achou >= 3:
+                    self.voz.falar(f"Não achei o perfil {perfil} na tela de perfis {self._no(servico, 'd')}. "
+                                   "Deixei a página aberta sem iniciar nada.")
+                    return None
+            sessao = self._sessoes().get(aba) or {}
+            if resultado == "sem_tela" and sessao.get("servico") == servico and sessao.get("perfil") == perfil:
+                return "ja"
+        self.voz.falar(f"Não consegui confirmar o perfil {perfil} {self._no(servico)}. Deixei a página aberta sem "
+                       "iniciar o vídeo. Se ela já estiver no perfil certo, fala o pedido de novo que eu confirmo com você.")
+        return None
+
+    def _tocar_no_streaming(self, qual: str, titulo: str, perfil: str | None = None, aba_escolhida: int | None = None,
+                            continuar: bool = False) -> None:
         dominio, busca, _ = self.STREAMINGS[qual]
         url = busca.format(quote(titulo)) if "{}" in busca else busca
         ext = self._extensao()
-        self.voz.falar(f"Procurando {titulo} na {qual}.")
+        self.voz.falar(f"Procurando {titulo} {self._no(qual)}" + (f" no perfil {perfil}." if perfil else "."))
         if not ext:
             sistema.abrir_site(url)
-            if "{}" not in busca:
+            if perfil:
+                self.voz.falar(f"Sem a extensão eu não consigo conferir o perfil. Confira se está no perfil {perfil}.")
+            elif "{}" not in busca:
                 self.voz.falar("Sem a extensão do Brave eu não consigo digitar na busca. Digite o nome lá.")
             return
         aba = None
-        if sistema.MONITOR_ALVO:
-            sistema.abrir_site(url)   # janela nova no monitor pedido
-        else:
-            try:
-                aba = (ext.pedir("ir", {"url": url, "dominio": dominio}, espera=6) or {}).get("id")
-            except Exception as erro:
-                log.info("Extensao nao abriu a busca (%s)", erro)
-                sistema.abrir_site(url)
-        threading.Thread(target=self._seguir_no_streaming, args=(ext, aba, dominio, titulo, "{}" in busca),
-                         daemon=True).start()
+        try:
+            aba = self._aba_do_streaming(ext, dominio, url, aba_escolhida)
+        except Exception as erro:
+            log.info("Extensao nao abriu a busca (%s)", erro)
+            sistema.abrir_site(url)
+        self._em_segundo_plano(self._seguir_no_streaming, ext, aba, dominio, titulo, "{}" in busca, None,
+                               perfil, url, continuar, qual)
+
+    def _aba_do_streaming(self, ext, dominio: str, url: str, aba_escolhida: int | None = None) -> int | None:
+        """Onde abrir a busca: "numa janela nova" = janela nova; a aba já escolhida (perfil confirmado), levada
+        ao monitor pedido se preciso; com monitor pedido, a aba do serviço que JÁ está nesse monitor, senão a aba
+        do serviço levada para lá (sozinha numa janela), senão janela nova lá; sem monitor, a aba do serviço que
+        já existe (a extensão escolhe) ou uma aba nova."""
+        if sistema.JANELA_NOVA:
+            sistema.abrir_site(url)
+            return None
+        if aba_escolhida:
+            abas = self._abas_abertas()
+            achada = next((a for a in abas if a.get("id") == aba_escolhida), None)
+            if achada and sistema.MONITOR_ALVO and self._monitor_da_aba(achada, abas) != sistema.MONITOR_ALVO:
+                self._mover_achado({"tipo": "aba", "aba": achada, "nome": dominio},
+                                   {"monitor": sistema.MONITOR_ALVO, "separar": True, "deixar": False})
+            if achada:
+                return (ext.pedir("ir", {"url": url, "dominio": dominio, "aba": aba_escolhida}, espera=6) or {}).get("id") \
+                    or aba_escolhida
+        if not sistema.MONITOR_ALVO:
+            return (ext.pedir("ir", {"url": url, "dominio": dominio}, espera=6) or {}).get("id")
+        abas = self._abas_abertas()
+        do_site = [a for a in abas if _mesmo_site(a.get("url", ""), dominio)]
+        ali = [a for a in do_site if self._monitor_da_aba(a, abas) == sistema.MONITOR_ALVO]
+        aba = max(ali or do_site, key=self._preferencia_de_aba, default=None)
+        if aba is None:
+            sistema.abrir_site(url)   # não estava aberto: janela nova no monitor pedido
+            return None
+        if not ali:
+            self._mover_achado({"tipo": "aba", "aba": aba, "nome": dominio},
+                               {"monitor": sistema.MONITOR_ALVO, "separar": True, "deixar": False})
+        return (ext.pedir("ir", {"url": url, "dominio": dominio, "aba": aba["id"]}, espera=6) or {}).get("id") or aba["id"]
+
+    CONTINUAR_TEXTOS = ["continuar assistindo", "continuar", "retomar", "continue assistindo", "continue watching",
+                        "resume", "continue"]
 
     def _seguir_no_streaming(self, ext, aba, dominio: str, titulo: str, busca_no_endereco: bool,
-                             pausa: float = 1.5) -> None:
-        """Depois de abrir o site: 1) digita o nome na busca  2) clica no título  3) "continuar assistindo"."""
+                             pausa: float | None = None, perfil: str | None = None, url: str = "",
+                             continuar: bool = False, servico: str = "") -> None:
+        """Depois de abrir o site: 0) o perfil pedido (tela "Quem está assistindo?")  1) digita o nome na busca
+        2) clica no título  3) "continuar assistindo" (pedido de continuar: só isso, nunca "assistir do começo")."""
+        pausa = self.PAUSA_STREAMING if pausa is None else pausa
+        if perfil:
+            servico = servico or next((n for n, (d, _, _) in self.STREAMINGS.items() if d == dominio), "")
+            escolha = self._garantir_perfil(ext, aba, servico, perfil, pausa)
+            if not escolha:
+                return
+            if escolha == "escolhi" and busca_no_endereco and url:   # a tela de perfis pode ter perdido a busca
+                try:
+                    ext.pedir("ir", {"aba": aba, "dominio": dominio, "url": url}, espera=6)
+                except Exception as erro:
+                    log.info("Streaming: busca depois do perfil falhou (%s)", erro)
         alvo = {"aba": aba, "dominio": dominio}
 
         def pedir(acao: str, **extra):
@@ -538,12 +841,16 @@ class VideoMixin:
             self.voz.falar(f"Não achei {titulo} nos resultados. Fala: clica em e o nome que aparece.")
             return
         # 3) play: "continuar assistindo" primeiro (de onde parou)
+        textos = self.CONTINUAR_TEXTOS if continuar else ["continuar assistindo", "continuar", "retomar", "assistir",
+                                                           "assista", "reproduzir", "play", "comecar", "resume", "watch"]
         for _ in range(6):
             time.sleep(pausa)
-            r = pedir("clicar", textos=["continuar assistindo", "continuar", "retomar", "assistir", "assista",
-                                         "reproduzir", "play", "comecar", "resume", "watch"])
+            r = pedir("clicar", textos=textos)
             if r not in ("nao_achei", "sem_aba", "erro"):
                 return
+        if continuar:
+            self.voz.falar(f"Não achei de onde você parou em {titulo}. Pra começar do início fala: clica em assistir.")
+            return
         self.voz.falar("Abri a página. Pra dar play fala: clica em assistir.")
 
     def _cmd_clicar(self, t: str) -> bool:

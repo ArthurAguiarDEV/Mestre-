@@ -18,14 +18,14 @@ _pedido_puro, _separar_monitor...). Cada assunto mora num mixin deste pacote:
   assistente.py: Controle do proprio assistente: versao, encerrar, reiniciar, painel, ajuda, descanso,
     conversinha, atalhos ensinados e troca de voz
   feedback.py: Feedback ("isso ta errado"), agradecimento, melhorias para o Claude Code e exportar
-  ditado.py: Ditado longo (destinos ipm/projeto/salvar/nota/copiar), revisao, agente IPM e
-    area de transferencia
+  ditado.py: Ditado longo, revisão, destinos do projeto e área de transferência
   anotacoes.py: Historico de respostas, memoria ("lembra que..."), projetos guiados, lembretes e notas
   video.py: YouTube (pagina, canais, controle do que toca), streamings, clicar pelo texto e tocar
   midia.py: Volume (geral e por programa), teclas de midia e Spotify
   info.py: Informacoes: clima, noticias, hora e data
   janelas.py: Janelas, abas e monitores (mover, juntar, separar), tela, desligar o PC, pesquisa na
     internet e abrir programas/sites
+  perfis.py: Perfis dos streamings (Arthur, Mestre...): qual perfil usar antes de buscar/tocar/continuar
   base.py: constantes e funcoes pequenas (reexportadas aqui)
 """
 import logging
@@ -62,6 +62,7 @@ from .midia import MidiaMixin
 from .info import InfoMixin
 from .janelas import JanelasMixin
 from .celular import CelularMixin
+from .perfis import PerfisMixin
 
 log = logging.getLogger(__name__)
 
@@ -74,13 +75,13 @@ def saudacao_do_horario() -> str:
 
 # Os comandos de cada assunto estao nos mixins (veja a lista no topo); aqui fica o nucleo.
 class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixin, AnotacoesMixin,
-               VideoMixin, MidiaMixin, InfoMixin, JanelasMixin, CelularMixin):
+               VideoMixin, MidiaMixin, InfoMixin, JanelasMixin, CelularMixin, PerfisMixin):
     ORDEM = [
         "_cmd_pensamento", "_cmd_parar", "_cmd_descanso", "_cmd_versao", "_cmd_conversinha", "_cmd_exportar", "_cmd_historico", "_cmd_memoria", "_cmd_ensinar_rotina", "_cmd_rotinas", "_cmd_encerrar", "_cmd_reiniciar",
         "_cmd_painel", "_cmd_ajuda", "_cmd_ditado", "_cmd_projeto", "_cmd_feedback", "_cmd_obrigado",
         "_cmd_aprender", "_cmd_atalhos", "_cmd_melhorias", "_cmd_voz",
-        "_cmd_agente_ipm", "_cmd_area_transferencia", "_cmd_juntar", "_cmd_mover", "_cmd_saida_som", "_cmd_volume", "_cmd_midia", "_cmd_janela",
-        "_cmd_youtube_controle", "_cmd_spotify", "_cmd_youtube", "_cmd_streaming", "_cmd_clicar",
+        "_cmd_area_transferencia", "_cmd_juntar", "_cmd_mover", "_cmd_saida_som", "_cmd_volume", "_cmd_midia", "_cmd_janela",
+        "_cmd_controle_video", "_cmd_youtube_controle", "_cmd_spotify", "_cmd_youtube", "_cmd_streaming", "_cmd_clicar",
         "_cmd_clima", "_cmd_noticias", "_cmd_hora_data", "_cmd_tela", "_cmd_desligar_pc",
         "_cmd_lembrete", "_cmd_notas", "_cmd_tocar", "_cmd_pesquisa", "_cmd_print_telegram", "_cmd_tocando",
         "_cmd_abrir", "_cmd_esquecer",
@@ -211,9 +212,10 @@ class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixi
                 # No ditado so "cancela" sozinho desiste (um "nao" no meio do texto e texto)
                 cancelar = re.match(r"^(cancela|cancelar)( o ditado| tudo| isso)?$", n)
             else:
-                # Nestas perguntas "nada"/"nao" e resposta, nao desistencia
+                # Nestas perguntas "nada"/"nao" e resposta, nao desistencia (quem tem aceita_nao trata o "cancela")
                 aceitam_nao = (self._responder_aviso_pensamento, self._proj_extra, self._proj_quer_claude)
-                cancelar = responder not in aceitam_nao and re.match(CANCELAR, n)
+                cancelar = (responder not in aceitam_nao and not getattr(responder, "aceita_nao", False)
+                            and re.match(CANCELAR, n))
             self._rota = "resposta: " + getattr(responder, "__name__", "pergunta").strip("_")
             if cancelar:
                 self._rota += " (cancelou)"
@@ -300,17 +302,29 @@ class Executor(IAMixin, RotinasMixin, AssistenteMixin, FeedbackMixin, DitadoMixi
 
     def _separar_monitor(self, t: str) -> str:
         """"abre o youtube no monitor 2" -> abre no monitor 2 e devolve "abre o youtube"."""
-        sistema.MONITOR_ALVO = None
+        sistema.MONITOR_ALVO, sistema.JANELA_NOVA = None, False
         sistema.SEMPRE_NO_PRINCIPAL = bool((self.cfg.get("janelas") or {}).get("sempre_no_principal", True))
         sistema.SITES_NO_BRAVE = (self.cfg.get("janelas") or {}).get("navegador_sites", "brave") == "brave"
         from .. import navegador as _nav
         _nav.PERFIL_BRAVE = str((self.cfg.get("janelas") or {}).get("perfil_brave") or "")
+        t = self._separar_janela_nova(t)
         resto, numero = self._extrair_monitor(t)
         if numero:
             sistema.MONITOR_ALVO = numero
             log.info("Pedido para o monitor %d", numero)
-            return resto
+            return self._separar_janela_nova(resto)
         return t
+
+    PADRAO_JANELA_NOVA = r"\s+(?:em|numa|na|com)\s+(?:uma\s+)?(?:janela\s+(?:nova|separada)|nova\s+janela|outra\s+janela)$"
+
+    def _separar_janela_nova(self, t: str) -> str:
+        """ "abre a Netflix numa janela nova" -> não reusa a aba que já existe e devolve "abre a netflix"."""
+        achado = re.search(self.PADRAO_JANELA_NOVA, t)
+        if not achado or not t[:achado.start()].strip():
+            return t
+        sistema.JANELA_NOVA = True
+        log.info("Pedido numa janela nova")
+        return t[:achado.start()].strip()
 
     def _tentar_comandos(self, t: str) -> bool:
         for nome in self.ORDEM:

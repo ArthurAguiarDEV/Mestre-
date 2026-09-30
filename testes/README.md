@@ -67,4 +67,4 @@ chegam às APIs do Windows.
   outros módulos legados, como painel e voz, continuam exigindo isolamento.
 - A barreira não é uma sandbox contra código hostil ou uma futura biblioteca
   nativa desconhecida. Novas integrações exigem revisão do inventário e testes.
-- Layout, implementação da voz, Telegram, IPM e extensão não foram alterados.
+- Layout, implementação da voz, Telegram e extensão não foram alterados.

@@ -247,6 +247,7 @@ ULTIMO_NIVEL: float | None = None    # volume_do_programa guarda aqui o nivel no
 MONITOR_ALVO: int | None = None     # o Executor define por comando ("... no monitor 2"); None = padrao
 SEMPRE_NO_PRINCIPAL = True          # painel > Programas e sites > Monitores
 SITES_NO_BRAVE = True               # painel > Programas e sites: abrir sites no Brave
+JANELA_NOVA = False                 # o Executor define por comando ("... numa janela nova"): nao reusa a aba
 
 
 MARCAS_MONITOR = {"GSM": "LG", "LGD": "LG", "AOC": "AOC", "SAM": "Samsung", "SEC": "Samsung", "DEL": "Dell",
@@ -581,15 +582,16 @@ def abrir_site(url: str) -> None:
     if url.startswith("spotify:"):
         webbrowser.open(url)
         return
-    # Pediu um monitor: abre numa JANELA NOVA e so ela vai para la (antes a aba nova abria na janela
-    # que ja existia e a janela inteira, com as outras abas, mudava de monitor).
+    # Pediu um monitor (ou "numa janela nova"): abre numa JANELA NOVA e so ela vai para la (antes a aba nova
+    # abria na janela que ja existia e a janela inteira, com as outras abas, mudava de monitor).
     ja_aberto = bool(brave) and any(e == "brave.exe" for _, _, e in _janelas_visiveis())
+    nova = bool(MONITOR_ALVO or JANELA_NOVA)
     if brave:
         from .navegador import comando_do_brave
-        subprocess.Popen(comando_do_brave(brave, "--new-window", url) if MONITOR_ALVO else comando_do_brave(brave, url))
+        subprocess.Popen(comando_do_brave(brave, "--new-window", url) if nova else comando_do_brave(brave, url))
     else:
-        webbrowser.open(url, new=1 if MONITOR_ALVO else 2)
-    if MONITOR_ALVO or not ja_aberto:   # sem monitor pedido, uma aba nova nao arrasta a janela que ja existia
+        webbrowser.open(url, new=1 if nova else 2)
+    if nova or not ja_aberto:   # sem monitor pedido, uma aba nova nao arrasta a janela que ja existia
         depois_de_abrir(antes)
 
 

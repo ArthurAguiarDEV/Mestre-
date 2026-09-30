@@ -142,8 +142,8 @@ class Segmentador:
 class Transcritor:
     """Whisper local. Usa a placa de video NVIDIA se existir (bem mais rapido)."""
 
-    PROMPT = ("E aí, {palavra}, bora trabalhar. Abre o YouTube. Pergunta pro agente IPM. "
-              "Atende.Net, chamado, folha de pagamento.")
+    PROMPT = ("E aí, {palavra}, bora trabalhar. Abre o YouTube. "
+              "Claude Code, projeto, melhorias e comandos de voz.")
 
     def __init__(self, modelo: str = "small", precisao: str = "equilibrado", dispositivo: str = "auto",
                  palavras_extras: list[str] | None = None, palavra: str = "mestre"):

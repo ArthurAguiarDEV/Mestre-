@@ -7,7 +7,7 @@ Dois caminhos (painel > Celular), os dois gratis e rodando no seu PC:
 
 O que ele faz com o texto:
   - comeca com a palavra de ativacao ("Assessor, abre o YouTube")  -> executa como comando;
-  - senao -> o destino escolhido no painel: "projeto" (app do Claude, padrao), "nota" ou "ipm".
+  - senao -> o destino escolhido no painel: "projeto" (app do Claude, padrao) ou "nota".
 Tudo fica guardado em recebidos/ (texto) e o audio vai para a subpasta "lidos".
 
 So do Telegram (Caixa._comando_especial), sem precisar da palavra de ativacao: "print"/"print do
@@ -147,9 +147,6 @@ class Caixa:
                 with open(PASTA_NOTAS / "notas.txt", "a", encoding="utf-8") as f:
                     f.write(f"[{datetime.now():%d/%m/%Y %H:%M}] (celular) {texto}\n")
                 feito = "Guardei nas suas notas."
-            elif destino == "ipm":
-                self.executor._enviar_ao_agente(texto)
-                feito = "Mandei pro agente IPM."
             else:
                 self.executor._enviar_ao_projeto(CABECALHO.format(nome=nome) + texto)
                 feito = "Mandei pro projeto no app do Claude (e salvei nas melhorias)."

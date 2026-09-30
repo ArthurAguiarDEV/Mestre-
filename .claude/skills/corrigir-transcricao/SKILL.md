@@ -1,6 +1,6 @@
 ---
 name: corrigir-transcricao
-description: Corrige um texto que veio de transcrição de voz (ditado, Whisper, microfone do celular) antes de qualquer outra coisa - erros de português, letras e palavras faltando, nomes próprios escritos errado (ex. "OLA" → Ollama, "EPM" → IPM, "cloud code" → Claude Code) - sem mudar o sentido. Use sempre que o usuário mandar um pedido falado/ditado, um texto com cara de transcrição, ou pedir "corrige a transcrição", "arruma esse texto que eu ditei". Vem ANTES do refinar-pedido.
+description: Corrige um texto que veio de transcrição de voz (ditado, Whisper, microfone do celular) antes de qualquer outra coisa - erros de português, letras e palavras faltando, nomes próprios escritos errado (ex. "OLA" → Ollama, "EPM" → empresa, "cloud code" → Claude Code) - sem mudar o sentido. Use sempre que o usuário mandar um pedido falado/ditado, um texto com cara de transcrição, ou pedir "corrige a transcrição", "arruma esse texto que eu ditei". Vem ANTES do refinar-pedido.
 ---
 
 # Corrigir transcrição
@@ -25,8 +25,8 @@ apoio ("né", "tipo assim", "entendeu?"). Seu trabalho é devolver **o mesmo ped
 | Ouvido como | Certo |
 |---|---|
 | OLA, OMA, Olá, olama, o lama, lhama, LLAM, "IA da OMA" | **Ollama** (IA grátis que roda no PC) |
-| EPM, IPN, IBM, ipê eme | **IPM** (empresa / agente IPM) |
-| atende net, atendeu net | **Atende.Net** |
+| EPM, IPN, IBM, ipê eme | **empresa** (nome reservado) |
+| sistema externo, atendeu net | **sistema externo** |
 | cloud, clóvis, cláudio, Claudia | **Claude** |
 | cloud code, clock code, claude cold | **Claude Code** |
 | esquio, esquil, squil, skil | **skill** (habilidade) |
@@ -61,7 +61,7 @@ O glossário cresce: quando o usuário corrigir uma palavra, acrescente aqui a l
 **Entendi assim:**
 <o texto corrigido, em parágrafos curtos>
 
-<se houve trocas importantes, uma linha:> Troquei: "OLA" → Ollama · "EPM" → IPM · [?] = não tenho certeza
+<se houve trocas importantes, uma linha:> Troquei: "OLA" → Ollama · "EPM" → empresa · [?] = não tenho certeza
 ```
 
 Depois disso, siga para o **refinar-pedido** (cartões + esperar o "ok"), usando o texto corrigido.

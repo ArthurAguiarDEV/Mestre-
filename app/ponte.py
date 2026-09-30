@@ -120,7 +120,7 @@ class Ponte:
         return dados.get("resultado", dados.get("ok"))
 
 
-VERSAO_EXTENSAO = "2.3"   # a da pasta extensao_brave (manifest.json)
+VERSAO_EXTENSAO = "2.5"   # a da pasta extensao_brave (manifest.json)
 
 
 def desatualizada(versao: str) -> bool:

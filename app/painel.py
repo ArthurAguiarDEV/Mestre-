@@ -5,6 +5,7 @@ Abre pelo atalho "Mestre" (app.central), pelo icone perto do relogio, pelo duplo
 """
 import math
 import queue
+import re
 import threading
 import time
 import tkinter as tk
@@ -2682,25 +2683,8 @@ class Painel(ctk.CTk):
         self.aviso.configure(text=f"Estilo “{self.var_estilo.get()}” aplicado. Clique em Salvar.", text_color=tema.ROSA)
 
     # -----------------------------------------------------------------
-    def _aba_ipm(self, pagina):
+    def _aba_projeto(self, pagina):
         f = pagina   # (cada secao abaixo troca f pelo cartao dela)
-        c = self._sec("agente_ipm")
-        f = secao(pagina, "Seu agente IPM no Claude")
-        self.var_ipm_modo = tk.StringVar(value=c.get("modo", "site"))
-        linha_campo(f, "Modo", lambda p: ctk.CTkSegmentedButton(p, values=["site", "cerebro"], variable=self.var_ipm_modo))
-        ctk.CTkLabel(f, text="site = abre seu projeto no claude.ai e envia (grátis, Claude de verdade) · "
-                            "cerebro = responde por voz com a IA local", anchor="w", text_color=tema.TEXTO_FRACO).pack(fill="x")
-        self.ent_link = linha_campo(f, "Link do projeto", lambda p: ctk.CTkEntry(p))
-        self.ent_link.insert(0, c.get("link_projeto", "https://claude.ai/projects"))
-        self.var_seg = tk.IntVar(value=int(c.get("segundos_para_carregar", 7)))
-        rot = ctk.CTkLabel(f, text=f"{self.var_seg.get()} s para a página carregar", anchor="w")
-        linha_campo(f, "Espera antes de colar", lambda p: ctk.CTkSlider(p, from_=2, to=20, number_of_steps=18, variable=self.var_seg,
-                                                                        command=lambda v: rot.configure(text=f"{int(v)} s para a página carregar")))
-        rot.pack(fill="x")
-        self.var_enviar = tk.BooleanVar(value=bool(c.get("enviar_automaticamente", True)))
-        linha_campo(f, "Enviar sozinho", lambda p: ctk.CTkSwitch(p, text="apertar Enter depois de colar", variable=self.var_enviar))
-        ctk.CTkButton(f, text="Testar: abrir o projeto", command=lambda: webbrowser.open(self.ent_link.get())).pack(anchor="w", pady=8)
-
         from .comandos import LINK_PROJETO_PADRAO
         pm = self._sec("projeto_mestre")
         f = secao(pagina, f"Projeto {self.nome} (Claude Code)",
@@ -2821,6 +2805,24 @@ class Painel(ctk.CTk):
         ctk.CTkButton(b2, text="+ Adicionar canal", command=lambda: self.tab_canais.adicionar()).pack(side="left", padx=4)
         ctk.CTkButton(b2, text="Apagar todos os canais", **PERIGO, command=self._apagar_canais).pack(side="right", padx=4)
         self.tab_canais.pack(fill="both", expand=True, padx=(24, 14))
+        self._secao_perfis_streaming(pagina)
+
+    def _secao_perfis_streaming(self, pagina):
+        st = self._sec("streaming")
+        f = secao(pagina, "Perfis dos streamings",
+                  "Os nomes dos perfis DENTRO da Netflix, Disney, Prime Video, HBO Max e Globoplay (não é o perfil do "
+                  f"Brave). Diga: “{self.palavra}, toca Loki na Disney no perfil Arthur”. Sem dizer o perfil, o "
+                  f"{self.nome} pergunta (com um padrão, ele só confirma) e nunca troca de perfil sozinho. Aqui ficam só "
+                  "os nomes: o login você faz no próprio site.")
+        self.ent_perfis_streaming = linha_campo(f, "Perfis", lambda p: ctk.CTkEntry(
+            p, placeholder_text="separados por vírgula (ex.: Arthur, Mestre, Magnífico)"))
+        perfis = st.get("perfis") or []
+        if perfis:
+            self.ent_perfis_streaming.insert(0, ", ".join(str(x) for x in perfis))
+        self.ent_perfil_padrao = linha_campo(f, "Perfil padrão", lambda p: ctk.CTkEntry(
+            p, placeholder_text="vazio = perguntar qual perfil"))
+        if st.get("perfil_padrao"):
+            self.ent_perfil_padrao.insert(0, str(st.get("perfil_padrao")))
 
     def _ver_extensao(self):
         def trabalho():
@@ -3182,7 +3184,7 @@ class Painel(ctk.CTk):
         f = secao(pagina, "O que ele faz com o áudio", f"Começou com “{self.palavra}, …”? Ele executa como comando "
                                                f"(ex.: “{self.palavra.capitalize()}, abre o YouTube”). Senão, vai para o destino abaixo. "
                                                "O texto fica guardado na pasta recebidos.")
-        self.DESTINOS_CELULAR = {"projeto": "Projeto no app do Claude", "nota": "Minhas notas", "ipm": "Agente IPM"}
+        self.DESTINOS_CELULAR = {"projeto": "Projeto no app do Claude", "nota": "Minhas notas"}
         self.var_destino_cel = tk.StringVar(value=self.DESTINOS_CELULAR.get(str(rc.get("destino", "projeto")),
                                                                             self.DESTINOS_CELULAR["projeto"]))
         linha_campo(f, "Destino", lambda p: ctk.CTkSegmentedButton(p, values=list(self.DESTINOS_CELULAR.values()),
@@ -3647,8 +3649,20 @@ class Painel(ctk.CTk):
         self.bt_val_direcionado = ctk.CTkButton(fr_val_pos, text="Escolher áreas no Direcionado", width=230,
                                                 **SECUNDARIO, command=self._val_ir_direcionado)
         self._val_atualizar_botao_claude()
+        # O Git (arquivos alterados) roda numa thread e fica guardado 1 min: clicar nos modos/grupos
+        # não chama mais o Git na linha da janela; quando ele responde, o resumo do escopo se atualiza
         self._val_atualizar_escopo()
+        self._val_esperar_git(20)
         self._val_desenhar()
+
+    def _val_esperar_git(self, tentativas: int):
+        from . import validacao
+        if validacao.git_pronto():
+            if self._val is None:
+                self._val_atualizar_escopo()
+            return
+        if tentativas > 0:
+            self.after(500, lambda: self._val_esperar_git(tentativas - 1))
 
     def _val_atualizar_botao_claude(self):
         from . import validacao
@@ -3684,9 +3698,13 @@ class Painel(ctk.CTk):
         from . import validacao
         grupos = [self._val_grupos[i] for i in self.lista_val_grupos.curselection()]
         itens = validacao.ler_roteiro()
-        if self.var_val_modo.get() == "Direcionado":
-            return validacao.selecionar_direcionado(itens, grupos_manuais=grupos)
-        return validacao.selecionar_modo(itens, self.var_val_modo.get(), grupos)
+        modo = self.var_val_modo.get()
+        if modo in ("Direcionado", "Rápido"):
+            arquivos = validacao.arquivos_alterados_git(esperar=False)   # nunca espera o Git aqui
+            if modo == "Rápido":
+                return validacao.selecionar_rapido(itens, arquivos)
+            return validacao.selecionar_direcionado(itens, arquivos, grupos_manuais=grupos)
+        return validacao.selecionar_modo(itens, modo, grupos)
 
     def _val_atualizar_escopo(self):
         from . import validacao
@@ -3755,15 +3773,16 @@ class Painel(ctk.CTk):
         self.rot_val_progresso.configure(
             text=f"Item {s.indice + 1} de {len(s.itens)} · {validacao.NOMES_SECAO.get(item.secao, '')} › {item.grupo}")
         continuo = getattr(s, "continuo", False)
-        self.rot_val_frase.configure(font=tema.fonte(26 if continuo else 18, True))
-        if not item.exige_microfone:
-            acao = {"pre_condicao": "Confirme a condição", "espera": "Aguarde",
-                    "observacao": "Confira", "teste_automatico": "Teste"}.get(item.tipo_item, "Faça")
-            self.rot_val_frase.configure(text=f"{acao}: {item.frase}")
-        else:
-            self.rot_val_frase.configure(text=f"Fale: “{item.para_falar(self.palavra)}”")
-        comando = ", ".join(item.comandos) or item.esperado
-        self.rot_val_esperado.configure(text=f"O que deve acontecer: {item.o_que}   ·   esperado: {comando}")
+        self.rot_val_frase.configure(font=tema.fonte(22 if continuo else 17, True))
+        # Em cima (grande): o que FAZER agora (FAÇA ANTES / QUANDO / FALE / ESPERE / OBSERVE...).
+        # Embaixo (menor): o que deve acontecer, o comando esperado e a prévia da próxima etapa.
+        conferir = ("DEVE ACONTECER", "COMANDO ESPERADO", "EM SEGUIDA")
+        linhas = validacao.instrucoes(item, self.palavra)
+        fazer = [(r, t) for r, t in linhas if r not in conferir]
+        ver = [(r, t) for r, t in linhas if r in conferir]
+        self.rot_val_frase.configure(text="\n".join(
+            f"{r}: “{t}”" if r == "FALE" else f"{r} {t}" if r == "ETAPA" else f"{r}: {t}" for r, t in fazer))
+        self.rot_val_esperado.configure(text="\n".join(f"{r}: {t}" for r, t in ver))
         c = self._val_captura or {}
         entendi = c.get("entendi") or ""
         if c.get("rota"):
@@ -3789,6 +3808,7 @@ class Painel(ctk.CTk):
         textos = {
             "ok": ("✅  Deu certo! Indo para a próxima...", tema.SUCESSO),
             "falha": (f"❌  Não bateu (esperado {esperado}, atendeu {c.get('rota') or 'nada'}). "
+                      f"{validacao.diagnostico(c)} "
                       "Veja abaixo o que ele entendeu: ❌ Deu errado para anotar, Repetir ou Pular.", tema.AVISO),
             "conferir": ("Não dá para conferir sozinho: marque ✅ Deu certo ou ❌ Deu errado.", tema.AVISO),
             "silencio": ("🔇  Não ouvi nada — fale de novo ou Pular.", tema.AVISO),
@@ -3835,7 +3855,8 @@ class Painel(ctk.CTk):
         self._val_sugestao = r["sugestao"] or validacao.conferir(item, r["captura"])
         if r["estado"] == "ok":
             indice = s.indice
-            self._val_avanco = self.after(int(validacao.AVANCO_SEGUNDOS * 1000), lambda: self._val_avancar(indice))
+            espera = float(r.get("avanco", validacao.AVANCO_SEGUNDOS))   # etapa "no meio da resposta": na hora
+            self._val_avanco = self.after(int(espera * 1000), lambda: self._val_avancar(indice))
         if mudou:
             self._val_desenhar()
 
@@ -3854,7 +3875,7 @@ class Painel(ctk.CTk):
             elif getattr(s, "continuo", False):
                 self._val_vigiar_continuo(s, item)
             elif item.exige_microfone:
-                captura = validacao.capturar(s.exibida_em)
+                captura = validacao.capturar(s.exibida_em, item=item)
                 if captura != self._val_captura:
                     self._val_captura = captura
                     self._val_sugestao = validacao.conferir(item, captura)
@@ -4316,7 +4337,7 @@ class Painel(ctk.CTk):
     # -----------------------------------------------------------------
     SALVAR_PAGINA = {
         "Início": "_salvar_inicio", "Personalidade": "_salvar_personalidade", "Voz": "_salvar_voz",
-        "Áudio": "_salvar_audio", "Conversa": "_salvar_conversa", "IPM e projetos": "_salvar_ipm",
+        "Áudio": "_salvar_audio", "Conversa": "_salvar_conversa", "Projeto": "_salvar_projeto",
         "YouTube": "_salvar_youtube", "Programas e sites": "_salvar_programas", "Spotify": "_salvar_spotify",
         "Celular": "_salvar_celular", "Histórico": "_salvar_historico", "Aparência": "_salvar_aparencia",
         "Sugestões de melhoria": "_salvar_sugestoes",
@@ -4432,7 +4453,7 @@ class Painel(ctk.CTk):
         cb["gemini_textos_longos_chars"] = int(self.var_gemini_longos.get())
         configuracao.secao(c, "assistente")["cidade"] = configuracao.aspas(self.ent_cidade.get().strip() or "São Paulo")
 
-    def _salvar_ipm(self, c):
+    def _salvar_projeto(self, c):
         pm = configuracao.secao(c, "projeto_mestre")
         pm["link"] = configuracao.aspas(self.ent_link_projeto.get().strip())
         pm["segundos_para_carregar"] = int(self.var_seg_projeto.get())
@@ -4445,11 +4466,6 @@ class Painel(ctk.CTk):
         pj["pasta"] = configuracao.aspas(self.ent_pasta_projetos.get().strip())
         pj["abrir_pesquisas"] = bool(self.var_pesquisas.get())
         pj["pesquisar_internet"] = bool(self.var_pesquisar_web.get())
-        ipm = configuracao.secao(c, "agente_ipm")
-        ipm["modo"] = self.var_ipm_modo.get()
-        ipm["link_projeto"] = configuracao.aspas(self.ent_link.get().strip())
-        ipm["segundos_para_carregar"] = int(self.var_seg.get())
-        ipm["enviar_automaticamente"] = bool(self.var_enviar.get())
 
     def _salvar_spotify(self, c):
         sp = configuracao.secao(c, "spotify")
@@ -4519,6 +4535,12 @@ class Painel(ctk.CTk):
         ytc["navegador"] = configuracao.aspas(next(k for k, v in self.NAVEGADORES.items() if v == self.var_yt_canal.get()))
         ytc["modo"] = configuracao.aspas(next(k for k, v in self.MODOS_YT.items() if v == self.var_yt_modo.get()))
         configuracao.trocar_mapa(c, "canais_youtube", self.tab_canais.valores())
+        # perfis dos streamings: só nomes (nada com cara de e-mail, endereço ou senha)
+        st = configuracao.secao(c, "streaming")
+        nomes = [x.strip() for x in self.ent_perfis_streaming.get().split(",")
+                 if x.strip() and not re.search(r"[@/\\:=]|senha|password|token|cookie", x, re.I)]
+        st["perfis"] = configuracao.lista_em_linha(list(dict.fromkeys(nomes)))
+        st["perfil_padrao"] = configuracao.aspas(self.ent_perfil_padrao.get().strip())
 
     def _salvar_programas(self, c):
         jn = configuracao.secao(c, "janelas")
@@ -4610,7 +4632,7 @@ PAGINAS = {
     "Voz":               ("voz", "Qual voz, velocidade, tom e fala fluida.", Painel._aba_voz),
     "Áudio":             ("mic", "Microfone, calibração, reconhecimento de voz e frases longas.", Painel._aba_audio),
     "Conversa":          ("conversa", "Modo conversa, IA que demora (segundo plano) e sua cidade.", Painel._aba_conversa),
-    "IPM e projetos":    ("maleta", "Agente IPM, projeto Mestre (Claude) e projetos guiados.", Painel._aba_ipm),
+    "Projeto":            ("maleta", "Projeto Mestre (Claude) e projetos guiados.", Painel._aba_projeto),
     "YouTube":           ("youtube", "Canais e importação das suas inscrições.", Painel._aba_youtube),
     "Programas e sites": ("janelas", "O que ele abre quando você pede e em qual monitor.", Painel._aba_programas),
     "Spotify":           ("musica", "Playlists para tocar por voz.", Painel._aba_spotify),
@@ -4632,7 +4654,7 @@ GRUPOS_MENU = [
     ("ASSISTENTE", ["Início", "Personalidade", "Conversa"]),
     ("VOZ E OUVIDO", ["Voz", "Áudio"]),
     ("APPS E SITES", ["YouTube", "Spotify", "Programas e sites", "Rotinas", "Atalhos"]),
-    ("INTEGRAÇÕES", ["IPM e projetos", "Celular"]),
+    ("INTEGRAÇÕES", ["Celular"]),
     ("SISTEMA", ["Histórico", "Melhorias", "Validar atualização", "Sugestões de melhoria", "Tempos", "Aparência"]),
 ]
 

@@ -1,4 +1,4 @@
-"""Ditado longo (destinos ipm/projeto/salvar/nota/copiar), revisao, agente IPM e area de transferencia.
+"""Ditado longo, revisão, destinos do projeto e área de transferência.
 
 Mixin do Executor (app/comandos/__init__.py): os metodos usam self.voz, self.cfg, self.falar...
 do nucleo e chamam metodos dos outros mixins pelo self.
@@ -19,28 +19,6 @@ from .base import (
 
 
 class DitadoMixin:
-    # =================================================================
-    #  Agente IPM
-    # =================================================================
-    def _cfg_ipm(self) -> dict:
-        return self.cfg.get("agente_ipm") or {}
-
-    def _cmd_agente_ipm(self, t: str) -> bool:
-        if not contem(t, "agente ipm"):
-            return False
-        if re.search(r"\b(copiei|copiado|area de transferencia|o que ta copiado|o que esta copiado)\b", t):
-            return False  # tratado em _cmd_area_transferencia
-        if re.search(r"\babre\b", t) and re.fullmatch(r"(abre )?(o |a )?(meu )?agente ipm( no claude)?", t):
-            sistema.abrir_site(self._cfg_ipm().get("link_projeto", "https://claude.ai/projects"))
-            self.voz.falar("Abri seu agente IPM no Claude.")
-            return True
-        pergunta = self._texto_depois_de("agente ipm")
-        if re.search(r"\b(ditado|ditar|vou ditar|vou falar|caso longo)\b", t) or len(pergunta) < 4:
-            self._iniciar_ditado("ipm")
-            return True
-        self._enviar_ao_agente(pergunta)
-        return True
-
     def _texto_depois_de(self, gatilho: str) -> str:
         """Pega, na frase ORIGINAL (com acentos), o que vem depois do gatilho ou de um sinonimo dele."""
         for jeito in self.vocab.jeitos_de(gatilho):
@@ -82,8 +60,6 @@ class DitadoMixin:
             return True
         if not re.search(r"\b(vou ditar|quero ditar|modo ditado|ditado|ditar|pedido longo|texto longo)\b", t):
             return False
-        if contem(t, "agente ipm"):
-            return False  # tratado em _cmd_agente_ipm
         destino = ("projeto" if re.search(r"\b(melhorias?|ideias?|sugestao|sugestoes|projeto|claude code)\b", t) else
                    "nota" if re.search(r"\b(nota|notas|anotacao)\b", t) else None)
         self._iniciar_ditado(destino)
@@ -92,7 +68,7 @@ class DitadoMixin:
     def _silencio_ditado(self) -> float:
         return float((self.cfg.get("ouvido") or {}).get("ditado_silencio_max") or 180)
 
-    def _iniciar_ditado(self, destino: str | None = "ipm") -> None:
+    def _iniciar_ditado(self, destino: str | None = None) -> None:
         self._ditado = []
         self._destino_ditado = destino
         self._espera_ditado = self._silencio_ditado()
@@ -165,12 +141,12 @@ class DitadoMixin:
             pergunta = (f"Anotei {trechos}. Confere na janela e fala manda que eu levo pro "
                         f"{self._nome_do_destino(destino)}.")
         else:
-            pergunta = (f"Anotei {trechos}. Mando pro agente IPM ou pro projeto {self.nome}?"
+            pergunta = (f"Anotei {trechos}. Mando pro projeto {self.nome}, salvo nas melhorias, copio ou abro um chat novo?"
                         + (" Se quiser, corrige o texto na janela." if revisar else ""))
         self.perguntar(pergunta, self._responder_destino, espera=90)
 
     def _nome_do_destino(self, destino: str) -> str:
-        return {"ipm": "agente IPM", "projeto": f"projeto {self.nome}", "salvar": "lista de melhorias",
+        return {"projeto": f"projeto {self.nome}", "salvar": "lista de melhorias",
                 "nota": "bloco de notas", "copiar": "Control C"}.get(destino, destino)
 
     def _qual_destino(self, resposta: str) -> str | None:
@@ -190,10 +166,8 @@ class DitadoMixin:
                 or any(n and contem(d, n) for n in nomes)
                 or any(n and re.search(rf"\b(pro|pra|para|para o|no|ao)\s+{re.escape(n)}\b", original) for n in nomes)):
             return "projeto"
-        if re.search(r"\b(ipm|agente|trabalho|atende)\b", d):
-            return "ipm"
         if re.search(r"\bclaude\b", d):
-            return "?"   # "manda pro Claude": pode ser qualquer um dos dois
+            return "projeto"
         return None
 
     def _responder_destino(self, resposta: str) -> None:
@@ -203,11 +177,8 @@ class DitadoMixin:
                 r"\b(manda|pode mandar|envia|pode enviar|sim|isso|pode|ok|beleza|confirma|leva|bora)\b",
                 normalizar(resposta)):
             destino = self._destino_ditado
-        if destino == "?":
-            self.perguntar(f"Pro agente IPM ou pro projeto {self.nome}?", self._responder_destino, espera=60)
-            return
         if destino is None:
-            self.perguntar(f"Não peguei. Agente IPM, projeto {self.nome}, só salvar ou copiar?",
+            self.perguntar(f"Não peguei. Projeto {self.nome}, salvar nas melhorias, copiar ou chat novo?",
                            self._responder_destino, espera=60)
             return
         self._fechar_revisao()
@@ -217,9 +188,7 @@ class DitadoMixin:
         if not texto.strip():
             self.voz.falar("O texto ficou vazio, então não mandei nada.")
             return
-        if destino == "ipm":
-            self._enviar_ao_agente(texto)
-        elif destino == "projeto":
+        if destino == "projeto":
             self._enviar_ao_projeto(texto)
         elif destino == "salvar":
             self._salvar_melhoria(texto)
@@ -335,18 +304,6 @@ class DitadoMixin:
             sistema.clicar_e_colar_na_janela_ativa(texto)
         self.voz.falar("Pronto. Se o texto não aparecer, é só dar Control V.")
 
-    def _enviar_ao_agente(self, texto: str) -> None:
-        c = self._cfg_ipm()
-        if c.get("modo", "site") == "cerebro":
-            self._conversar(texto, perfil="agente_ipm")
-            return
-        sistema.abrir_site(c.get("link_projeto", "https://claude.ai/projects"))
-        self.voz.falar(random.choice(["Mandando pro agente IPM.", "Levando isso pro agente IPM.",
-                                      "Deixa comigo, já mando pro agente."]))
-        time.sleep(float(c.get("segundos_para_carregar", 7)))
-        sistema.colar_e_enviar(texto, enviar=c.get("enviar_automaticamente", True))
-        self.voz.falar("Enviado! Quando a resposta chegar, clica em copiar e fala: {palavra}, lê pra mim.")
-
     # =================================================================
     #  Area de transferencia (o que voce copiou com Ctrl+C)
     # =================================================================
@@ -359,11 +316,6 @@ class DitadoMixin:
         texto = sistema.ler_area_transferencia()
         if not texto.strip():
             self.voz.falar("A área de transferência está vazia. Copia o texto com Ctrl C primeiro.")
-            return True
-        if contem(t, "agente ipm"):
-            # "manda o que eu copiei pro agente IPM e pergunta como resolver" -> "pergunta como resolver"
-            instrucao = re.sub(r"^(e|,)\s+", "", self._texto_depois_de("agente ipm"), flags=re.I).strip()
-            self._enviar_ao_agente(f"{instrucao}\n\n{texto}" if len(instrucao) > 3 else texto)
             return True
         self._responder(texto, "Texto copiado")
         return True

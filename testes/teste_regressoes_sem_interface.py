@@ -497,6 +497,7 @@ class ValidacaoSemInterface(unittest.TestCase):
         self.assertEqual(antes.rotas_grupo, ('_cmd_hora_data',))
 
     def test_git_considera_staged_e_unstaged_sem_interface(self):
+        validacao.esquecer_git()
         with patch.object(validacao.subprocess, 'run', side_effect=[
             SimpleNamespace(stdout=b'a.py\0'), SimpleNamespace(stdout=b'b.py\0a.py\0'),
             SimpleNamespace(stdout=b'c.py\0')]) as comando:
@@ -507,8 +508,13 @@ class ValidacaoSemInterface(unittest.TestCase):
                          ('git', 'diff', '--name-only', '-z'))
         self.assertEqual(comando.call_args_list[2].args[0],
                          ('git', 'diff', '--name-only', '-z', '@{upstream}...HEAD'))
+        validacao.esquecer_git()
         with patch.object(validacao.subprocess, 'run', return_value=SimpleNamespace(stdout=b'')):
             self.assertEqual(validacao.arquivos_alterados_git(Path('repositorio')), [])
+        # a resposta fica guardada: clicar de novo no painel não roda o Git outra vez
+        with patch.object(validacao.subprocess, 'run', side_effect=AssertionError('rodou o Git de novo')):
+            self.assertEqual(validacao.arquivos_alterados_git(Path('repositorio')), [])
+        validacao.esquecer_git()
 
     def test_direcionado_mapeia_arquivos_falhas_e_regressao_sem_duplicar(self):
         itens = validacao.ler_roteiro()
@@ -608,8 +614,12 @@ class ValidacaoSemInterface(unittest.TestCase):
         objeto._val_grupos = validacao.grupos_disponiveis(validacao.ler_roteiro())
         objeto.lista_val_grupos = ListaFalsa()
         objeto.rot_val_escopo = RotuloFalso()
-        objeto._val_atualizar_escopo()
+        with patch.object(validacao, 'arquivos_alterados_git', return_value=[]),                 patch.object(validacao, 'feedbacks_recentes', return_value=[]):
+            objeto._val_atualizar_escopo()
         self.assertIn('4 itens', objeto.rot_val_escopo.texto)
+        with patch.object(validacao, 'arquivos_alterados_git', return_value=['app/comandos/janelas.py']),                 patch.object(validacao, 'feedbacks_recentes', return_value=[]):
+            objeto._val_atualizar_escopo()
+        self.assertIn('arquivo app/comandos/janelas.py', objeto.rot_val_escopo.texto)
         self.assertFalse(objeto.lista_val_grupos.visivel)
         estado['modo'] = 'Direcionado'
         objeto.lista_val_grupos.indices = (0,)
@@ -673,7 +683,7 @@ class ValidacaoSemInterface(unittest.TestCase):
         for nome in ('_val_atualizar_botao_claude', '_val_atualizar_escopo', '_val_desenhar',
                      '_val_comecar', '_val_marcar', '_val_errado', '_val_repetir',
                      '_val_anterior', '_val_parar', '_val_confirmar_erro', '_val_ir_direcionado',
-                     '_val_abrir_relatorio', '_val_mandar_claude'):
+                     '_val_abrir_relatorio', '_val_mandar_claude', '_val_esperar_git'):
             setattr(objeto, nome, lambda *_: None)
         objeto._aba_validacao(WidgetFalso())
         self.assertEqual(len(objeto.lista_val_grupos.linhas), len(validacao.grupos_disponiveis(validacao.ler_roteiro())))
@@ -901,6 +911,242 @@ class ValidacaoSemInterface(unittest.TestCase):
             recorrente = validacao.salvar_feedbacks(sessao, concluido, datetime(2026, 10, 1))
             self.assertEqual(len(recorrente), 1)  # regressão nova não some atrás de um item já concluído
             self.assertIn('possível duplicidade', recorrente[0])
+
+
+class ValidacaoCorrecoes(unittest.TestCase):
+    """Cartão 20260929-195357-a641ed: etapas com o esperado certo, instruções claras, captura sem
+    misturar etapas, comando feito pela IA visível e Rápido dinâmico."""
+    CAB = '## Novidades\n### Grupo\n| Frase | Ação | Esperado |\n|---|---|---|\n'
+
+    def _itens(self, *linhas):
+        return validacao.ler_roteiro(texto=self.CAB + '\n'.join(linhas))
+
+    def test_sequencia_com_um_comando_so_vale_para_a_ultima_etapa(self):
+        item = self._itens('| `Mestre, que horas são` e, no meio da resposta, `Mestre, abre o Spotify` '
+                           '| A fala para e o Spotify abre | `_cmd_abrir` |')[0]
+        etapas = validacao.Sessao([item]).itens
+        self.assertEqual([(e.tipo, e.comandos) for e in etapas], [('preparo', []), ('comando', ['_cmd_abrir'])])
+        self.assertNotIn('_cmd_abrir', etapas[0].esperado)
+        self.assertEqual(validacao.conferir(etapas[0], {'rota': '_cmd_hora_data'}), 'ok')
+        self.assertEqual(validacao.conferir(etapas[0], {'rota': 'ignorado (ruido)'}), 'falha')
+        self.assertEqual(etapas[1].instrucao, 'no meio da resposta')
+        self.assertTrue(etapas[0].colada)
+        self.assertIn('Mestre, abre o Spotify', etapas[0].proxima)
+
+    def test_sequencia_com_esperado_por_etapa(self):
+        item = self._itens('| `Mestre, me conta uma curiosidade` e, no meio da resposta, `Mestre, para` '
+                           '| Só para | (IA) → `_cmd_parar` |')[0]
+        a, b = validacao.Sessao([item]).itens
+        self.assertEqual((a.tipo, a.comandos, b.tipo, b.comandos), ('ia', [], 'comando', ['_cmd_parar']))
+        self.assertEqual(validacao.conferir(a, {'rota': 'ia'}), 'ok')
+        # "para" durante a fala: o ouvido só cala (rota "ignorado (só parou de falar)") e isso conta
+        self.assertEqual(validacao.conferir(b, {'rota': 'ignorado (só parou de falar)'}), 'ok')
+        self.assertEqual(validacao.conferir(b, {'rota': '_cmd_parar'}), 'ok')
+
+    def test_voltar_do_descanso_conta_como_descanso(self):
+        item = self._itens('| `Mestre, bora voltar a trabalhar` | acorda | `_cmd_descanso` |')[0]
+        self.assertEqual(validacao.conferir(item, {'rota': 'saiu do descanso'}), 'ok')
+
+    def test_alternativas_com_ou_nao_viram_sequencia(self):
+        item = self._itens('| `Mestre, volta pro fone` (ou `coloca no fone`, `agora tô usando o fone`) '
+                           '| volta pro fone | `_cmd_saida_som` |')[0]
+        self.assertEqual((item.tipo_item, item.falas), ('fala', ['Mestre, volta pro fone']))
+        self.assertIn('coloca no fone', item.nota)
+
+    def test_instrucoes_dizem_o_que_fazer_falar_esperar_e_observar(self):
+        itens = self._itens(
+            '| Desligue o Bluetooth da caixinha e fale `Mestre, coloca na caixinha` | avisa | `_cmd_saida_som` |',
+            '| `Mestre, pausa o vídeo` (YouTube em 2 telas) | pausa | `_cmd_youtube_controle` |',
+            '| Espere passar o tempo de castigo | volta | (IA) |',
+            '| Confira o indicador | aparece | (visual) |',
+            '| Se a rede estiver ligada | necessário | (painel) |',
+            '| (painel) Clique em Salvar | salva | (painel) |',
+            '| Rode `ferramentas\\x.bat` (responda `s`) | cria | (ferramenta) |')
+        rotulos = [[r for r, _ in validacao.instrucoes(i, 'Jarvis')] for i in itens]
+        self.assertEqual(itens[0].tipo_item, 'fala')   # a fala é o teste; a ação vem antes
+        self.assertEqual(validacao.instrucoes(itens[0], 'Jarvis')[:2],
+                         [('FAÇA ANTES', 'Desligue o Bluetooth da caixinha'), ('FALE', 'Jarvis, coloca na caixinha')])
+        self.assertIn('ATENÇÃO', rotulos[1])
+        self.assertEqual([r[0] for r in rotulos[2:]], ['ESPERE', 'OBSERVE', 'CONFIRA ANTES', 'FAÇA', 'FAÇA'])
+        self.assertEqual(itens[6].tipo_item, 'acao_manual')   # comando de terminal nunca vai ao microfone
+        for linhas in rotulos:
+            self.assertIn('DEVE ACONTECER', linhas)
+        self.assertNotIn('Mestre', ' '.join(t for _, t in validacao.instrucoes(itens[0], 'Jarvis')))
+
+    def test_captura_ignora_pedido_da_etapa_anterior_que_demorou(self):
+        t0 = 2_000_000.0
+        ouv = [{'ts': t0 - 5, 'texto': 'Mestre, manda um print no Telegram', 'chamou': True},
+               {'ts': t0 + 2, 'texto': 'Mestre, que horas são', 'chamou': True}]
+        hist = [{'ts': t0 + 1, 'tipo': 'comando', 'pedido': 'Mestre, manda um print no Telegram',
+                 'rota': '_cmd_print_telegram', 'resposta': 'Tirando o print.'}]
+        item = self._itens('| `Mestre, que horas são` | hora | `_cmd_hora_data` |')[0]
+        c = validacao.capturar(t0, hist, ouv, item)
+        self.assertEqual(c['rota'], '')   # ainda não registrou a hora; o print não conta
+        hist.append({'ts': t0 + 3, 'tipo': 'comando', 'pedido': 'Mestre, que horas são',
+                     'rota': '_cmd_hora_data', 'resposta': 'São dez.'})
+        self.assertEqual(validacao.capturar(t0, hist, ouv, item)['rota'], '_cmd_hora_data')
+
+    def test_captura_prefere_o_pedido_parecido_com_a_frase_da_tela(self):
+        t0 = 3_000_000.0
+        hist = [{'ts': t0 + 2, 'tipo': 'comando', 'pedido': 'Mestre, aumenta o volume', 'rota': '_cmd_volume'},
+                {'ts': t0 + 6, 'tipo': 'comando', 'pedido': 'não registrou o comando certo', 'rota': 'ia'}]
+        ouv = [{'ts': t0 + 1, 'texto': 'Mestre, aumenta o volume', 'chamou': True},
+               {'ts': t0 + 5, 'texto': 'não registrou o comando certo', 'conversa': True}]
+        item = self._itens('| `Mestre, aumenta o volume` | sobe | `_cmd_volume` |')[0]
+        c = validacao.capturar(t0, hist, ouv, item)
+        self.assertEqual((c['rota'], c['ouvi'], c['outros']), ('_cmd_volume', 'Mestre, aumenta o volume', 1))
+        self.assertIn('mais 1 pedido', validacao.diagnostico(c))
+
+    def test_comando_feito_pela_ia_aparece_na_hora(self):
+        t0 = 4_000_000.0
+        hist = [{'ts': t0 + 1, 'tipo': 'ia executou comando', 'pedido': 'me dá uma dica de livro',
+                 'rota': '_cmd_youtube', 'ia_texto': 'abre o youtube'},
+                {'ts': t0 + 2, 'tipo': 'comando', 'pedido': 'Mestre, me dá uma dica de livro', 'rota': 'ia',
+                 'entendi': 'me da uma dica de livro', 'resposta': 'Youtube já estava aberto.'}]
+        ouv = [{'ts': t0 + 0.5, 'texto': 'Mestre, me dá uma dica de livro', 'chamou': True}]
+        item = self._itens('| `Mestre, me dá uma dica de livro` | pensa | (vai pensar, sem comando) |')[0]
+        c = validacao.capturar(t0, hist, ouv, item)
+        self.assertEqual((c['rota'], c['ia_comando']), ('_cmd_youtube', '_cmd_youtube'))
+        self.assertEqual(validacao.conferir(item, c), 'falha')
+        self.assertIn('a IA a transformou em _cmd_youtube', validacao.explicar(item, c, 'falha'))
+        ultimos = validacao.ultimos_comandos(5, hist, ouv)
+        self.assertEqual(len(ultimos), 1)   # o registro da IA não parece um pedido repetido
+        self.assertIn('ia → _cmd_youtube', ultimos[0]['entendi'])
+
+    def test_etapa_colada_aceita_fala_antes_de_aparecer_na_tela(self):
+        item = self._itens('| `Mestre, que horas são` e, no meio da resposta, `Mestre, abre o Spotify` '
+                           '| abre | `_cmd_hora_data` → `_cmd_abrir` |')[0]
+        sessao = validacao.Sessao([item])
+        ref = 5_000_000.0
+        sessao.exibida_em = ref + 100
+        sessao.marcar('ok', {'rota': '_cmd_hora_data', 'ts': ref})
+        self.assertAlmostEqual(sessao.exibida_em, ref + 0.01)
+        r = validacao.avaliar_continuo(sessao.itens[0], ref - 1, ref + 1,
+                                       [{'ts': ref, 'tipo': 'comando', 'pedido': 'Mestre, que horas são',
+                                         'rota': '_cmd_hora_data'}],
+                                       [{'ts': ref - 0.5, 'texto': 'Mestre, que horas são', 'chamou': True}])
+        self.assertEqual((r['estado'], r['avanco']), ('ok', validacao.AVANCO_COLADO))
+
+    def test_rapido_dinamico_usa_feedbacks_recentes_e_arquivos(self):
+        itens = validacao.ler_roteiro()
+        so_base = validacao.selecionar_rapido(itens, [], [])
+        self.assertEqual([i.id for i in so_base.itens], list(validacao.IDS_RAPIDOS))
+        self.assertIn('Nenhum arquivo alterado', validacao.descrever_escopo(so_base))
+        alvo = next(i for i in itens if i.exige_microfone and i.id not in validacao.IDS_RAPIDOS)
+        com_fb = validacao.selecionar_rapido(itens, [], [{'id': alvo.id, 'data': '29/09/2026'}])
+        self.assertIn(alvo.id, [i.id for i in com_fb.itens])
+        self.assertIn('feedback de 29/09/2026', validacao.descrever_escopo(com_fb))
+        por_arquivo = validacao.selecionar_rapido(itens, ['app/ouvido.py'], [])
+        extras = [i for i in por_arquivo.itens if i.id not in validacao.IDS_RAPIDOS]
+        self.assertTrue(extras and len(extras) <= validacao.MAXIMO_EXTRAS_RAPIDO)
+        self.assertTrue(all(i.exige_microfone for i in por_arquivo.itens))   # nada físico no Rápido
+        self.assertIn('arquivo app/ouvido.py', validacao.descrever_escopo(por_arquivo))
+        ids = [i.id for i in por_arquivo.itens]
+        self.assertEqual(len(ids), len(set(ids)))
+        # feedback antigo (sem ID) só entra se a frase E o esperado anotados batem
+        antigo = validacao.selecionar_rapido(itens, [], [
+            {'id': '', 'ouvi': 'Assessor, qual saída de som tá ativa?', 'esperado': '_cmd_saida_som',
+             'data': '29/09/2026'},
+            {'id': '', 'ouvi': 'Assessor, qual saída de som tá ativa?', 'esperado': '_cmd_abrir',
+             'data': '29/09/2026'}])
+        self.assertEqual([i.id for i in antigo.itens if i.id not in validacao.IDS_RAPIDOS], ['item-027'])
+
+    def test_feedbacks_recentes_le_data_id_e_esperado(self):
+        with tempfile.TemporaryDirectory(prefix='mestre_fb_recente_') as tmp:
+            arquivo = Path(tmp) / 'MELHORIAS.md'
+            arquivo.write_text(
+                '- [ ] (29/09/2026) FEEDBACK: ouvi "Assessor, abre" · entendi "x" · respondi "y" · o certo era: z '
+                '(validação: esperado _cmd_abrir) <!-- validacao-feedback id=item-9 -->\n'
+                '- [ ] (20/09/2026) FEEDBACK: ouvi "velho" · o certo era: z (validação: esperado (IA))\n'
+                '- [x] (29/09/2026) FEEDBACK: ouvi "feito" (validação: esperado _cmd_abrir)\n', encoding='utf-8')
+            lidos = validacao.feedbacks_recentes(arquivo, 3, datetime(2026, 9, 29, 20, 0))
+        self.assertEqual(lidos, [{'id': 'item-9', 'ouvi': 'Assessor, abre', 'esperado': '_cmd_abrir',
+                                  'data': '29/09/2026'}])
+
+    def test_ia_registra_na_hora_o_comando_que_rodou(self):
+        from app.comandos.ia import IAMixin
+        registros, agendados = [], []
+        falso = SimpleNamespace(
+            _frase_original='', ultimo_comando='_cmd_youtube',
+            _separar_monitor=lambda t: t, vocab=SimpleNamespace(traduzir=lambda t: t),
+            _tentar_comandos=lambda t: True,
+            _agendar_memoria_ia=lambda *a: agendados.append(a))
+        with patch('app.comandos.ia.memoria.registrar', side_effect=lambda *a, **k: registros.append(a)):
+            IAMixin._usar_interpretacao(falso, {'tipo': 'comando', 'texto': 'abre o youtube'}, 'me da uma dica')
+        self.assertEqual(registros, [('me da uma dica', '', 'ia executou comando',
+                                      {'entendi': 'abre o youtube', 'ia_texto': 'abre o youtube',
+                                       'rota': '_cmd_youtube'})])
+        self.assertEqual(len(agendados), 1)   # a memória continua esperando a confirmação (~30 s)
+
+    def test_painel_mostra_o_que_fazer_e_o_que_conferir(self):
+        """Executa _val_desenhar de verdade com rótulos falsos (sem abrir janela)."""
+        origem = Path(__file__).resolve().parents[1] / 'app' / 'painel.py'
+        arvore = ast.parse(origem.read_text(encoding='utf-8'))
+        painel = next(n for n in arvore.body if isinstance(n, ast.ClassDef) and n.name == 'Painel')
+        metodos = [n for n in painel.body if isinstance(n, ast.FunctionDef)
+                   and n.name in ('_val_desenhar', '_val_desenhar_continuo')]
+        modulo = ast.fix_missing_locations(ast.Module(body=[ast.ClassDef(
+            name='PainelSemJanela', bases=[], keywords=[], body=metodos, decorator_list=[])], type_ignores=[]))
+
+        class Rotulo:
+            texto = ''
+
+            def configure(self, **opcoes):
+                self.texto = opcoes.get('text', self.texto)
+
+            def pack(self, **_):
+                pass
+
+            def pack_forget(self):
+                pass
+
+            def winfo_manager(self):
+                return ''
+
+        contexto = {'__name__': 'app._teste_desenho_validacao', '__package__': 'app',
+                    'tema': SimpleNamespace(SUCESSO=1, AVISO=2, TEXTO_FRACO=3, fonte=lambda *_: None)}
+        exec(compile(modulo, str(origem), 'exec'), contexto)
+        o = contexto['PainelSemJanela']()
+        o.palavra = 'Jarvis'
+        for nome in ('rot_val_progresso', 'rot_val_frase', 'rot_val_esperado', 'rot_val_sugestao',
+                     'bt_val_comecar', 'fr_val_destaque'):
+            setattr(o, nome, Rotulo())
+        o._val_botoes, o.rot_val_linhas = [], {k: Rotulo() for k in ('ouvi', 'entendi', 'fiz')}
+        o.rot_val_destaque = {k: (Rotulo(), Rotulo()) for k in ('ouvi', 'entendi', 'fiz', 'descartes')}
+        o._val_captura = o._val_sugestao = None
+        o._val_estado, o._val_descartes = '', []
+        itens = self._itens(
+            '| Desligue o Bluetooth e fale `Mestre, coloca na caixinha` | avisa | `_cmd_saida_som` |',
+            '| `Mestre, que horas são` e, no meio da resposta, `Mestre, abre o Spotify` | abre '
+            '| `_cmd_hora_data` → `_cmd_abrir` |',
+            '| (visual) confira o log | tem a linha | (visual) |')
+        o._val = validacao.Sessao(itens, 'Completo')
+        telas = []
+        for indice in range(len(o._val.itens)):
+            o._val.indice = indice
+            o._val_desenhar()
+            telas.append((o.rot_val_frase.texto, o.rot_val_esperado.texto))
+        self.assertEqual(telas[0][0].splitlines(), ['FAÇA ANTES: Desligue o Bluetooth',
+                                                    'FALE: “Jarvis, coloca na caixinha”'])
+        self.assertIn('COMANDO ESPERADO: _cmd_saida_som', telas[0][1])
+        self.assertIn('COMANDO ESPERADO: _cmd_hora_data', telas[1][1])
+        self.assertIn('EM SEGUIDA: no meio da resposta: Jarvis, abre o Spotify', telas[1][1])
+        self.assertEqual(telas[2][0].splitlines(), ['ETAPA 2 de 2', 'QUANDO: no meio da resposta',
+                                                    'FALE: “Jarvis, abre o Spotify”'])
+        self.assertIn('COMANDO ESPERADO: _cmd_abrir', telas[2][1])
+        self.assertTrue(telas[3][0].startswith('OBSERVE: '))
+        self.assertNotIn('COMANDO ESPERADO', telas[3][1])
+
+    def test_roteiro_real_nao_tem_etapa_com_comando_de_outra(self):
+        """As linhas de sequência do roteiro dizem o esperado de cada etapa (nada de "que horas são"
+        esperando _cmd_abrir)."""
+        roteiro = validacao.ler_roteiro()
+        for item in roteiro:
+            if item.tipo_item != 'sequencia' or not all(e.independente for e in item.etapas):
+                continue
+            self.assertNotIn('preparo', [e.tipo for e in validacao.dividir_sequencia(item)], item.id)
+        hora = validacao.dividir_sequencia(next(i for i in roteiro if i.id == 'item-069'))[0]
+        self.assertEqual(hora.comandos, ['_cmd_hora_data'])
 
 
 class TelegramSemRede(unittest.TestCase):

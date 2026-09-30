@@ -234,7 +234,7 @@ class AnotacoesMixin:
                 sistema.abrir_site("https://www.google.com/search?q=" + quote_plus(busca))
 
     def _proj_perguntar_destino(self) -> None:
-        self.perguntar("Pra onde eu mando? Claude Code, agente IPM ou chat novo?", self._proj_destino, espera=40)
+        self.perguntar("Pra onde eu mando? Claude Code ou chat novo?", self._proj_destino, espera=40)
 
     def _proj_destino(self, resposta: str) -> None:
         n = normalizar(resposta)
@@ -249,12 +249,10 @@ class AnotacoesMixin:
                                        'a comecar este projeto. Faca perguntas antes de criar arquivos."',
                                        pasta, f"Projeto {pasta.name}")
             self.voz.falar("Abri o Claude Code na pasta do projeto.")
-        elif re.search(r"\b(agente|ipm)\b", n):
-            self._enviar_ao_agente(texto)
         elif re.search(r"\b(chat|claude|novo|conversa)\b", n):
             self._enviar_chat_novo(texto)
         else:
-            self.perguntar("Não peguei. Claude Code, agente IPM ou chat novo?", self._proj_destino, espera=40)
+            self.perguntar("Não peguei. Claude Code ou chat novo?", self._proj_destino, espera=40)
 
     # =================================================================
     #  Lembretes

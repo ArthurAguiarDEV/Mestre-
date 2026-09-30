@@ -53,6 +53,10 @@ class IAMixin:
             comando = self._separar_monitor(self.vocab.traduzir(texto_ia))
             log.info("IA entendeu como comando: %r", comando)
             if comando and self._tentar_comandos(comando):
+                # Diagnostico (validacao, Inicio): o pedido ficou com rota "ia"; registra NA HORA qual comando a
+                # IA rodou por ele (nao e memoria: essa continua sendo o "ia virou comando" confirmado abaixo)
+                memoria.registrar(frase, "", "ia executou comando",
+                                  {"entendi": comando, "ia_texto": texto_ia, "rota": self.ultimo_comando})
                 # (na exportacao: frases que a IA transformou em comando = comandos que faltam no vocabulario)
                 # e a "memoria": so grava depois de ~30s sem correcao (ou na hora, se repetir igual),
                 # senao um erro da IA (tipo "dica de livro" virar "abre o youtube") fica preso pra sempre
@@ -115,7 +119,7 @@ class IAMixin:
             "- que horas sao | que dia e hoje | aumenta o volume | abaixa o volume | muta\n"
             "- pausa | desliga a tela | liga a tela | bloqueia o computador\n"
             "- me lembra de <assunto> em <N> minutos | anota <texto> | le minhas notas\n"
-            "- pesquisa <termo> (Google) | agente ipm <pergunta> | le o que eu copiei\n"
+            "- pesquisa <termo> (Google) | le o que eu copiei\n"
             "- muda a voz | fala mais rapido | fala mais devagar | aprende um atalho\n"
             "- anota uma melhoria <ideia> | aplica as melhorias\n"
             "- spotify: toca a playlist <nome> no spotify | toca <musica> no spotify | pausa | continua | proxima musica | "

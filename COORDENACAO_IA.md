@@ -38,6 +38,11 @@ funcionou no computador do usuário. O relatório de validação deve registrar 
 
 ## Estado da fila
 
+- **002 — Centralizar a orquestração de IAs:** aprovado pelo usuário para iniciar.
+  A primeira entrega é a organização de `ORQUESTRACAO_IA.md` e `prompts/`. A
+  automação executável, o ciclo de feedback e a integração com GitHub vêm em
+  cartões seguintes, sempre com aprovação humana antes da publicação.
+
 - **001 — Orientar testes variados na validação:** aprovado pelo usuário para iniciar o
   primeiro ciclo. Cartão em `tarefas_ia/001-validacao-variada.md`; aguarda implementação
   em branch separada e retorno do commit para revisão.

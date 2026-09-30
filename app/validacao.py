@@ -22,6 +22,7 @@ import hashlib
 import fnmatch
 import json
 import subprocess
+import threading
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -42,12 +43,19 @@ NOMES_SECAO = {"novidades": "Novidades", "sempre": "Sempre testar", "outros": "O
 MODOS = ("Rápido", "Direcionado", "Completo")
 # IDs explícitos no roteiro: regressões úteis sem configuração, espera ou ação física demorada.
 IDS_RAPIDOS = ("rapido-hora", "rapido-youtube", "rapido-volume", "rapido-anotacao")
+# Rápido dinâmico: além das quatro essenciais, no máximo isto de falas puxadas por mudanças/feedbacks
+MAXIMO_EXTRAS_RAPIDO = 8
+DIAS_FEEDBACK_RECENTE = 3
 # Rotas que tambem contam como o comando esperado (o comando continua a conversa por uma pergunta)
 EQUIVALENTES = {
     "_cmd_ensinar_rotina": ("rotina falada", "resposta: nomear_rotina"),
     "_cmd_pensamento": ("resposta: responder_aviso_pensamento",),
+    "_cmd_descanso": ("saiu do descanso",),                 # "bora voltar a trabalhar" acorda no Executor
+    "_cmd_parar": ("ignorado (só parou de falar)",),        # "para" no meio da fala: o ouvido só cala
 }
 TIPOS_ITEM = frozenset({"fala", "sequencia", "acao_manual", "observacao", "pre_condicao", "espera", "teste_automatico"})
+# Registros do historico em que a IA rodou um comando por uma frase (o "ia virou comando" e a memoria confirmada)
+TIPOS_IA_COMANDO = ("ia executou comando", "ia virou comando")
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,7 @@ class Etapa:
     tipo: str
     texto: str
     independente: bool = True
+    instrucao: str = ""      # o que vem antes da fala na linha ("no meio da resposta", "desligue o Bluetooth e")
 
 
 # =====================================================================
@@ -79,6 +88,12 @@ class Item:
     grupo_id: str = ""
     caminhos: tuple[str, ...] = ()
     rotas_grupo: tuple[str, ...] = ()
+    instrucao: str = ""         # o que fazer/esperar ANTES de falar (texto da linha fora das crases)
+    nota: str = ""              # observação depois da fala ("(sem a palavra)", "(com o vídeo aberto)")
+    etapa_pos: int = 0          # etapa N de M (sequência dividida pela Sessao); 0 = item inteiro
+    etapa_total: int = 0
+    proxima: str = ""           # prévia da etapa seguinte ("no meio da resposta: Mestre, abre o Spotify")
+    colada: bool = False        # a etapa seguinte tem de ser falada durante/logo após esta: avança sem pausa
 
     @property
     def exige_microfone(self) -> bool:
@@ -90,6 +105,81 @@ class Item:
             return ""
         texto = " → ".join(self.falas or [self.frase])
         return re.sub(r"\bMestre\b", palavra, texto) if palavra else texto
+
+
+def _limpar_trecho(texto: str) -> str:
+    """Trecho da linha fora das crases, sem os conectores que só ligavam as falas ("e", "→", ":")."""
+    t = " ".join(texto.replace("`", "").split()).strip(" →,;:-")
+    t = re.sub(r"^e\b[\s,]*", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"[\s,]*\b(e|e fale|e diga|fale|diga)$", "", t, flags=re.IGNORECASE)
+    if t.count("(") != t.count(")"):   # "(ou" / ")" sobrando de um parêntese em volta de uma fala
+        t = t.lstrip(") ").rstrip("( ")
+        if t.count("(") > t.count(")"):
+            t = t.replace("(", "", t.count("(") - t.count(")"))
+        elif t.count(")") > t.count("("):
+            t = t[::-1].replace(")", "", t.count(")") - t.count("("))[::-1]
+    return t.strip(" →,;:-")
+
+
+def _trechos(primeira: str) -> list[str]:
+    """O texto em volta das falas: [antes da 1a, entre 1a e 2a, ..., depois da ultima]."""
+    return [_limpar_trecho(p) for p in re.split(r"`[^`]+`", primeira)]
+
+
+def _partes_esperado(esperado: str, quantas: int) -> list[str] | None:
+    """Esperado por etapa, separado por "→" no roteiro (ex.: "(IA) → _cmd_parar"). None = não separou."""
+    if quantas < 2 or "→" not in esperado:
+        return None
+    partes = [p.strip() for p in esperado.split("→")]
+    return partes if len(partes) == quantas and all(partes) else None
+
+
+# O que o usuario faz em cada tipo de linha (o painel mostra em destaque, antes do texto)
+ACAO_DO_TIPO = {"fala": "FALE", "sequencia": "FALE", "acao_manual": "FAÇA", "observacao": "OBSERVE",
+                "espera": "ESPERE", "pre_condicao": "CONFIRA ANTES", "teste_automatico": "RODE O TESTE"}
+
+
+def _rotulo_instrucao(texto: str) -> str:
+    n = normalizar(texto)
+    if re.search(r"\b(meio da resposta|enquanto ele|durante|logo depois|logo em seguida|em seguida|depois de)\b", n) \
+            or re.match(r"^(logo|depois|e depois|antes)\b", n):
+        return "QUANDO"
+    if re.match(r"^(espere|aguarde|deixe)\b", n):
+        return "ESPERE"
+    if re.match(r"^(confira|olhe|observe|verifique)\b", n):
+        return "OBSERVE"
+    if re.match(r"^(se|com|sem|na|no|modo|quando|primeira)\b", n):
+        return "ANTES"
+    return "FAÇA ANTES"
+
+
+def instrucoes(item: Item, palavra: str = "") -> list[tuple[str, str]]:
+    """O que fazer com a linha da tela, em ordem, com o verbo em destaque:
+    [("FAÇA ANTES", "Desligue o Bluetooth da caixinha"), ("FALE", "Assessor, coloca na caixinha"),
+     ("DEVE ACONTECER", "Avisa que ..."), ("COMANDO ESPERADO", "_cmd_saida_som")]."""
+    trocar = (lambda t: re.sub(r"\bMestre\b", palavra, t)) if palavra else (lambda t: t)
+    linhas: list[tuple[str, str]] = []
+    if item.etapa_total > 1:
+        linhas.append(("ETAPA", f"{item.etapa_pos} de {item.etapa_total}"))
+    if item.exige_microfone:
+        if item.instrucao:
+            linhas.append((_rotulo_instrucao(item.instrucao), trocar(item.instrucao)))
+        if item.tipo_item == "sequencia":   # pausas dentro da mesma frase: fala a linha inteira, na ordem
+            linhas.append(("FALE", trocar(" ".join(item.frase.split()))))
+        else:
+            linhas.append(("FALE", item.para_falar(palavra)))
+        if item.nota:
+            linhas.append(("ATENÇÃO", trocar(item.nota)))
+    else:
+        linhas.append((ACAO_DO_TIPO.get(item.tipo_item, "FAÇA"), trocar(item.frase)))
+    if item.o_que:
+        linhas.append(("DEVE ACONTECER", trocar(item.o_que)))
+    esperado = ", ".join(item.comandos) or item.esperado
+    if esperado and (item.exige_microfone or item.comandos):   # "(visual)"/"(painel)" não é comando
+        linhas.append(("COMANDO ESPERADO", esperado))
+    if item.proxima:
+        linhas.append(("EM SEGUIDA", trocar(item.proxima)))
+    return linhas
 
 
 def _id_estavel(secao: str, grupo: str, primeira: str, explicito: str = "") -> str:
@@ -112,7 +202,11 @@ def _tipo_item(primeira: str, falas: list[str], manual: bool) -> str:
         r"^visual\s+(confira|olhe|observe|verifique)", n
     ):
         return "observacao"
-    if manual or re.match(r"^(painel|botao|clique|abra o painel|rode |desligue |religue |feche |toque |arraste )", n):
+    if manual:
+        return "acao_manual"
+    # "Desligue o Bluetooth e fale `Mestre, ...`": a fala é o teste, a ação vira instrução antes dela
+    falada = any(re.match(r"^(mestre|assessor)\b", normalizar(f)) for f in falas)
+    if not falada and re.match(r"^(painel|botao|clique|abra o painel|rode |desligue |religue |feche |toque |arraste )", n):
         return "acao_manual"
     if len(falas) > 1:
         return "sequencia"
@@ -233,6 +327,12 @@ def ler_roteiro(caminho: Path | None = None, texto: str | None = None) -> list[I
         if marcador:
             primeira = (primeira[:marcador.start()] + primeira[marcador.end():]).strip()
         falas = [x.strip() for x in re.findall(r"`([^`]+)`", primeira) if x.strip()]
+        alternativas = []
+        entre = [normalizar(p) for p in re.split(r"`[^`]+`", primeira)[1:-1]]
+        if len(falas) > 1 and entre and all(re.match(r"^\(?\s*ou\b", p) or not p for p in entre) \
+                and any(p for p in entre):
+            # "`A` (ou `B`, `C`)": jeitos diferentes de pedir a MESMA coisa, não uma sequência
+            falas, alternativas = falas[:1], falas[1:]
         manual = primeira.lstrip().startswith("(")   # (painel) (visual) (automático)
         comandos = list(dict.fromkeys(re.findall(r"_cmd_[a-z0-9_]*[a-z0-9]", esperado)))
         tipo_item = tipo_explicito or _tipo_item(primeira, falas, manual)
@@ -248,16 +348,23 @@ def ler_roteiro(caminho: Path | None = None, texto: str | None = None) -> list[I
             item_id = f"{item_id}-{sufixo}"
         ids.add(item_id)
         etapas = []
+        trechos = _trechos(primeira) if falas else []
+        continuacao = False
         if tipo_item == "sequencia":
             # Pausas dentro de uma única frase continuam sendo uma única tentativa.
             continuacao = bool(re.search(r"pausa|…|\.\.\.", primeira, re.IGNORECASE))
-            etapas = [Etapa(f"{item_id}-{n + 1}", "fala", fala, not continuacao)
+            etapas = [Etapa(f"{item_id}-{n + 1}", "fala", fala, not continuacao,
+                            trechos[n] if n < len(trechos) else "")
                       for n, fala in enumerate(falas)]
+        instrucao = trechos[0] if trechos and not (tipo_item == "sequencia" and continuacao) else ""
+        nota = trechos[-1] if len(trechos) > 1 and not (tipo_item == "sequencia" and continuacao) else ""
+        if alternativas:
+            nota = "também vale: " + " / ".join(alternativas)
         itens.append(Item(secao=secao, grupo=grupo or NOMES_SECAO[secao], frase=primeira.replace("`", ""),
                           falas=falas, o_que=o_que.replace("`", ""), esperado=esperado.replace("`", ""),
                           comandos=comandos, tipo=_tipo_esperado(esperado, comandos, manual), manual=manual,
                           id=item_id, tipo_item=tipo_item, etapas=etapas, grupo_id=grupo_id,
-                          caminhos=caminhos, rotas_grupo=rotas_grupo))
+                          caminhos=caminhos, rotas_grupo=rotas_grupo, instrucao=instrucao, nota=nota))
     return itens
 
 
@@ -279,6 +386,7 @@ class Escopo:
     motivos: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     sem_mapeamento: list[str] = field(default_factory=list)
     falhas_sem_id: int = 0
+    fora_do_limite: int = 0     # Rápido dinâmico: falas relacionadas que ficaram de fora pelo limite
 
     @property
     def etapas(self) -> int:
@@ -309,20 +417,56 @@ def selecionar_modo(itens: list[Item], modo: str,
     return Escopo(modo, list(itens), grupos_disponiveis(itens))
 
 
-def arquivos_alterados_git(pasta: Path | None = None) -> list[str]:
-    """Arquivos dos commits locais, staged e unstaged; consulta somente o Git local."""
+GIT_TIMEOUT = 4          # segundos por chamada: Git preso (índice travado, antivírus) não congela o painel
+GIT_VALIDADE = 60        # o painel pede o escopo a cada clique: reaproveita a resposta por 1 minuto
+_git_cache: dict[str, tuple[float, list[str]]] = {}
+_git_trava = threading.Lock()
+
+
+def git_pronto(pasta: Path | None = None) -> bool:
+    guardado = _git_cache.get(str(Path(pasta or PASTA_PROJETO)))
+    return bool(guardado) and time.time() - guardado[0] < GIT_VALIDADE
+
+
+def arquivos_alterados_git(pasta: Path | None = None, esperar: bool = True) -> list[str]:
+    """Arquivos dos commits locais, staged e unstaged; consulta somente o Git local.
+    Guarda a resposta por GIT_VALIDADE s (`esquecer_git()` limpa) e desiste de cada chamada em GIT_TIMEOUT s.
+    esperar=False (painel): nunca roda o Git na hora; devolve o que já tem (ou []) e atualiza numa thread."""
     pasta = Path(pasta or PASTA_PROJETO)
+    guardado = _git_cache.get(str(pasta))
+    if guardado and time.time() - guardado[0] < GIT_VALIDADE:
+        return list(guardado[1])
+    if not esperar:
+        if not _git_trava.locked():
+            threading.Thread(target=arquivos_alterados_git, args=(pasta,), daemon=True,
+                             name="validacao-git").start()
+        return list(guardado[1]) if guardado else []
+    with _git_trava:
+        return _consultar_git(pasta)
+
+
+def _consultar_git(pasta: Path) -> list[str]:
+    guardado = _git_cache.get(str(pasta))
+    if guardado and time.time() - guardado[0] < GIT_VALIDADE:   # outra thread acabou de consultar
+        return list(guardado[1])
     nomes: set[str] = set()
     for argumentos in (("diff", "--name-only", "--cached", "-z"),
                        ("diff", "--name-only", "-z"),
                        ("diff", "--name-only", "-z", "@{upstream}...HEAD")):
         try:
             processo = subprocess.run(("git", *argumentos), cwd=pasta, capture_output=True, check=True,
+                                      timeout=GIT_TIMEOUT,
                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except (OSError, subprocess.CalledProcessError):
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
             continue
         nomes.update(x.replace("\\", "/") for x in processo.stdout.decode("utf-8", "replace").split("\0") if x)
-    return sorted(nomes)
+    resultado = sorted(nomes)
+    _git_cache[str(pasta)] = (time.time(), resultado)
+    return resultado
+
+
+def esquecer_git() -> None:
+    _git_cache.clear()
 
 
 def feedbacks_abertos(arquivo: Path | None = None) -> tuple[set[str], int]:
@@ -341,6 +485,99 @@ def feedbacks_abertos(arquivo: Path | None = None) -> tuple[set[str], int]:
         else:
             sem_id += 1
     return ids, sem_id
+
+
+def feedbacks_recentes(arquivo: Path | None = None, dias: int = DIAS_FEEDBACK_RECENTE,
+                       agora: datetime | None = None) -> list[dict]:
+    """FEEDBACKs em aberto dos últimos `dias`: [{"id", "ouvi", "esperado", "data"}] (id "" = formato antigo)."""
+    agora = agora or datetime.now()
+    try:
+        texto = Path(arquivo or ARQUIVO_MELHORIAS).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    saida = []
+    for linha in texto.splitlines():
+        m = re.match(r"^\s*-\s*\[\s*\]\s*\((\d{2}/\d{2}/\d{4})\)\s*FEEDBACK:", linha)
+        if not m:
+            continue
+        try:
+            data = datetime.strptime(m.group(1), "%d/%m/%Y")
+        except ValueError:
+            continue
+        if (agora - data).days > dias:
+            continue
+        marcador = re.search(r"<!--\s*validacao-feedback\s+id=([a-zA-Z0-9_-]+)\s*-->", linha)
+        ouvi = re.search(r'\bouvi "([^"]*)"', linha)
+        esperado = re.search(r"\(validação: esperado ([^)]*\)?)\)", linha)
+        saida.append({"id": marcador.group(1) if marcador else "", "ouvi": ouvi.group(1) if ouvi else "",
+                      "esperado": esperado.group(1).strip() if esperado else "", "data": m.group(1)})
+    return saida
+
+
+def _item_do_feedback_antigo(fb: dict, candidatos: list[Item]) -> Item | None:
+    """Feedback sem ID: só associa se a frase ouvida parece com a fala E o esperado anotado é o mesmo."""
+    from difflib import SequenceMatcher
+
+    if not fb.get("ouvi") or not fb.get("esperado"):
+        return None
+    alvo = normalizar(fb["esperado"])
+    ativacao = {"mestre", "assessor"}
+
+    def limpo(texto: str) -> str:
+        return " ".join(p for p in normalizar(texto).split() if p not in ativacao)
+
+    ouvi = limpo(fb["ouvi"])
+    melhor, nota_melhor = None, 0.75   # só frase quase igual (nada de casar só pela palavra de ativação)
+    for item in candidatos:
+        esperado = normalizar(", ".join(item.comandos) or item.esperado)
+        if not ouvi or not esperado or esperado != alvo:
+            continue
+        for fala in item.falas:
+            nota = SequenceMatcher(None, ouvi, limpo(fala)).ratio() if limpo(fala) else 0.0
+            if nota >= nota_melhor:
+                melhor, nota_melhor = item, nota
+    return melhor
+
+
+def selecionar_rapido(itens: list[Item], arquivos: list[str] | None = None,
+                      feedbacks: list[dict] | None = None) -> Escopo:
+    """Rápido dinâmico: as quatro falas essenciais + até MAXIMO_EXTRAS_RAPIDO falas puxadas pelos
+    FEEDBACKs recentes (primeiro) e pelos arquivos alterados no Git. Só linhas de falar (nada físico)."""
+    base = selecionar_modo(itens, "Rápido")
+    arquivos = arquivos_alterados_git() if arquivos is None else arquivos
+    feedbacks = feedbacks_recentes() if feedbacks is None else feedbacks
+    motivos: dict[tuple[str, str], list[str]] = {}
+    extras: dict[str, str] = {}   # id -> motivo, na ordem de prioridade
+    candidatos = [i for i in itens if i.exige_microfone and i.id not in IDS_RAPIDOS]
+    por_id = {i.id: i for i in candidatos}
+
+    def _prioridade(fb: dict) -> tuple:
+        try:
+            quando = datetime.strptime(str(fb.get("data") or ""), "%d/%m/%Y").timestamp()
+        except ValueError:
+            quando = 0.0
+        return (not fb.get("id"), -quando)   # com ID primeiro; depois os mais novos
+
+    for fb in sorted(feedbacks, key=_prioridade):
+        item = por_id.get(fb.get("id") or "") or (None if fb.get("id") else _item_do_feedback_antigo(fb, candidatos))
+        if item is not None and item.id not in extras:
+            extras[item.id] = f"feedback de {fb.get('data')}" + ("" if fb.get("id") else " (frase parecida)")
+    caminhos = sorted(set(x.replace("\\", "/") for x in arquivos))
+    for item in candidatos:
+        tocados = [a for a in caminhos if any(fnmatch.fnmatchcase(a, p) for p in item.caminhos)]
+        if tocados and item.id not in extras:
+            extras[item.id] = f"arquivo {tocados[0]}"
+    escolhidos_ids = list(extras)[:MAXIMO_EXTRAS_RAPIDO]
+    for id_ in escolhidos_ids:
+        item = por_id[id_]
+        razoes = motivos.setdefault((item.secao, item.grupo), [])
+        if extras[id_] not in razoes:
+            razoes.append(extras[id_])
+    fora = max(0, len(extras) - len(escolhidos_ids))
+    escolhidos = base.itens + [i for i in itens if i.id in set(escolhidos_ids)]
+    escopo = Escopo("Rápido", escolhidos, grupos_disponiveis(escolhidos), motivos)
+    escopo.fora_do_limite = fora
+    return escopo
 
 
 def selecionar_direcionado(itens: list[Item], arquivos: list[str] | None = None,
@@ -410,7 +647,9 @@ def selecionar_direcionado(itens: list[Item], arquivos: list[str] | None = None,
 
 
 EXPLICACAO_MODOS = (
-    "Rápido: repete sempre as mesmas quatro verificações essenciais (hora, YouTube, volume e anotação). "
+    "Rápido: as quatro verificações essenciais (hora, YouTube, volume e anotação) e, junto, até "
+    f"{MAXIMO_EXTRAS_RAPIDO} falas ligadas aos arquivos alterados e aos feedbacks dos últimos "
+    f"{DIAS_FEEDBACK_RECENTE} dias. "
     "Direcionado: você escolhe áreas (grupos) para testar, ou usa as mudanças e falhas detectadas. "
     "Completo: percorre todo o roteiro, incluindo conferências manuais.")
 
@@ -442,6 +681,18 @@ def descrever_escopo(escopo: Escopo) -> str:
     if so_essenciais(escopo):
         descricao = ("Nenhuma área nova detectada ou marcada: o plano ficaria só nas quatro falas essenciais, "
                      "como o Rápido. Marque um ou mais grupos na lista para testar outras áreas. ") + descricao
+    if escopo.modo == "Rápido":
+        extras = len(escopo.itens) - len(IDS_RAPIDOS)
+        if extras > 0:
+            razoes = [f"{grupo}: {', '.join(escopo.motivos[(secao, grupo)])}"
+                      for secao, grupo in escopo.grupos if escopo.motivos.get((secao, grupo))]
+            descricao += (f" Além das quatro essenciais, {extras} fala(s) ligadas ao que mudou ou falhou "
+                          f"recentemente: " + "; ".join(razoes) + ".")
+            if escopo.fora_do_limite:
+                descricao += (f" Outras {escopo.fora_do_limite} ficaram de fora para manter o Rápido curto "
+                              "(use o Direcionado para ver todas).")
+        else:
+            descricao += " Nenhum arquivo alterado ou feedback recente ligado a outras falas."
     if escopo.modo == "Direcionado":
         razoes = [f"{grupo}: {', '.join(escopo.motivos.get((secao, grupo), []))}"
                   for secao, grupo in escopo.grupos if escopo.motivos.get((secao, grupo))]
@@ -478,36 +729,62 @@ def _ts(registro: dict) -> float:
 TIPOS_PEDIDO = ("comando", "voz_nao_reconhecida")
 
 
-def capturar(desde: float, historico: list[dict] | None = None, ouvidas: list[dict] | None = None) -> dict | None:
+def _mesma_frase(a: str, b: str) -> bool:
+    """O texto `a` (ouvido/IA) é o mesmo pedido `b`? (o pedido pode ter a palavra de ativação na frente)"""
+    a, b = normalizar(a), normalizar(b)
+    return bool(a and b) and (a == b or a in b or b in a)
+
+
+def _de_antes(pedido: dict, ouvidas: list[dict], desde: float) -> bool:
+    """Pedido registrado depois de `desde`, mas falado ANTES (o comando da etapa anterior demorou e só
+    foi para o historico agora): nao pode ser atribuido a frase da tela."""
+    texto = str(pedido.get("pedido") or "")
+    velhas = [o for o in ouvidas if _ts(o) < desde and _mesma_frase(str(o.get("texto") or ""), texto)]
+    novas = [o for o in ouvidas if _ts(o) >= desde and _mesma_frase(str(o.get("texto") or ""), texto)]
+    return bool(velhas) and not novas
+
+
+def capturar(desde: float, historico: list[dict] | None = None, ouvidas: list[dict] | None = None,
+             item: Item | None = None) -> dict | None:
     """O que aconteceu depois de `desde` (a frase apareceu na tela). None = nada ainda.
 
-    Devolve {"ouvi", "entendi", "rota", "fiz", "audio", "ts"}.
+    Devolve {"ouvi", "entendi", "rota", "fiz", "audio", "ts", "pedidos", "ia_comando", "outros"}.
+    Com `item`: se ele falou mais de uma coisa (ex.: comentou o teste em voz alta), fica o pedido
+    parecido com a frase da tela; "outros" conta os demais.
     """
     if historico is None or ouvidas is None:
         from . import memoria
         historico = memoria.historico(80) if historico is None else historico
         ouvidas = memoria.ouvidas(80) if ouvidas is None else ouvidas
     novos = [h for h in historico if _ts(h) >= desde]
-    pedidos = [h for h in novos if h.get("tipo") in TIPOS_PEDIDO and h.get("rota") != "_cmd_feedback"]
+    pedidos = [h for h in novos if h.get("tipo") in TIPOS_PEDIDO and h.get("rota") != "_cmd_feedback"
+               and not _de_antes(h, ouvidas, desde)]
     ouvidos = [o for o in ouvidas if _ts(o) >= desde and (o.get("chamou") or o.get("conversa")
                                                            or o.get("voz_nao_reconhecida") is not None)]
     if not pedidos and not ouvidos:
         return None
     pedido = pedidos[-1] if pedidos else None
-    if pedido:   # a frase ouvida que gerou o pedido: a ultima ate ele
+    if item is not None and len(pedidos) > 1:
+        parecidos = [p for p in pedidos if _parecida(str(p.get("pedido") or ""), item)]
+        pedido = parecidos[-1] if parecidos else pedido
+    if pedido:   # a frase ouvida que gerou o pedido: a ultima ate ele que bate com o texto
         antes = [o for o in ouvidos if _ts(o) <= _ts(pedido) + 1]
-        ouvido = antes[-1] if antes else (ouvidos[-1] if ouvidos else None)
+        iguais = [o for o in antes if _mesma_frase(str(o.get("texto") or ""), str(pedido.get("pedido") or ""))]
+        ouvido = (iguais or antes or ouvidos or [None])[-1]
     else:
         ouvido = ouvidos[-1]
     rota = str(pedido.get("rota") or pedido.get("tipo") or "") if pedido else ""
     entendi = str(pedido.get("entendi") or "") if pedido else ""
+    ia_comando = ""
     if pedido and pedido.get("tipo") == "voz_nao_reconhecida":
         rota = "ignorado (voz não reconhecida)"
-    if pedido:   # a IA transformou em comando depois (em segundo plano)?
-        virou = [h for h in novos if h.get("tipo") == "ia virou comando" and _ts(h) >= _ts(pedido)]
+    if pedido and rota == "ia":   # a IA transformou a frase em comando (na hora ou em segundo plano)?
+        virou = [h for h in novos if h.get("tipo") in TIPOS_IA_COMANDO
+                 and _mesma_frase(str(h.get("pedido") or ""), str(pedido.get("pedido") or ""))]
         if virou:
-            v = virou[-1]
-            rota = str(v.get("rota") or rota)
+            v = virou[0]
+            ia_comando = str(v.get("rota") or "")
+            rota = ia_comando or rota
             entendi = f"{entendi} → IA: {v.get('ia_texto') or v.get('entendi') or ''}".strip()
     if pedido:
         fiz = str(pedido.get("resposta") or "").strip() or "(não falou nada)"
@@ -515,6 +792,7 @@ def capturar(desde: float, historico: list[dict] | None = None, ouvidas: list[di
         fiz = "(nada registrado: ignorado ou ainda trabalhando)"
     return {"ouvi": str((ouvido or {}).get("texto") or (pedido or {}).get("pedido") or ""),
             "entendi": entendi, "rota": rota, "fiz": fiz, "pedidos": len(pedidos),
+            "ia_comando": ia_comando, "outros": max(0, len(pedidos) - 1),
             "audio": str((ouvido or {}).get("audio") or ""),
             "ts": max(_ts(pedido) if pedido else 0.0, _ts(ouvido) if ouvido else 0.0)}
 
@@ -531,7 +809,8 @@ def ultimos_comandos(quantos: int = 5, historico: list[dict] | None = None,
         historico = memoria.historico(120) if historico is None else historico
         ouvidas = memoria.ouvidas(200) if ouvidas is None else ouvidas
     pedidos = [h for h in historico if (h.get("tipo") in TIPOS_PEDIDO or "comando" in str(h.get("tipo") or ""))
-               and h.get("tipo") != "ia virou comando"]
+               and h.get("tipo") not in TIPOS_IA_COMANDO]
+    ia_fez = [h for h in historico if h.get("tipo") == "ia executou comando"]
     ouvidos = [o for o in ouvidas if o.get("chamou") or o.get("conversa") or o.get("junto_da_palavra")]
     saida = []
     for i in range(len(pedidos) - 1, max(-1, len(pedidos) - 1 - quantos), -1):
@@ -542,6 +821,11 @@ def ultimos_comandos(quantos: int = 5, historico: list[dict] | None = None,
         ouvi = str(candidatos[-1].get("texto") or "") if candidatos else ""
         entendi = str(pedido.get("entendi") or "")
         rota = str(pedido.get("rota") or "")
+        if rota == "ia":   # a IA rodou um comando por essa frase: mostra qual (e nao parece um pedido a mais)
+            fez = next((h for h in ia_fez if _ts(h) > antes
+                        and _mesma_frase(str(h.get("pedido") or ""), str(pedido.get("pedido") or ""))), None)
+            if fez:
+                rota = f"ia → {fez.get('rota')}"
         if rota and rota not in entendi:
             entendi = f"{entendi}  ({rota})" if entendi else rota
         saida.append({"hora": time.strftime("%H:%M", time.localtime(quando)) if quando else "",
@@ -570,6 +854,8 @@ def conferir(item: Item, captura: dict | None) -> str | None:
         return None
     if not rota:   # ouviu, mas o historico ainda nao tem o pedido (trabalhando)
         return None
+    if item.tipo == "preparo":   # etapa que só prepara a próxima: basta ter sido atendida
+        return "falha" if rota.startswith("ignorado") else "ok"
     if item.tipo == "comando":
         for esperado in item.comandos:
             if esperado in rota or rota.startswith(EQUIVALENTES.get(esperado, ("\0",))):
@@ -586,14 +872,29 @@ def conferir(item: Item, captura: dict | None) -> str | None:
     return None
 
 
+def diagnostico(captura: dict | None) -> str:
+    """Avisos que explicam um resultado estranho (comando "repetido", fala de outra coisa no meio)."""
+    c = captura or {}
+    avisos = []
+    if c.get("ia_comando"):
+        avisos.append(f"A frase não era um comando conhecido: a IA a transformou em {c['ia_comando']}.")
+    if c.get("outros"):
+        avisos.append(f"Ouvi mais {c['outros']} pedido(s) nesta etapa; usei o mais parecido com a frase da tela.")
+    return " ".join(avisos)
+
+
 def explicar(item: Item, captura: dict | None, sugestao: str | None) -> str:
     """Frase curta para a tela: por que sugeriu ok/falha."""
     rota = str((captura or {}).get("rota") or "") or "nada"
     esperado = ", ".join(item.comandos) or item.esperado or "?"
+    extra = diagnostico(captura)
+    extra = f" {extra}" if extra else ""
+    if item.tipo == "preparo" and sugestao == "ok":
+        return f"Etapa de preparação atendida ({rota}). Siga para a próxima.{extra}"
     if sugestao == "ok":
-        return f"Bateu: esperado {esperado}, atendeu {rota}."
+        return f"Bateu: esperado {esperado}, atendeu {rota}.{extra}"
     if sugestao == "falha":
-        return f"Não bateu: esperado {esperado}, atendeu {rota}."
+        return f"Não bateu: esperado {esperado}, atendeu {rota}.{extra}"
     if not item.exige_microfone:
         return "Confira você mesmo e marque."
     if not captura:
@@ -638,6 +939,44 @@ def _proveniencia() -> tuple[str, str, str]:
     return commit, hash_roteiro, str(VERSAO)
 
 
+PREPARO = "(preparação: só precisa ser atendida, a conferência é na última etapa)"
+
+
+def dividir_sequencia(item: Item) -> list[Item]:
+    """Uma linha "`A` e depois `B`" vira uma etapa por fala, cada uma com o SEU esperado.
+
+    Ordem: esperado separado por "→" no roteiro (um por etapa) > um _cmd_* por etapa > o esperado da
+    linha vale só para a ÚLTIMA fala e as anteriores são preparação (antes, um único _cmd_* era
+    copiado para todas e a 1a etapa aparecia com o comando da 2a)."""
+    total = len(item.etapas)
+    partes = _partes_esperado(item.esperado, total)
+    saida = []
+    for pos, etapa in enumerate(item.etapas):
+        ultima = pos == total - 1
+        if partes:
+            esperado = partes[pos]
+            comandos = list(dict.fromkeys(re.findall(r"_cmd_[a-z0-9_]*[a-z0-9]", esperado)))
+            tipo = _tipo_esperado(esperado, comandos, False)
+        elif len(item.comandos) == total:
+            comandos, tipo = [item.comandos[pos]], "comando"
+            esperado = comandos[0]
+        elif ultima:
+            comandos, tipo, esperado = list(item.comandos), item.tipo, item.esperado
+        else:
+            comandos, tipo, esperado = [], "preparo", PREPARO
+        seguinte = None if ultima else item.etapas[pos + 1]
+        o_que = item.o_que if ultima else f"Parte {pos + 1} do teste; no fim: {item.o_que}"
+        proxima = ""
+        if seguinte is not None:
+            proxima = f"{seguinte.instrucao}: {seguinte.texto}" if seguinte.instrucao else seguinte.texto
+        colada = seguinte is not None and _rotulo_instrucao(seguinte.instrucao) == "QUANDO"
+        saida.append(replace(item, id=etapa.id, origem_id=item.id, frase=etapa.texto, falas=[etapa.texto],
+                             tipo_item="fala", etapas=[], comandos=comandos, tipo=tipo, esperado=esperado,
+                             o_que=o_que, instrucao=etapa.instrucao, nota=item.nota if ultima else "",
+                             etapa_pos=pos + 1, etapa_total=total, proxima=proxima, colada=colada))
+    return saida
+
+
 class Sessao:
     def __init__(self, itens: list[Item], escolha: str = "Tudo", excluidos: list[Item] | None = None):
         self.excluidos = list(excluidos or [])
@@ -645,14 +984,7 @@ class Sessao:
         self.itens = []
         for item in itens:
             if item.tipo_item == "sequencia" and item.etapas and all(e.independente for e in item.etapas):
-                for pos, etapa in enumerate(item.etapas):
-                    comandos = ([item.comandos[pos]] if len(item.comandos) == len(item.etapas)
-                                else item.comandos[:1] if len(item.comandos) == 1 else [])
-                    # No legado, o esperado pode descrever apenas a última fala.
-                    tipo = "comando" if comandos else (item.tipo if pos == len(item.etapas) - 1 else "")
-                    self.itens.append(replace(item, id=etapa.id, origem_id=item.id, frase=etapa.texto,
-                                              falas=[etapa.texto], tipo_item="fala", etapas=[],
-                                              comandos=comandos, tipo=tipo))
+                self.itens.extend(dividir_sequencia(item))
             else:
                 self.itens.append(item)
         self.escolha = escolha
@@ -699,6 +1031,12 @@ class Sessao:
                 self.resultados[proximo] = {"veredito": "bloqueado", "captura": {}, "motivo": motivo}
                 proximo += 1
         self.mostrar(proximo)
+        seguinte = self.atual
+        if (veredito == "ok" and seguinte is not None and item.origem_id and seguinte.origem_id == item.origem_id
+                and (captura or {}).get("ts")):
+            # etapa seguinte da mesma linha: vale o que ele falar logo depois do pedido anterior (mesmo que
+            # tenha falado antes de a frase nova aparecer: "no meio da resposta" não espera o painel)
+            self.exibida_em = min(self.exibida_em, float(captura["ts"]) + 0.01)
 
     def lista(self) -> list[tuple[Item, dict]]:
         return [(self.itens[i], r) for i, r in sorted(self.resultados.items())]
@@ -715,6 +1053,7 @@ class Sessao:
 #  Modo continuo: avanca sozinho no ✅, so para no ❌
 # =====================================================================
 AVANCO_SEGUNDOS = 1.5     # depois do ✅, espera isso e passa para a proxima frase
+AVANCO_COLADO = 0.1       # proxima etapa e "no meio da resposta": mostra logo (a resposta e curta)
 SILENCIO_SEGUNDOS = 15    # nada ouvido nesse tempo: "não ouvi nada — fale de novo ou Pular"
 ESPERA_IA = 15            # caiu na IA: espera a IA virar o comando certo antes de dar ❌
 ESPERA_DESCARTE = 4       # frase descartada parecida com a esperada: espera isso (pode vir a certa) e da ❌
@@ -778,7 +1117,7 @@ def avaliar_continuo(item: Item, desde: float, agora: float | None = None, histo
         from . import memoria
         historico = memoria.historico(80) if historico is None else historico
         ouvidas = memoria.ouvidas(80) if ouvidas is None else ouvidas
-    captura = capturar(desde, historico, ouvidas)
+    captura = capturar(desde, historico, ouvidas, item)
     fora = descartes(desde, ouvidas)
     parecidos = [d for d in fora if _parecida(d["texto"], item)]
     novas = [o for o in ouvidas if _ts(o) >= desde]
@@ -802,7 +1141,7 @@ def avaliar_continuo(item: Item, desde: float, agora: float | None = None, histo
             e.independente for e in item.etapas
         ) else max(1, len(item.falas))
         if int((captura or {}).get("pedidos") or 0) >= falas:
-            r.update(estado="ok", sugestao="ok")
+            r.update(estado="ok", sugestao="ok", avanco=AVANCO_COLADO if item.colada else AVANCO_SEGUNDOS)
         return r   # varias falas ("A → B"): espera a ultima
     if sugestao == "falha":
         if rota == "ia" and item.tipo == "comando" and agora - float(captura.get("ts") or 0) < ESPERA_IA:
@@ -988,6 +1327,7 @@ def gerar_relatorio(sessao: Sessao, nome: str = "", agora: datetime | None = Non
               f"- **Entendi:** {c.get('entendi') or '(nada)'} → `{c.get('rota') or 'nenhum comando'}`",
               f"- **Fiz:** {c.get('fiz') or '(nada)'}",
               *([f"- **Descartado pelo ouvido:** {_limpar(c['descartado'])}"] if c.get("descartado") else []),
+              *([f"- **Diagnóstico:** {diagnostico(c)}"] if diagnostico(c) else []),
               f"- **Esperado:** {item.o_que} · `{', '.join(item.comandos) or item.esperado}`",
               f"- **O certo era:** {r.get('certo_era') or '(não disse)'}"]
         if c.get("audio"):

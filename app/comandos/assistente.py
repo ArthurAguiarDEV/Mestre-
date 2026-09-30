@@ -63,7 +63,7 @@ class AssistenteMixin:
         self.voz.falar(
             "Eu rodo suas rotinas, tipo bora trabalhar. Abro programas, sites e o último vídeo "
             "de um canal do YouTube. Falo a hora, mexo no volume, apago e acendo a tela. "
-            "Faço lembretes e anotações. Mando perguntas e ditados pro seu agente IPM. "
+            "Faço lembretes e anotações. Mando perguntas e ditados para o projeto do Claude. "
             "E você pode me ensinar atalhos, trocar minha voz e ditar melhorias longas. "
             "É só falar: quero ditar melhorias. E no fim: finalizei."
         )

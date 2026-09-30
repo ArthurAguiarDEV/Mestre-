@@ -22,7 +22,7 @@ TIPOS = {  # tipo: (nome falado, subpastas)
 def tipo_falado(frase: str) -> str:
     n = normalizar(frase)
     for tipo, palavras in (("codigo", r"codigo|programa|app|aplicativo|site|software|sistema"),
-                           ("trabalho", r"trabalho|empresa|servico|ipm|cliente"),
+                           ("trabalho", r"trabalho|empresa|servico|cliente"),
                            ("vida", r"vida|pessoal|casa|familia|saude|viagem"),
                            ("estudo", r"estudo|estudar|curso|faculdade|aprender|prova")):
         if re.search(rf"\b({palavras})\b", n):

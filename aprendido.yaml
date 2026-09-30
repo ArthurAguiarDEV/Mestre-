@@ -3,8 +3,8 @@
 atalhos: {}
 preferencias:
   indicador_posicao:
-  - 2888
-  - 111
-  tom: -6Hz
-  velocidade: +50%
+  - 2205
+  - 17
+  tom: -11Hz
+  velocidade: +15%
   voz: it-IT-GiuseppeMultilingualNeural

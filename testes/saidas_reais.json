@@ -12,7 +12,6 @@
   "app/painel.py:webbrowser.open",
   "app/painel.py:webbrowser.open",
   "app/painel.py:webbrowser.open",
-  "app/painel.py:webbrowser.open",
   "app/sistema.py:_os.startfile",
   "app/sistema.py:os.startfile",
   "app/sistema.py:os.startfile",

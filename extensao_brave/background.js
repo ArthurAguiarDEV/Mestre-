@@ -97,7 +97,14 @@ const noNavegador = {
     await focarJanela(destino.windowId);
     return "ok";
   },
-  async ir(arg) {   // abre o endereco na aba do site (se ja existir) ou numa aba nova da janela em uso
+  async ir(arg) {   // abre o endereco na aba pedida (arg.aba), na aba do site (se ja existir) ou numa aba nova
+    if (arg.aba) {
+      try {
+        const pedida = await chrome.tabs.update(arg.aba, {url: arg.url, active: true});
+        await focarJanela(pedida.windowId);
+        return {id: pedida.id};
+      } catch (e) { /* fechou: segue pelo dominio */ }
+    }
     const abas = arg.dominio ? await chrome.tabs.query({url: `*://*.${arg.dominio}/*`}) : [];
     abas.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
     let aba;
@@ -118,6 +125,29 @@ const noNavegador = {
                                                       args: [arg.textos || [], arg.modo || "", !!arg.so_ver]});
     return r ? r.result : "nao_achei";
   },
+  async video(arg) {   // pausa/continua o video de qualquer aba (Netflix, Disney, Prime, HBO...): "ok", "ja" ou "sem_video"
+    const aba = await abaAlvo(arg);
+    if (!aba) return "sem_aba";
+    let rs = [];
+    try {
+      rs = await chrome.scripting.executeScript({target: {tabId: aba.id, allFrames: true}, func: pausarVideoNaPagina,
+                                                args: [!!arg.pausar]});
+    } catch (e) { return "sem_video"; }
+    const r = rs.map(x => x && x.result);
+    return r.includes("ok") ? "ok" : r.includes("ja") ? "ja" : "sem_video";
+  },
+  async perfil(arg) {   // tela "Quem esta assistindo?": confere (so_ver) ou escolhe o perfil pelo NOME exato
+    const aba = await abaAlvo(arg);
+    if (!aba) return {resultado: "sem_aba"};
+    if (aba.status === "loading") return {resultado: "carregando", aba: aba.id};
+    let rs = [];
+    try {
+      rs = await chrome.scripting.executeScript({target: {tabId: aba.id}, func: escolherPerfil,
+                                                args: [arg.nome || "", !!arg.so_ver]});
+    } catch (e) { return {resultado: "erro", aba: aba.id}; }
+    const r = (rs[0] && rs[0].result) || {resultado: "sem_tela", tela: false};
+    return {resultado: r.resultado, tela: !!r.tela, aba: aba.id};   // so isso volta: nada de nomes, textos ou cookies
+  },
   async buscar(arg) {   // digita no campo de busca do site (Disney, HBO...); sem campo, clica na lupa
     const aba = await abaAlvo(arg);
     if (!aba) return "sem_aba";
@@ -126,6 +156,50 @@ const noNavegador = {
     return r ? r.result : "sem_busca";
   },
 };
+
+// (roda DENTRO da pagina) pausa ou solta o video principal (o maior da tela, nao a previa da capa)
+function pausarVideoNaPagina(pausar) {
+  const videos = Array.from(document.querySelectorAll("video")).filter(v => v.currentSrc || v.readyState > 0);
+  if (!videos.length) return "sem_video";
+  const alvo = videos.filter(v => v.paused !== pausar)
+    .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+  if (!alvo) return "ja";
+  if (pausar) alvo.pause(); else alvo.play();
+  return "ok";
+}
+
+// (roda DENTRO da pagina) a tela de perfis ("Quem esta assistindo?") esta aberta? Com um nome: clica no
+// perfil cujo texto e EXATAMENTE esse nome (nunca o primeiro da lista, nunca um parecido).
+function escolherPerfil(nome, soVer) {
+  const todos = seletor => {
+    const achados = [], fila = [document];
+    while (fila.length) {
+      const raiz = fila.shift();
+      achados.push(...raiz.querySelectorAll(seletor));
+      for (const el of raiz.querySelectorAll("*")) if (el.shadowRoot) fila.push(el.shadowRoot);
+    }
+    return achados;
+  };
+  const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, "").replace(/\s+/g, " ").trim();
+  const TELA = /(quem esta assistindo|quem vai assistir|quem esta vendo|escolha (seu|um|o) perfil|selecione (seu|um|o) perfil|whos watching|who is watching|choose (a|your) profile|select (a|your) profile)/;
+  const texto = norm(document.body ? document.body.innerText.slice(0, 4000) : "");
+  const endereco = (location.pathname + location.hash).toLowerCase();
+  const tela = TELA.test(texto) || /(select-?profile|profiles?-?gate|profile-?picker|choose-?profile|who-?is-?watching)/.test(endereco);
+  if (!tela) return {resultado: "sem_tela", tela: false};
+  if (soVer) return {resultado: "tela", tela: true};
+  const alvo = norm(nome);
+  if (!alvo) return {resultado: "nao_achei", tela: true};
+  const visivel = el => { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4; };
+  const casa = el => visivel(el) && [el.getAttribute("aria-label"), el.getAttribute("alt"), el.getAttribute("title"),
+                                     (el.innerText || "").slice(0, 60)].some(t => norm(t) === alvo);
+  const CLICAVEL = 'a, button, [role="button"], [role="link"], [tabindex]';
+  // o botao/link do perfil; senao o texto mais "de dentro" com esse nome (e sobe ate o que da para clicar)
+  const achado = todos(CLICAVEL).find(casa) || todos("li, span, div, p, h2, h3, img[alt]").filter(casa).pop();
+  if (!achado) return {resultado: "nao_achei", tela: true};
+  (achado.closest(CLICAVEL + ", li") || achado).click();
+  return {resultado: "selecionei", tela: true};
+}
 
 // (roda DENTRO da pagina) acha o campo de busca e escreve o texto como se fosse digitado
 function digitarNaBusca(texto) {

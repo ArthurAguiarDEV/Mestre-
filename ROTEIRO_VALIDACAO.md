@@ -18,25 +18,79 @@ essenciais. Os tipos opcionais são `fala`, `sequencia`, `acao_manual`, `observa
 `pre_condicao`, `espera` e `teste_automatico`. Uma sequência de falas entre crases é conferida
 etapa por etapa; pausas que completam a mesma frase continuam uma tentativa só. Instruções
 manuais nunca são tratadas como frases para o microfone.
-No painel, **Rápido** usa quatro falas essenciais da seção "Sempre testar", **Direcionado**
-usa os arquivos alterados no Git, falhas abertas com ID e grupos escolhidos, sempre com as
-quatro regressões essenciais; **Completo** inclui todas as linhas aplicáveis. Feedbacks antigos
-sem ID são sinalizados até terem uma associação explícita, sem adivinhar pelo texto.
+Linha com duas ou mais falas (`A` e depois `B`): cada fala é uma etapa. Escreva o comando
+esperado DE CADA etapa na 3ª coluna, na mesma ordem, separado por "→" (ex.: `_cmd_hora_data` →
+`_cmd_abrir`, ou (IA) → `_cmd_parar`). Sem isso, o esperado vale só para a última fala e as
+anteriores aparecem como "preparação". Falas ligadas por "ou" (`A` (ou `B`)) são jeitos
+diferentes de pedir a mesma coisa: vira uma etapa só. O texto fora das crases aparece no painel
+como instrução (FAÇA ANTES / QUANDO / ATENÇÃO) junto da fala.
+No painel, **Rápido** usa as quatro falas essenciais da seção "Sempre testar" e acrescenta até
+8 falas ligadas aos arquivos alterados no Git e aos FEEDBACKs abertos dos últimos 3 dias (com ID
+primeiro; os antigos sem ID só quando a frase e o esperado anotados batem com a linha).
+**Direcionado** usa os arquivos alterados no Git, falhas abertas com ID e grupos escolhidos,
+sempre com as quatro regressões essenciais; **Completo** inclui todas as linhas aplicáveis.
 
 Este arquivo substitui o antigo CHECKLIST_VALIDACAO.md (o texto dele virou uma lista solta,
 sem comando esperado, difícil de conferir por script; ficou só um aviso apontando pra cá).
 
 ## 1. Novidades (desta leva)
 
+### Validação: o que fazer em destaque, etapa com o esperado certo e Rápido dinâmico
+<!-- validacao-grupo id=grupo-validacao-instrucoes-etapas-rapido-dinamico caminhos=app/validacao.py,app/painel.py,app/comandos/ia.py -->
+
+| Frase/ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Sistema > Validar atualização → modo **Rápido** <!-- validacao id=item-186 --> | O resumo mostra as 4 falas essenciais e, junto, as falas ligadas aos FEEDBACKs dos últimos 3 dias e aos arquivos alterados, com o motivo de cada área | (painel) |
+| (painel) Troque várias vezes entre Rápido, Direcionado e Completo e marque/desmarque grupos <!-- validacao id=item-187 --> | Cada troca atualiza o resumo na hora, sem o painel congelar | (painel) |
+| (painel) Comece o **Completo** e avance até "Desligue o Bluetooth da caixinha…" <!-- validacao id=item-188 --> | Em cima: "FAÇA ANTES: Desligue o Bluetooth da caixinha" e "FALE: “Assessor, coloca na caixinha”"; embaixo: DEVE ACONTECER e COMANDO ESPERADO | (painel) |
+| (painel) No Rápido, chegue na linha "que horas são → no meio da resposta, abre o Spotify" <!-- validacao id=item-189 --> | ETAPA 1 de 2 espera `_cmd_hora_data` (não mais `_cmd_abrir`) e mostra "EM SEGUIDA"; depois do ✅ a ETAPA 2 aparece na hora e espera `_cmd_abrir` | (painel) |
+| (painel) Fale uma frase que a IA transforma em comando (ex.: `Mestre, me dá uma dica de livro`, se ela abrir o YouTube) <!-- validacao id=item-190 --> | A validação avisa "a IA a transformou em _cmd_…" e o Início > Últimos comandos mostra "ia → _cmd_…" numa linha só (sem parecer comando repetido) | (painel) |
+
+### Vídeo e streaming: qual serviço, aba, janela e monitor (recarregue a extensão do Brave: versão 2.5)
+<!-- validacao-grupo id=grupo-video-servico-aba-monitor caminhos=app/comandos/video.py,app/comandos/janelas.py,app/comandos/__init__.py,app/sistema.py,extensao_brave/background.js -->
+
+| Frase/ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Página YouTube: recarregue a extensão do Brave e dê F5 nas abas de vídeo <!-- validacao id=item-191 --> | O painel não avisa mais "extensão desatualizada" (versão 2.5) | (painel) |
+| Com um vídeo tocando no YouTube e outro na Netflix: `Mestre, pausa o vídeo` <!-- validacao id=item-192 --> | Pergunta "Tem vídeo tocando no YouTube e na Netflix. Qual você quer pausar?". Responda "a Netflix": só a Netflix pausa | `_cmd_controle_video` |
+| Com vídeo tocando na Netflix e o YouTube aberto: `Mestre, pausa o vídeo da Netflix` <!-- validacao id=item-193 --> | Pausa a Netflix sem perguntar; o YouTube não mexe | `_cmd_controle_video` |
+| Com a Disney tocando: `Mestre, pausa a Disney` e depois `Mestre, continua o filme na Disney` <!-- validacao id=item-194 --> | Pausa e depois volta a tocar a Disney | `_cmd_controle_video` → `_cmd_controle_video` |
+| Com só a Netflix tocando e o YouTube pausado: `Mestre, pausa o vídeo` <!-- validacao id=item-195 --> | Pausa a Netflix sem perguntar | `_cmd_controle_video` |
+| Sem nenhum vídeo aberto no Brave e com o Spotify tocando: `Mestre, pausa o vídeo` <!-- validacao id=item-196 --> | Pergunta se pode usar o pause geral do computador. Responda "não": o Spotify continua tocando | `_cmd_controle_video` |
+| `Mestre, quero assistir Fallout` <!-- validacao id=item-197 --> | Pergunta "Em qual serviço?" sem abrir nada. Responda "na Prime": procura Fallout no Prime Video | `_cmd_streaming` |
+| Com a Disney aberta no monitor 2: `Mestre, toca Loki na Disney no monitor 2` <!-- validacao id=item-198 --> | Usa a aba da Disney que já está no monitor 2 (não abre outra janela) | `_cmd_streaming` |
+| Com a Netflix aberta: `Mestre, abre a Netflix numa janela nova` <!-- validacao id=item-199 --> | Abre outra janela da Netflix (não reaproveita a aba) | `_cmd_abrir` |
+| Com a Netflix aberta no monitor 2: `Mestre, abre a Netflix no monitor 2` <!-- validacao id=item-200 --> | Diz que já estava aberta no monitor 2 e só mostra a aba (nada novo abre, nada muda de tela) | `_cmd_abrir` |
+| Com 2 monitores e a Netflix no principal: `Mestre, joga a Netflix pro outro monitor` <!-- validacao id=item-201 --> | A Netflix vai para o monitor 2 sem perguntar (com 3 monitores ele pergunta qual) | `_cmd_mover` |
+| Com um vídeo tocando só no YouTube: `Mestre, me conta uma curiosidade` e, no meio da resposta, `Mestre, pausa o vídeo` <!-- validacao id=item-202 --> | Para de falar na hora e pausa o vídeo | (IA) → `_cmd_youtube_controle` |
+
+### Perfil do streaming e pedidos com mais de uma parte (recarregue a extensão do Brave: versão 2.5)
+<!-- validacao-grupo id=grupo-streaming-perfil-roteamento caminhos=app/comandos/perfis.py,app/comandos/video.py,app/comandos/janelas.py,app/comandos/__init__.py,app/painel.py,extensao_brave/background.js -->
+
+| Frase/ação | O que deve acontecer | Comando esperado |
+|---|---|---|
+| (painel) Página YouTube > Perfis dos streamings: escreva `Arthur, Mestre, Magnífico`, deixe o padrão vazio e salve <!-- validacao id=item-203 --> | Salva sem erro; ao reabrir o painel os nomes continuam lá (nenhum campo de senha) | (painel) |
+| Com a Disney fechada: `Mestre, toca Loki na Disney no perfil Mestre` <!-- validacao id=item-204 --> | Abre a Disney, clica no perfil **Mestre** na tela "Quem está assistindo?" e só então procura Loki | `_cmd_streaming` |
+| Com a Netflix aberta (sem ter falado o perfil antes): `Mestre, toca Dark na Netflix no perfil Arthur` <!-- validacao id=item-205 --> | Pergunta "A Netflix já está aberta. Ela está no perfil Arthur?". Responda "sim": procura Dark nessa aba. Repita a frase: não pergunta de novo | `_cmd_streaming` |
+| Com a Netflix fechada: `Mestre, toca Dark na Netflix` <!-- validacao id=item-206 --> | Pergunta "Qual perfil na Netflix? Arthur, Mestre ou Magnífico?" sem abrir nada. Responda "Magnífico" | `_cmd_streaming` |
+| (painel) Ponha `Arthur` como perfil padrão e salve. Com a Disney fechada: `Mestre, continua a série na Disney` <!-- validacao id=item-207 --> | Pergunta "Devo usar o perfil Arthur na Disney?". Responda "não": pergunta "Mestre ou Magnífico?". Responda "cancela": nada abre | `_cmd_streaming` |
+| Numa série que você já começou (troque o nome se for outra): `Mestre, continua The Office na Netflix no perfil Arthur` <!-- validacao id=item-208 --> | Clica em Continuar/Retomar (continua de onde parou). Se não tiver ponto salvo, avisa e não começa do início | `_cmd_streaming` |
+| Com só a Disney aberta: `Mestre, abre minha série` <!-- validacao id=item-209 --> | Usa a Disney (não pergunta o serviço), confere o perfil e pede o nome da série; não dá play em nada | `_cmd_streaming` |
+| Com YouTube e Disney abertos na mesma janela: `Mestre, separa o YouTube e a Disney` <!-- validacao id=item-210 --> | Pergunta os monitores antes de mexer. Responda "YouTube no 1 e Disney no 2": cada um vai para uma janela no monitor dito | `_cmd_mover` |
+| Repita o item anterior respondendo `só separar` <!-- validacao id=item-211 --> | Cada um fica numa janela própria, sem mudar de monitor | `_cmd_mover` |
+| Com a Netflix aberta: `Mestre, joga a Netflix` <!-- validacao id=item-212 --> | Pergunta "Para qual monitor vai Netflix? O 1 ou o 2?". Responda "no dois" | `_cmd_mover` |
+| Com o YouTube aberto em duas janelas, uma em cada monitor: `Mestre, joga o YouTube pro monitor 2` <!-- validacao id=item-213 --> | Pergunta "Tem YouTube em mais de uma janela: no monitor 1 e no 2. Qual eu uso?" e só move depois da resposta | `_cmd_mover` |
+| Com a Netflix fechada: `Mestre, separa o YouTube pro monitor 2 e a Netflix pro monitor 1` <!-- validacao id=item-214 --> | Avisa "Não achei Netflix aberto. Não mexi em nada." e o YouTube também não se mexe | `_cmd_mover` |
+
 ### Sugestões de 29/09: "para", print sem travar e Telegram com "mande"
 <!-- validacao-grupo id=grupo-sugestoes-29-09-para-print-telegram caminhos=app/comandos/assistente.py,app/comandos/celular.py,app/recebidos.py,vocabulario.yaml -->
 
 | Frase | O que deve acontecer | Comando esperado |
 |---|---|---|
-| `Mestre, me conta uma curiosidade` e logo depois `Mestre, para` <!-- validacao id=item-178 --> | Não fala a curiosidade (descarta o que a IA ia responder) e não diz nada | `_cmd_parar` |
+| `Mestre, me conta uma curiosidade` e logo depois `Mestre, para` <!-- validacao id=item-178 --> | Não fala a curiosidade (descarta o que a IA ia responder) e não diz nada | (IA) → `_cmd_parar` |
 | Enquanto ele fala algo comprido: `Mestre, chega` <!-- validacao id=item-179 --> | Para de falar na hora | `_cmd_parar` |
 | `Mestre, para o vídeo` <!-- validacao id=item-180 --> | Continua pausando o vídeo (não confunde com o "para") | `_cmd_youtube_controle` |
-| `Mestre, manda um print no Telegram` e logo em seguida `Mestre, que horas são?` <!-- validacao id=item-181 --> | Responde as horas na hora (o print sobe em segundo plano, não trava mais a escuta); as fotos chegam no Telegram | `_cmd_print_telegram` |
+| `Mestre, manda um print no Telegram` e logo em seguida `Mestre, que horas são?` <!-- validacao id=item-181 --> | Responde as horas na hora (o print sobe em segundo plano, não trava mais a escuta); as fotos chegam no Telegram | `_cmd_print_telegram` → `_cmd_hora_data` |
 | (Telegram) escreva `Mande print pro robô` <!-- validacao id=item-182 --> | Chegam as fotos (antes ia pro projeto no Claude) | (Telegram) |
 | (Telegram) escreva `Mande desligar` e depois `cancela` <!-- validacao id=item-183 --> | Pergunta "Tem certeza...?" e depois cancela | (Telegram) |
 | (Telegram) escreva `Mestre oque tá tocando` <!-- validacao id=item-184 --> | Responde no próprio Telegram o que está tocando | (Telegram) |
@@ -106,7 +160,7 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | `Mestre, troca a saída de som` (sem dizer qual) <!-- validacao id=item-026 --> | Alterna: se está na caixinha vai pro fone, se está no fone vai pra caixinha | `_cmd_saida_som` |
 | `Mestre, qual saída de som tá ativa?` <!-- validacao id=item-027 --> | Fala qual das duas está tocando agora | `_cmd_saida_som` |
 | Desligue o Bluetooth da caixinha e fale `Mestre, coloca na caixinha` <!-- validacao id=item-028 --> | Avisa que a caixinha não está conectada e pra ligar o Bluetooth (não troca de verdade) | `_cmd_saida_som` |
-| `Mestre, abaixa o som` / `Mestre, aumenta o volume do fone` <!-- validacao id=item-029 --> | Continua sendo volume normal, não troca de dispositivo | `_cmd_volume` |
+| `Mestre, abaixa o som` e depois `Mestre, aumenta o volume do fone` <!-- validacao id=item-029 --> | Continua sendo volume normal, não troca de dispositivo | `_cmd_volume` → `_cmd_volume` |
 | (painel) **Áudio > Saída de som** <!-- validacao id=item-030 --> | Mostra os dispositivos de som ativos, um campo de apelido pra cada um e o botão "Usar agora" | (painel) |
 | (automático) `venv\Scripts\python -m testes.teste_basico` <!-- validacao id=item-031 --> | Itens novos de saída de som (troca por apelido, alterna, não encontrado, armadilha do volume) OK | (automático) |
 
@@ -135,9 +189,9 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 |---|---|---|
 | (visual) Reinicie: `Mestre, reinicia` <!-- validacao id=item-044 --> | O robozinho rosa entra pulando logo acima do relógio, os olhos verdes acendem; a bolinha do topo não aparece mais | (visual) |
 | `Mestre, que horas são` <!-- validacao id=item-045 --> | Enquanto você fala: inclina a cabeça, olhos maiores, antena brilha, ondinhas. Na resposta: a boca mexe junto com a voz | `_cmd_hora_data` |
-| `Mestre, me explica a teoria da relatividade` e logo `Mestre, me explica buracos negros` <!-- validacao id=item-046 --> | Balão com pontinhos; com 2 na fila aparece o número vermelho "2" | (IA) |
+| `Mestre, me explica a teoria da relatividade` e logo `Mestre, me explica buracos negros` <!-- validacao id=item-046 --> | Balão com pontinhos; com 2 na fila aparece o número vermelho "2" | (IA) → (IA) |
 | (visual) Botão direito no robô > Pausar a escuta, depois Retomar <!-- validacao id=item-047 --> | Ele sai de cena; ao retomar volta pulando | (visual) |
-| `Mestre, pode descansar` e depois `Mestre, bora voltar a trabalhar` <!-- validacao id=item-048 --> | Olhos fechados e "zzz"; depois acorda | `_cmd_descanso` |
+| `Mestre, pode descansar` e depois `Mestre, bora voltar a trabalhar` <!-- validacao id=item-048 --> | Olhos fechados e "zzz"; depois acorda | `_cmd_descanso` → `_cmd_descanso` |
 | (visual) Arraste o robô para outro lugar e reinicie <!-- validacao id=item-049 --> | Ele volta no lugar novo; botão direito > Voltar ao lugar padrão leva para cima do relógio | (visual) |
 | (visual) Duplo clique no robô <!-- validacao id=item-050 --> | Abre o painel | (visual) |
 | (visual) Botão direito > Esconder avatar <!-- validacao id=item-051 --> | Some (volta ao reiniciar); o assistente continua ouvindo | (visual) |
@@ -170,13 +224,13 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 
 | Frase | O que deve acontecer | Comando esperado |
 |---|---|---|
-| `Mestre, que horas são` e, no meio da resposta, `Mestre, abre o Spotify` <!-- validacao id=item-069 --> | A fala para na hora e o Spotify abre | `_cmd_abrir` |
-| `Mestre, me conta uma curiosidade` e, no meio da resposta, `Mestre, para` <!-- validacao id=item-070 --> | Só para de falar (não executa nada) | (ignorado: só parou de falar) |
-| `Mestre, que horas são` e, enquanto ele responde, `bom dia pessoal` (sem a palavra) <!-- validacao id=item-071 --> | Continua falando; a frase é ignorada (motivo "falando" no ouvido.jsonl) | (ignorado, sem comando) |
+| `Mestre, que horas são` e, no meio da resposta, `Mestre, abre o Spotify` <!-- validacao id=item-069 --> | A fala para na hora e o Spotify abre | `_cmd_hora_data` → `_cmd_abrir` |
+| `Mestre, me conta uma curiosidade` e, no meio da resposta, `Mestre, para` <!-- validacao id=item-070 --> | Só para de falar (não executa nada) | (IA) → `_cmd_parar` |
+| `Mestre, que horas são` e, enquanto ele responde, `bom dia pessoal` (sem a palavra) <!-- validacao id=item-071 --> | Continua falando; a frase é ignorada (motivo "falando" no ouvido.jsonl) | `_cmd_hora_data` → (ignorado, sem comando) |
 | `Mestre, eu queria…` (pausa de 1 s) `…que você abrisse o YouTube` <!-- validacao id=item-072 --> | Uma ordem só: abre o YouTube | `_cmd_youtube` |
 | `Mestre, abre o site do` (pausa de 1 s) `YouTube` <!-- validacao id=item-073 --> | Junta as duas partes e abre o YouTube | `_cmd_youtube` |
 | Primeira frase logo depois de ligar: `Mestre, que horas são` <!-- validacao id=item-074 --> | Responde tão rápido quanto as outras (o Whisper já foi aquecido) | `_cmd_hora_data` |
-| `Mestre, que horas são` e logo depois (sem a palavra) `e colocar isso pra eu ver pelo Telegram` <!-- validacao id=item-075 --> | Não diz "Não conheço..." nem abre nada | (ignorado, sem comando) |
+| `Mestre, que horas são` e logo depois (sem a palavra) `e colocar isso pra eu ver pelo Telegram` <!-- validacao id=item-075 --> | Não diz "Não conheço..." nem abre nada | `_cmd_hora_data` → (ignorado, sem comando) |
 | Painel > Áudio > Ajustes de captação: "Ouvir enquanto fala", "Interromper com …", "Fala frase a frase" e "Espera se a frase parar no meio" <!-- validacao id=item-076 --> | Os campos aparecem, salvam e valem depois de reiniciar | (painel) |
 
 ### Captação da voz (não cortar depois de "Assessor")
@@ -199,7 +253,7 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | `Mestre, me dá uma dica de livro` (logo em seguida, sem esperar a 1ª) <!-- validacao id=item-083 --> | Entra na fila; não trava nem repete a pergunta | (vai pensar, sem comando) |
 | `Mestre, que horas são` (no meio da fila) <!-- validacao id=item-084 --> | Responde na hora, sem esperar as duas de cima terminarem | `_cmd_hora_data` |
 | `Mestre, pode falar` (depois de avisar que terminou de pensar) <!-- validacao id=item-085 --> | Fala a resposta da pergunta pendente | `_cmd_pensamento` |
-| `Mestre, o que é a Via Láctea` e depois `Mestre, cancela o pensamento` <!-- validacao id=item-086 --> | Descarta a pergunta pendente e diz "Beleza, deixei pra lá." | `_cmd_pensamento` |
+| `Mestre, o que é a Via Láctea` e depois `Mestre, cancela o pensamento` <!-- validacao id=item-086 --> | Descarta a pergunta pendente e diz "Beleza, deixei pra lá." | (IA) → `_cmd_pensamento` |
 
 ### Ensinar rotina falando
 <!-- validacao-grupo id=grupo-ensinar-rotina-falando caminhos=app/comandos/rotinas.py rotas=_cmd_ensinar_rotina -->
@@ -211,7 +265,7 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | `Mestre, pronto` <!-- validacao id=item-089 --> | Pergunta a frase pra chamar a rotina depois | `_cmd_ensinar_rotina` |
 | `<sua frase, ex.: "modo revisão">` <!-- validacao id=item-090 --> | Confirma quantos passos e frases ficaram salvos | `_cmd_ensinar_rotina` |
 | `Mestre, partiu modo revisão` <!-- validacao id=item-091 --> | Roda a rotina que você acabou de ensinar | `_cmd_rotinas` |
-| `Mestre, vou te mostrar uma nova rotina` → `Mestre, abre o Spotify` → `Mestre, cancela a rotina` <!-- validacao id=item-092 --> | Sai sem salvar nada | `_cmd_ensinar_rotina` |
+| `Mestre, vou te mostrar uma nova rotina` → `Mestre, abre o Spotify` → `Mestre, cancela a rotina` <!-- validacao id=item-092 --> | Sai sem salvar nada | `_cmd_ensinar_rotina` → `_cmd_abrir` → `_cmd_ensinar_rotina` |
 
 ### Responder só à minha voz
 <!-- validacao-grupo id=grupo-responder-so-a-minha-voz -->
@@ -280,7 +334,7 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | Frase | O que deve acontecer | Comando esperado |
 |---|---|---|
 | `Mestre, lembra que minha esposa se chama Ana` <!-- validacao id=item-118 --> | Guarda o fato normal ("Guardado na memória") | `_cmd_memoria` |
-| `Mestre, lembra que eu trabalho na IPM de manhã` <!-- validacao id=item-119 --> | Guarda o fato normal | `_cmd_memoria` |
+| `Mestre, lembra que eu trabalho na empresa de manhã` <!-- validacao id=item-119 --> | Guarda o fato normal | `_cmd_memoria` |
 | `Mestre, lembra que eu prefiro café sem açúcar` <!-- validacao id=item-120 --> | Guarda o fato normal | `_cmd_memoria` |
 | (painel) Central > Histórico > seção Memória <!-- validacao id=item-121 --> | Em vez de uma caixa só, aparecem várias caixas menores, uma por assunto (Pessoas, Projetos, Preferências, Casa, Trabalho, Geral), cada uma com uma descrição em cima; o fato da Ana está em Pessoas, o do trabalho está em Trabalho e o do café está em Preferências | (painel) |
 | (visual) confira a pasta `memoria/fatos/` do projeto <!-- validacao id=item-122 --> | Tem um arquivo por assunto (`pessoas.md`, `projetos.md`, `preferencias.md`, `casa.md`, `trabalho.md`, `geral.md`) e um `INDICE.md` com um resumo de cada um | (visual) |
@@ -315,7 +369,7 @@ Causa: quando você falava o nome do monitor colado, sem uma palavra como "no"/"
 | (painel) ligue o detector > Salvar e reiniciar; depois `Assessor, que horas são?` <!-- validacao id=item-139 --> | Responde normal (no ouvido.jsonl a frase tem `nota_detector`) | `_cmd_hora_data` |
 | `Assessor` (pausa de 2 s) `abre o YouTube` <!-- validacao id=item-140 --> | Vira uma frase só, como antes | `_cmd_abrir` |
 | Deixe um vídeo com gente falando tocar 5 minutos sem chamar <!-- validacao id=item-141 --> | Nada executa; no ouvido.jsonl os trechos aparecem com motivo "sem a palavra (detector local)" (sem transcrição) | (ignorado, sem comando) |
-| Durante uma resposta longa: `Assessor, para` <!-- validacao id=item-142 --> | Para de falar na hora (o interromper continua igual) | (só parou) |
+| Durante uma resposta longa: `Assessor, para` <!-- validacao id=item-142 --> | Para de falar na hora (o interromper continua igual) | `_cmd_parar` |
 | Na janela de conversa, logo depois de uma resposta: `e amanhã?` (sem a palavra) <!-- validacao id=item-143 --> | Continua valendo sem a palavra | (o comando falado) |
 | Modo descanso + `bora voltar a trabalhar` <!-- validacao id=item-144 --> | Acorda normalmente | `_cmd_descanso` |
 | (automático) `venv\Scripts\python -m testes.teste_basico` <!-- validacao id=item-145 --> | Itens "Detector: ..." OK | (automático) |

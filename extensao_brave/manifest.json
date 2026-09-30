@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mestre - comandos de voz no Brave",
-  "version": "2.3",
+  "version": "2.5",
   "description": "Deixa o assistente Mestre (no seu PC) mexer nas abas e janelas do Brave, no YouTube e nos streamings por voz: separar e juntar abas, mandar para outro monitor, clicar pelo texto, like. So conversa com o proprio PC (127.0.0.1).",
   "permissions": [
     "tabs",

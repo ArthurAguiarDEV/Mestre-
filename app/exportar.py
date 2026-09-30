@@ -83,7 +83,7 @@ def gerar(cfg: dict, periodo: str = "7 dias", agora: datetime | None = None) -> 
     cb = cfg.get("cerebro") or {}
     o = cfg.get("ouvido") or {}
 
-    principais = [p for p in pedidos if p.get("tipo") != "ia virou comando"]
+    principais = [p for p in pedidos if p.get("tipo") not in ("ia virou comando", "ia executou comando")]
     grupos = Counter(_grupo_da_rota(p.get("rota")) for p in principais)
     comandos = Counter(p["rota"] for p in principais if str(p.get("rota", "")).startswith("_cmd_"))
     para_ia = [p for p in principais if p.get("rota") in ("ia", "nao_entendi")]

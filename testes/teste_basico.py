@@ -281,7 +281,6 @@ cfg["spotify"] = {"playlists": {"Foco total": "https://open.spotify.com/playlist
                   "apertar_play": False}
 from app import memoria
 cfg.setdefault("projeto_mestre", {}).update(segundos_para_carregar=0)
-cfg.setdefault("agente_ipm", {}).update(segundos_para_carregar=0, modo="site")
 ex = Executor(cfg, VozTeste(cfg, mudo=True), IALenta(), Vocabulario())
 def diga(frase, completa=None):
     ditos.clear(); t0 = time.time(); ex.executar(frase, completa or frase); return time.time() - t0, list(ditos)
@@ -292,7 +291,7 @@ memoria.PASTA_MEMORIA.mkdir(exist_ok=True)
 memoria.ARQUIVO_FATOS.write_text(
     "# fatos antigos (uma versao anterior guardava tudo num arquivo so)\n\n"
     "- Minha esposa se chama Ana e o aniversário dela é em março\n"
-    "- Trabalho na IPM todo dia de manhã\n"
+    "- Trabalho na empresa todo dia de manhã\n"
     "- Prefiro café sem açúcar\n"
     "- A senha do wifi de casa é segredo123\n",
     encoding="utf-8")
@@ -302,7 +301,7 @@ ok(not tinha_pasta_fatos_antes and not memoria.ARQUIVO_FATOS.exists() and memori
    "Migração do fatos.md antigo: gera backup (fatos.md.antes_da_migracao) e o arquivo antigo some")
 ok(len(fatos_migrados) == 4, f"Migração: os 4 fatos antigos foram para memoria/fatos/ ({len(fatos_migrados)})")
 ok(any("Ana" in f for f in memoria.fatos_assunto("pessoas")), "Classificação por palavra-chave: fato de pessoa foi pra pessoas.md")
-ok(any("ipm" in normalizar(f) for f in memoria.fatos_assunto("trabalho")), "Classificação por palavra-chave: fato de trabalho foi pra trabalho.md")
+ok(any("empresa" in normalizar(f) for f in memoria.fatos_assunto("trabalho")), "Classificação por palavra-chave: fato de trabalho foi pra trabalho.md")
 ok(any("acucar" in normalizar(f) for f in memoria.fatos_assunto("preferencias")),
    "Classificação por palavra-chave: fato de preferência foi pra preferencias.md")
 ok(any("wifi" in normalizar(f) for f in memoria.fatos_assunto("casa")), "Classificação por palavra-chave: fato de casa foi pra casa.md")
@@ -312,7 +311,7 @@ memoria.fatos()   # chamar de novo nao pode migrar (nem apagar) de novo: e idemp
 ok(memoria.BACKUP_FATOS_ANTIGO.exists() and not memoria.ARQUIVO_FATOS.exists() and len(memoria.fatos()) == 4,
    "Migração roda só uma vez (idempotente): rodar de novo não duplica nem apaga nada")
 contexto_trabalho = memoria.texto_para_ia("me fala sobre o meu trabalho")
-ok("ipm" in normalizar(contexto_trabalho) and "ana" not in normalizar(contexto_trabalho)
+ok("empresa" in normalizar(contexto_trabalho) and "ana" not in normalizar(contexto_trabalho)
    and "wifi" not in normalizar(contexto_trabalho),
    "Contexto pra IA: pergunta sobre trabalho manda só trabalho.md (+ índice), sem pessoas nem casa")
 
@@ -346,14 +345,14 @@ _, falas = diga("repete a resposta", "Repete a resposta")
 ok(any("Resposta pensada sobre me explica" in f for f in falas), "“repete a resposta” (histórico)")
 _, falas = diga("o que voce respondeu sobre relatividade", "O que você respondeu sobre relatividade?")
 ok(any("Resposta pensada sobre me explica" in f for f in falas), "“o que você respondeu sobre …” acha no histórico")
-diga("me lembra que eu trabalho na ipm de manha", "Lembra que eu trabalho na IPM de manhã")
-ok(any("IPM de manhã" in f for f in memoria.fatos()) and "IPM de manhã" in memoria.texto_para_ia(),
+diga("me lembra que eu trabalho na empresa de manha", "Lembra que eu trabalho na empresa de manhã")
+ok(any("empresa de manhã" in f for f in memoria.fatos()) and "empresa de manhã" in memoria.texto_para_ia(),
    "“lembra que …” guarda na memória (e a IA usa)")
-ok(any("ipm" in normalizar(f) for f in memoria.fatos_assunto("trabalho")),
+ok(any("empresa" in normalizar(f) for f in memoria.fatos_assunto("trabalho")),
    "“lembra que …” classifica por palavra-chave e grava no arquivo de assunto certo (trabalho.md)")
 diga("esquece que prefiro cafe sem acucar", "Esquece que prefiro café sem açúcar")
 ok(not any("acucar" in normalizar(f) for f in memoria.fatos_assunto("preferencias"))
-   and any("ipm" in normalizar(f) for f in memoria.fatos_assunto("trabalho")),
+   and any("empresa" in normalizar(f) for f in memoria.fatos_assunto("trabalho")),
    "“esquece que …” remove só o fato certo do arquivo de assunto certo, sem mexer nos outros")
 abertos.clear()
 diga("toca a playlist foco total no spotify", "Toca a playlist foco total no Spotify")
@@ -398,7 +397,7 @@ m = ARQUIVO_MELHORIAS.read_text(encoding="utf-8") if ARQUIVO_MELHORIAS.exists() 
 ok("Quero que o painel tenha modo claro." in m, "Ditado salvo COM acentos no MELHORIAS.md")
 ok(bool(colados) and "modo claro" in colados[-1] and colados[-1].startswith("[Pedido ditado"),
    "Ditado de melhorias vai para o app Claude (com o aviso de corrigir e refinar)")
-for resposta, esperado in [("manda pro claude code", "projeto"), ("manda pro agente ipm", "ipm"), ("pro projeto", "projeto")]:
+for resposta, esperado in [("manda pro claude code", "projeto"), ("pro projeto", "projeto")]:
     ex._frase_original = resposta
     ok(ex._qual_destino(resposta) == esperado, f"“{resposta}” vai para {esperado}")
 
@@ -2824,10 +2823,12 @@ def _main_legado_com_interface() -> int:
 def main() -> int:
     """Entrada automatica segura: nenhuma janela, dispositivo ou processo real."""
     import unittest
-    from testes import teste_regressoes_sem_interface, teste_seguranca
+    from testes import teste_midia_escuta, teste_regressoes_sem_interface, teste_seguranca, teste_streaming_perfis
     suite = unittest.TestSuite([
         unittest.defaultTestLoader.loadTestsFromModule(teste_seguranca),
         unittest.defaultTestLoader.loadTestsFromModule(teste_regressoes_sem_interface),
+        unittest.defaultTestLoader.loadTestsFromModule(teste_midia_escuta),
+        unittest.defaultTestLoader.loadTestsFromModule(teste_streaming_perfis),
     ])
     resultado = unittest.TextTestRunner(verbosity=2).run(suite)
     if not resultado.wasSuccessful():

@@ -70,7 +70,7 @@ ouvido:
   max_frase: 120
   espera_ditado: 60
   ditado_silencio_max: 180
-  palavras_conhecidas: ["Ollama", "IPM", "Atende.Net", "Claude", "Claude Code", "skill", "prompt", "Spotify", "YouTube", "playlist", "painel", "melhorias", "finalizei"]
+  palavras_conhecidas: ["Ollama", "Claude", "Claude Code", "skill", "prompt", "Spotify", "YouTube", "playlist", "painel", "melhorias", "finalizei"]
   # Responder so a voz do dono (painel > Audio > Minha voz). Desligado ate cadastrar a voz.
   so_minha_voz: false
   exigencia_voz: 0.4
@@ -92,32 +92,7 @@ cerebro:
 
 
 # ---------------------------------------------------------------------
-# 5) SEU "AGENTE IPM" DO CLAUDE
-# ---------------------------------------------------------------------
-  segundo_plano_apos: 10
-  tempo_maximo: 120
-  aviso_ao_terminar: "falar_direto"
-  segundo_plano_seg: 3
-  aviso_som: "nenhum"
-agente_ipm:
-  # Palavras que indicam que a pergunta e para o agente IPM.
-  # Ex.: "Mestre, pergunta pro agente IPM como abrir um chamado P031"
-  gatilhos: ["agente ipm", "agente i p m", "agente pm"]
-  # "site"    = abre SEU projeto no claude.ai, cola a pergunta e envia.
-  #             Gratis (usa sua conta do Claude) e usa as instrucoes reais do projeto.
-  # "cerebro" = responde POR VOZ usando a pasta perfis/agente_ipm
-  #             (precisa do cerebro "ollama" ou "claude" ligado acima).
-  modo: "site"
-  # Cole aqui o endereco do seu projeto (veja o guia, Etapa 8).
-  link_projeto: "https://claude.ai/project/019f173e-c567-71c8-b1c1-5e7aaf4c10f0"
-  # true = o Mestre cola a pergunta e aperta Enter sozinho.
-  enviar_automaticamente: true
-  # Tempo para a pagina do Claude carregar antes de colar a pergunta.
-  segundos_para_carregar: 7
-
-
-# ---------------------------------------------------------------------
-# 6) CANAIS DO YOUTUBE (apelido falado -> @ do canal)
+# 5) CANAIS DO YOUTUBE (apelido falado -> @ do canal)
 #    O @ aparece no endereco do canal: youtube.com/@manualdomundo
 #    Diga: "Mestre, abre o ultimo video do Manual do Mundo"
 # ---------------------------------------------------------------------
@@ -2224,6 +2199,9 @@ janelas:
   sempre_no_principal: true
   nomes_monitores: {}
   navegador_sites: "brave"
+streaming:
+  perfis: []
+  perfil_padrao: ""
 versao_config: 13
 recebidos:
   pasta: ""

@@ -51,7 +51,7 @@ PALAVRAS_ASSUNTO = {
                 "mae", "pai", "irmao", "irma", "familia", "avo", "colega", "sobrinho", "sobrinha", "prima", "primo",
                 "noiva", "noivo"],
     "trabalho": ["trabalho", "trabalha", "empresa", "escritorio", "chefe", "reuniao", "expediente", "emprego",
-                 "ipm", "cliente", "horario de trabalho", "colega de trabalho"],
+                 "cliente", "horario de trabalho", "colega de trabalho"],
     "casa": ["casa", "endereco", "wifi", "roteador", "cachorro", "gato", "pet", "condominio", "aluguel", "vizinho",
              "cep", "apartamento"],
     "preferencias": ["gosto de", "gosta de", "prefiro", "prefere", "odeio", "nao gosto", "favorito", "favorita",

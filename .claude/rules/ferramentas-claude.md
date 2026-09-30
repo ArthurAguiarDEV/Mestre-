@@ -11,6 +11,6 @@
 - Comandos ficam no pacote `app/comandos/` (um mixin por assunto; leia so o arquivo do assunto, e Grep `def _cmd_x` se nao souber onde esta):
   `__init__.py` nucleo (ORDEM, _executar, perguntar, falar, _separar_monitor) · `base.py` constantes · `ia.py` IA/pensamento/fila ·
   `rotinas.py` rotinas e ensinar rotina · `assistente.py` versao/encerrar/painel/descanso/atalhos/voz · `feedback.py` feedback/melhorias/exportar ·
-  `ditado.py` ditado/IPM/area de transferencia · `anotacoes.py` historico/memoria/projetos/lembretes/notas · `video.py` YouTube/streaming/clicar ·
+  `ditado.py` ditado/empresa/area de transferencia · `anotacoes.py` historico/memoria/projetos/lembretes/notas · `video.py` YouTube/streaming/clicar ·
   `midia.py` volume/midia/Spotify · `info.py` clima/noticias/hora · `janelas.py` janelas/abas/monitores/tela/pesquisa/abrir.
 - Nao leia `navegador_mestre/`, `venv/`, `modelos/` nem as pastas de versoes antigas em `C:\Ias`.
