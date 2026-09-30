@@ -1,4 +1,4 @@
-# Passagem de tarefas entre Codex, Claude e Manus
+# Passagem de tarefas entre ChatGPT/Codex e Claude
 
 Este repositório é a fonte comum das tarefas do projeto Mestre. Uma conversa de IA não vê
 automaticamente as outras conversas. Para ler uma tarefa, ela precisa acessar a branch e o

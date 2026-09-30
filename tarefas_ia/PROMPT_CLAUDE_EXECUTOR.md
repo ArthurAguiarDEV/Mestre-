@@ -2,8 +2,8 @@
 
 Esforço: médio para executar um plano aprovado; alto se o plano ainda tiver dúvidas.
 
-Leia o relatório do Manus indicado pelo coordenador e os arquivos obrigatórios do
-projeto. Implemente somente a frente aprovada. Preserve mudanças locais. Não faça
+Leia o cartão e os arquivos obrigatórios do projeto. Implemente somente a frente
+aprovada. Preserve mudanças locais. Não faça
 commit, não publique e não apague arquivos. Execute os testes automáticos e salve:
 
 1. resumo das alterações;

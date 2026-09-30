@@ -1,6 +1,6 @@
 # Plano Mestre — lapidação da validação e organização
 
-Este plano deixa a fila preparada para Manus, Claude e ChatGPT/Codex. A execução
+Este plano deixa a fila preparada para Claude e ChatGPT/Codex. A execução
 deve seguir a ordem abaixo. Nenhuma alteração visual ou exclusão de arquivo entra
 antes das três primeiras frentes serem testadas.
 
@@ -14,19 +14,18 @@ antes das três primeiras frentes serem testadas.
 
 ## Fluxo por frente
 
-Manus faz análise somente leitura → Claude implementa o plano aprovado →
+ChatGPT/Codex organiza e aprova o plano → Claude implementa →
 ChatGPT/Codex revisa diff e testes → usuário testa → feedback volta para uma nova tarefa.
 
 ## Regra de consumo
 
-Não é necessário gastar Manus em cada rodada. Use Manus para decisões de arquitetura
-e auditorias. Use Claude para implementação. Use ChatGPT/Codex para coordenação,
-revisão e roteiro de teste. Use Ollama para análises locais simples.
+Não usar Manus neste projeto por enquanto. Use Claude para implementação e
+ChatGPT/Codex para coordenação, revisão e roteiro de teste.
 
 ## Estado atual
 
 - Validação e mídia: implementação local sem commit, testes automáticos verdes.
-- Perfis de streaming: ainda não implementados.
+- Perfis de streaming: implementados e enviados para teste humano.
 - Perguntas para comandos complexos: ainda não implementadas.
 - Validação variável: parcialmente implementada; precisa evitar repetição real.
 - Organização de pastas: inventário iniciado, nenhum arquivo movido ou apagado.

@@ -1,7 +1,7 @@
 # Orquestração de IAs do Mestre
 
 Este arquivo define o caminho oficial de uma melhoria. Ele é a fonte comum para
-Codex, Claude, Manus e os agentes locais do CrewAI.
+ChatGPT/Codex e Claude.
 
 ## Regra principal
 
@@ -47,10 +47,9 @@ compartilhado deve estar em arquivo, commit ou relatório.
 
 ## Como IAs externas entram
 
-O CrewAI local é o coordenador padrão e usa Ollama. Claude, Manus e ChatGPT só
-entram quando houver uma integração autorizada e disponível. Se não houver API ou
-conector, o sistema gera um pacote de contexto para copiar/colar, sem fingir que
-consultou a IA externa.
+ChatGPT/Codex coordena e revisa. Claude implementa. Se não houver API ou conector,
+o sistema gera um pacote de contexto para copiar/colar, sem fingir que consultou
+uma IA externa.
 
 ## Regras de segurança
 
